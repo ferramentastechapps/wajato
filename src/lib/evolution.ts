@@ -76,6 +76,22 @@ export const evolutionApi = {
   },
 
   /**
+   * Obtém o código de pareamento (Pairing Code) para a instância e telefone
+   */
+  async getPairingCode(instanceName: string, phone: string): Promise<{ code: string }> {
+    try {
+      const formattedPhone = this.formatPhone(phone);
+      const response = await evolutionClient.get(`/instance/connect/pairingCode/${instanceName}`, {
+        params: { number: formattedPhone },
+      });
+      return response.data;
+    } catch (error: any) {
+      console.error(`Erro ao buscar Pairing Code para ${instanceName}:`, error?.response?.data || error.message);
+      throw new Error(error?.response?.data?.message || 'Falha ao obter código de pareamento');
+    }
+  },
+
+  /**
    * Desconecta o WhatsApp da instância
    */
   async logoutInstance(instanceName: string): Promise<void> {

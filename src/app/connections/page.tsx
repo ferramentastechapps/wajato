@@ -13,7 +13,11 @@ import {
   Activity, 
   Layers,
   LogOut,
-  X
+  X,
+  Copy,
+  Check,
+  ChevronLeft,
+  Key
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -42,6 +46,14 @@ export default function ConnectionsPage() {
   
   // Ações de carregamento individuais por instância
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  // Estados para Código de Pareamento por instância
+  const [activeConnectTab, setActiveConnectTab] = useState<Record<string, 'qr' | 'code'>>({});
+  const [pairingPhones, setPairingPhones] = useState<Record<string, string>>({});
+  const [pairingCodes, setPairingCodes] = useState<Record<string, string>>({});
+  const [pairingLoading, setPairingLoading] = useState<Record<string, boolean>>({});
+  const [pairingErrors, setPairingErrors] = useState<Record<string, string>>({});
+  const [copiedInstance, setCopiedInstance] = useState<string | null>(null);
 
   const fetchInstances = async () => {
     try {
@@ -108,6 +120,12 @@ export default function ConnectionsPage() {
     setActionLoading(name);
     try {
       await fetch(`/api/whatsapp/instances/${name}/logout`, { method: 'POST' });
+      // Limpa os estados de pareamento salvos localmente ao desconectar
+      setPairingCodes(prev => {
+        const copy = { ...prev };
+        delete copy[name];
+        return copy;
+      });
       await fetchInstances();
     } catch (err) {
       console.error(err);
@@ -127,6 +145,47 @@ export default function ConnectionsPage() {
     } finally {
       setActionLoading(null);
     }
+  };
+
+  const handleGeneratePairingCode = async (instanceName: string) => {
+    const rawPhone = pairingPhones[instanceName];
+    if (!rawPhone || !rawPhone.trim()) {
+      setPairingErrors(prev => ({ ...prev, [instanceName]: 'Informe o telefone com DDI e DDD.' }));
+      return;
+    }
+
+    const cleanPhone = rawPhone.replace(/\D/g, '');
+    if (cleanPhone.length < 10) {
+      setPairingErrors(prev => ({ ...prev, [instanceName]: 'Número muito curto. Digite com DDD.' }));
+      return;
+    }
+
+    setPairingErrors(prev => ({ ...prev, [instanceName]: '' }));
+    setPairingLoading(prev => ({ ...prev, [instanceName]: true }));
+
+    try {
+      const res = await fetch(`/api/whatsapp/instances/${instanceName}/pairing`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: cleanPhone }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setPairingCodes(prev => ({ ...prev, [instanceName]: data.code }));
+      } else {
+        setPairingErrors(prev => ({ ...prev, [instanceName]: data.error || 'Falha ao obter código.' }));
+      }
+    } catch (err) {
+      setPairingErrors(prev => ({ ...prev, [instanceName]: 'Erro ao conectar ao servidor.' }));
+    } finally {
+      setPairingLoading(prev => ({ ...prev, [instanceName]: false }));
+    }
+  };
+
+  const copyToClipboard = (text: string, name: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedInstance(name);
+    setTimeout(() => setCopiedInstance(null), 2000);
   };
 
   // Estatísticas do topo
@@ -204,11 +263,15 @@ export default function ConnectionsPage() {
           </button>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1.25rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '1.25rem' }}>
           {instances.map(inst => {
             const isConnected = inst.status === 'CONNECTED';
             const isInitializing = inst.status === 'INITIALIZING';
             const isActLoading = actionLoading === inst.name;
+            const currentTab = activeConnectTab[inst.name] || 'qr';
+            const pairingCode = pairingCodes[inst.name];
+            const isPairLoading = pairingLoading[inst.name];
+            const pairError = pairingErrors[inst.name];
 
             return (
               <div
@@ -293,7 +356,7 @@ export default function ConnectionsPage() {
                 </div>
 
                 {/* Área Interna - Warmup ou QR Code */}
-                <div style={{ padding: '1.25rem', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                <div style={{ padding: '1.25rem', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', minHeight: '230px' }}>
                   {isConnected ? (
                     // Mostrar progresso do Aquecimento (%) se conectado
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
@@ -338,35 +401,189 @@ export default function ConnectionsPage() {
                       </div>
                     </div>
                   ) : (
-                    // Mostrar QR Code para conectar
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                      {inst.qrCode ? (
-                        <div style={{ textAlign: 'center' }}>
-                          <div style={{
-                            backgroundColor: 'white',
-                            padding: '0.5rem',
-                            borderRadius: '8px',
-                            display: 'inline-block',
-                            boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-                            marginBottom: '0.5rem',
-                          }}>
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              src={inst.qrCode}
-                              alt="Scan me"
-                              style={{ width: '135px', height: '135px', display: 'block' }}
+                    // Mostrar Conexão Alternativa (QR Code ou Código de Pareamento)
+                    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                      {/* Sub-abas de Conexão */}
+                      {!pairingCode && (
+                        <div style={{
+                          display: 'flex',
+                          borderBottom: '1px solid rgba(255,255,255,0.06)',
+                          marginBottom: '0.75rem',
+                          fontSize: '0.75rem',
+                        }}>
+                          <button
+                            type="button"
+                            onClick={() => setActiveConnectTab(prev => ({ ...prev, [inst.name]: 'qr' }))}
+                            style={{
+                              flex: 1,
+                              background: 'none',
+                              border: 'none',
+                              borderBottom: currentTab === 'qr' ? '2px solid #10b981' : 'none',
+                              color: currentTab === 'qr' ? '#10b981' : 'rgba(255,255,255,0.4)',
+                              padding: '0.4rem',
+                              cursor: 'pointer',
+                              fontWeight: 700,
+                            }}
+                          >
+                            QR Code
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setActiveConnectTab(prev => ({ ...prev, [inst.name]: 'code' }))}
+                            style={{
+                              flex: 1,
+                              background: 'none',
+                              border: 'none',
+                              borderBottom: currentTab === 'code' ? '2px solid #10b981' : 'none',
+                              color: currentTab === 'code' ? '#10b981' : 'rgba(255,255,255,0.4)',
+                              padding: '0.4rem',
+                              cursor: 'pointer',
+                              fontWeight: 700,
+                            }}
+                          >
+                            Código de Celular
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Conteúdo da Aba QR Code */}
+                      {currentTab === 'qr' && !pairingCode && (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1 }}>
+                          {inst.qrCode ? (
+                            <div style={{ textAlign: 'center' }}>
+                              <div style={{
+                                backgroundColor: 'white',
+                                padding: '0.5rem',
+                                borderRadius: '8px',
+                                display: 'inline-block',
+                                boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+                                marginBottom: '0.4rem',
+                              }}>
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={inst.qrCode}
+                                  alt="Scan me"
+                                  style={{ width: '120px', height: '120px', display: 'block' }}
+                                />
+                              </div>
+                              <div style={{ fontSize: '0.68rem', color: '#10b981', fontWeight: 600 }}>
+                                QR Code Ativo! Escaneie no WhatsApp.
+                              </div>
+                            </div>
+                          ) : (
+                            <div style={{ textAlign: 'center', padding: '1rem 0' }}>
+                              <div style={{ width: '24px', height: '24px', border: '3px solid rgba(255,255,255,0.1)', borderTopColor: '#10b981', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 0.5rem' }} />
+                              <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.4)' }}>
+                                Clique em "Gerar QR Code" abaixo.
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Conteúdo da Aba Código de Celular (Inclusão do Número) */}
+                      {currentTab === 'code' && !pairingCode && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', justifyContent: 'center', flex: 1 }}>
+                          <div>
+                            <label style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.5)', marginBottom: 4, display: 'block' }}>
+                              Número do Celular (com DDI e DDD)
+                            </label>
+                            <input
+                              type="text"
+                              className="form-input"
+                              placeholder="Ex: 5516999999999"
+                              style={{ padding: '0.4rem 0.6rem', fontSize: '0.8rem' }}
+                              value={pairingPhones[inst.name] || ''}
+                              onChange={e => setPairingPhones(prev => ({ ...prev, [inst.name]: e.target.value }))}
                             />
                           </div>
-                          <div style={{ fontSize: '0.7rem', color: '#10b981', fontWeight: 600 }}>
-                            QR Code Ativo! Escaneie no WhatsApp.
-                          </div>
+
+                          {pairError && (
+                            <div style={{ color: '#ef4444', fontSize: '0.7rem', padding: '4px 8px', background: 'rgba(239,68,68,0.08)', borderRadius: '4px' }}>
+                              {pairError}
+                            </div>
+                          )}
+
+                          <button
+                            type="button"
+                            className="btn btn-primary"
+                            style={{ padding: '0.4rem 0.75rem', fontSize: '0.78rem', justifyContent: 'center', width: '100%' }}
+                            onClick={() => handleGeneratePairingCode(inst.name)}
+                            disabled={isPairLoading}
+                          >
+                            {isPairLoading ? 'Obtendo Código...' : 'Gerar Código de Conexão'}
+                          </button>
                         </div>
-                      ) : (
-                        <div style={{ textAlign: 'center', padding: '1rem 0' }}>
-                          <div style={{ width: '30px', height: '30px', border: '3px solid rgba(255,255,255,0.1)', borderTopColor: '#10b981', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 0.75rem' }} />
-                          <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.4)' }}>
-                            Solicitando QR Code de conexão...
+                      )}
+
+                      {/* Exibição do Código de Pareamento Gerado */}
+                      {pairingCode && (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: '0.5rem', textAlign: 'center' }}>
+                          <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.4)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <Key size={12} color="#10b981" /> Código de Pareamento WhatsApp
                           </div>
+                          
+                          <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem',
+                            padding: '0.5rem 1rem',
+                            background: 'rgba(16,185,129,0.08)',
+                            border: '1px solid rgba(16,185,129,0.2)',
+                            borderRadius: '10px',
+                            cursor: 'pointer',
+                          }}
+                            onClick={() => copyToClipboard(pairingCode, inst.name)}
+                            title="Clique para copiar"
+                          >
+                            <span style={{ fontSize: '1.4rem', fontWeight: 800, color: '#10b981', letterSpacing: '2px', fontFamily: 'monospace' }}>
+                              {pairingCode}
+                            </span>
+                            {copiedInstance === inst.name ? (
+                              <Check size={16} color="#10b981" />
+                            ) : (
+                              <Copy size={16} color="rgba(255,255,255,0.4)" />
+                            )}
+                          </div>
+
+                          <div style={{
+                            fontSize: '0.65rem',
+                            color: 'rgba(255,255,255,0.5)',
+                            lineHeight: '1.3',
+                            background: 'rgba(0,0,0,0.15)',
+                            padding: '0.5rem',
+                            borderRadius: '6px',
+                            textAlign: 'left'
+                          }}>
+                            <strong>Como conectar:</strong><br />
+                            1. Abra o WhatsApp no celular.<br />
+                            2. Vá em Aparelhos Conectados &gt; Conectar aparelho.<br />
+                            3. Toque em <strong>"Conectar com número de telefone"</strong> e insira o código acima.
+                          </div>
+
+                          <button
+                            type="button"
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: 'rgba(255,255,255,0.4)',
+                              fontSize: '0.7rem',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '2px',
+                              marginTop: 2
+                            }}
+                            onClick={() => {
+                              setPairingCodes(prev => {
+                                const copy = { ...prev };
+                                delete copy[inst.name];
+                                return copy;
+                              });
+                            }}
+                          >
+                            <ChevronLeft size={12} /> Voltar/Alterar número
+                          </button>
                         </div>
                       )}
                     </div>
@@ -395,11 +612,11 @@ export default function ConnectionsPage() {
                     <button
                       className="btn btn-primary"
                       style={{ flex: 1, padding: '0.35rem 0.5rem', fontSize: '0.75rem', justifyContent: 'center' }}
-                      onClick={() => handleRefresh(inst.name)}
-                      disabled={isActLoading}
+                      onClick={() => currentTab === 'qr' ? handleRefresh(inst.name) : handleGeneratePairingCode(inst.name)}
+                      disabled={isActLoading || isPairLoading}
                     >
-                      <RefreshCw size={13} className={isActLoading ? 'spin' : ''} />
-                      {isActLoading ? 'Atualizando...' : 'Gerar QR Code'}
+                      <RefreshCw size={13} className={(isActLoading || isPairLoading) ? 'spin' : ''} />
+                      {(isActLoading || isPairLoading) ? 'Gerando...' : (currentTab === 'qr' ? 'Gerar QR Code' : 'Gerar Código')}
                     </button>
                   )}
 
