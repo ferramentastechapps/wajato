@@ -199,31 +199,88 @@ export default function ContactsPage() {
     setIsSubmitting(true);
 
     try {
-      // Parsing simples de CSV
-      const lines = csvFileContent.split(/\r?\n/);
+      // Parsing robusto de CSV com mapeamento inteligente de colunas por cabeçalho
+      const lines = csvFileContent.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      if (lines.length === 0) {
+        setCsvError('Arquivo vazio.');
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Detecta separador mais comum (vírgula ou ponto e vírgula)
+      const firstLine = lines[0];
+      const separator = firstLine.includes(';') ? ';' : ',';
+
+      // Divide cabeçalhos
+      const headers = firstLine.split(separator).map(h => h.trim().toLowerCase().replace(/["']/g, ''));
+      
+      let nameIdx = -1;
+      let phoneIdx = -1;
+      let tagsIdx = -1;
+
+      // Mapeamento semântico de telefone
+      const phoneKeywords = ['phone number', 'telefone', 'phone', 'celular', 'number', 'numero', 'whatsapp', 'formatted phone', 'tel'];
+      for (const keyword of phoneKeywords) {
+        phoneIdx = headers.findIndex(h => h === keyword || h.includes(keyword));
+        if (phoneIdx !== -1) break;
+      }
+
+      // Mapeamento semântico de nome
+      const nameKeywords = ['saved name', 'name', 'nome', 'public name', 'display name', 'contato', 'contact'];
+      for (const keyword of nameKeywords) {
+        nameIdx = headers.findIndex(h => h === keyword || h.includes(keyword));
+        if (nameIdx !== -1) break;
+      }
+
+      // Mapeamento semântico de tags/labels
+      const tagsKeywords = ['tags', 'tag', 'labels', 'label', 'grupo', 'group'];
+      for (const keyword of tagsKeywords) {
+        tagsIdx = headers.findIndex(h => h === keyword || h.includes(keyword));
+        if (tagsIdx !== -1) break;
+      }
+
+      const hasHeaders = nameIdx !== -1 || phoneIdx !== -1;
+      const startIndex = hasHeaders ? 1 : 0;
+      
+      if (!hasHeaders) {
+        // Fallback padrão se não houver cabeçalhos
+        nameIdx = 0;
+        phoneIdx = 1;
+        tagsIdx = 2;
+      } else {
+        if (phoneIdx === -1) phoneIdx = 0;
+        if (nameIdx === -1) nameIdx = phoneIdx === 0 ? 1 : 0;
+      }
+
       const parsedContacts: Array<{ name: string; phone: string; tags: string[] }> = [];
 
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (!line) continue;
+      for (let i = startIndex; i < lines.length; i++) {
+        const line = lines[i];
+        
+        let parts: string[] = [];
+        if (line.includes('"') || line.includes("'")) {
+          const regex = new RegExp(`\\s*${separator}\\s*(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)`);
+          parts = line.split(regex).map(p => p.trim().replace(/^["']|["']$/g, ''));
+        } else {
+          parts = line.split(separator).map(p => p.trim());
+        }
 
-        // Suporta separador por vírgula ou ponto-e-vírgula
-        const parts = line.split(/[;,]/);
-        const name = parts[0]?.trim() || '';
-        const phone = parts[1]?.trim() || '';
-        const rawTags = parts[2]?.trim() || '';
+        const name = parts[nameIdx]?.trim() || '';
+        const phone = parts[phoneIdx]?.trim() || '';
+        const rawTags = tagsIdx !== -1 ? parts[tagsIdx]?.trim() || '' : '';
         
         const tags = rawTags
           ? rawTags.split('|').map((t) => t.trim()).filter((t) => t !== '')
           : [];
 
-        if (phone) {
+        const digitsOnly = phone.replace(/\D/g, '');
+        if (digitsOnly.length >= 8) {
           parsedContacts.push({ name, phone, tags });
         }
       }
 
       if (parsedContacts.length === 0) {
-        setCsvError('Nenhum contato válido encontrado. Formato esperado: nome,telefone,tags (separadas por |)');
+        setCsvError('Nenhum contato válido encontrado. Formato esperado de cabeçalho: "saved name" e "phone number" ou similar.');
         setIsSubmitting(false);
         return;
       }
