@@ -30,7 +30,7 @@ export default function WarmupPage() {
   }, []);
 
   return (
-    <AppLayout>
+    <AppLayout title="Aquecimento IA">
       <div className="page-header">
         <div>
           <h1 className="page-title">
