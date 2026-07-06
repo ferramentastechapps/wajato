@@ -35,22 +35,24 @@ npx prisma db seed
 
 echo "--------------------------------------"
 echo " Compilando o projeto Next.js..."
-npm run build
+NODE_ENV=production npm run build
 
 echo "--------------------------------------"
 echo " Iniciando/Reiniciando serviços no PM2..."
 pm2 delete wajato-web 2>/dev/null || true
 pm2 delete wajato-worker 2>/dev/null || true
 
-pm2 start npm --name "wajato-web" -- run start
-pm2 start "npx tsx src/workers/message-worker.ts" --name "wajato-worker"
+# Carrega variáveis do .env e inicia com NODE_ENV=production
+export $(grep -v '^#' .env | xargs)
+NODE_ENV=production pm2 start npm --name "wajato-web" -- run start
+NODE_ENV=production pm2 start "npx tsx src/workers/message-worker.ts" --name "wajato-worker"
 pm2 save
 pm2 startup systemd -u root --hp /root 2>/dev/null || true
 
 echo ""
 echo "======================================"
 echo "  Deploy concluido com sucesso!"
-echo "  Acesse: http://212.85.10.239:3000"
-echo "  Painel Evolution API: http://212.85.10.239:8080"
+echo "  Acesse: https://wajato.ftech-apps.com.br"
+echo "  Painel Evolution API: https://evo-wajato.ftech-apps.com.br"
 echo "======================================"
 pm2 list

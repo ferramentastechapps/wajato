@@ -1,18 +1,76 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { queueWarmupMessage } from '@/lib/warmup-queue';
+import { getRampUpTarget, calculateHeatScore } from '@/lib/warmup-schedule';
 
 export async function GET() {
   try {
     const campaigns = await prisma.warmupCampaign.findMany({
       orderBy: { createdAt: 'desc' },
       include: {
-        _count: {
-          select: { logs: true }
-        }
-      }
+        _count: { select: { logs: true } },
+      },
     });
-    return NextResponse.json(campaigns);
+
+    // Enriquecer cada campanha com métricas
+    const enriched = await Promise.all(
+      campaigns.map(async (camp) => {
+        // Última mensagem
+        const lastLog = await prisma.warmupLog.findFirst({
+          where: { campaignId: camp.id },
+          orderBy: { createdAt: 'desc' },
+        });
+
+        // Taxa de sucesso
+        const totalLogs = camp._count.logs;
+        const successLogs = await prisma.warmupLog.count({
+          where: { campaignId: camp.id, status: 'SENT' },
+        });
+        const successRate = totalLogs > 0 ? successLogs / totalLogs : 1;
+
+        // Mensagens de hoje (hoje = últimas 24h como proxy)
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        const msgsToday = await prisma.warmupLog.count({
+          where: {
+            campaignId: camp.id,
+            createdAt: { gte: todayStart },
+          },
+        });
+
+        // Distribuição por tipo de mensagem
+        const typeStats = await prisma.warmupLog.groupBy({
+          by: ['messageType'],
+          where: { campaignId: camp.id },
+          _count: { id: true },
+        });
+
+        const messageTypeBreakdown = Object.fromEntries(
+          typeStats.map(t => [t.messageType, t._count.id])
+        );
+
+        return {
+          ...camp,
+          stats: {
+            total: totalLogs,
+            successful: successLogs,
+            successRate: Math.round(successRate * 100),
+            msgsToday,
+            heatScore: camp.heatScore,
+            lastMessage: lastLog
+              ? {
+                  text: lastLog.message,
+                  at: lastLog.createdAt,
+                  type: lastLog.messageType,
+                }
+              : null,
+            messageTypeBreakdown,
+          },
+        };
+      })
+    );
+
+    return NextResponse.json(enriched);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -21,30 +79,59 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { sourceInstance, targetInstance, targetPhone, totalDays } = body;
+    const {
+      name,
+      sourceInstance,
+      targetInstance,
+      targetPhone,
+      totalDays = 30,
+      startHour = 8,
+      endHour = 22,
+      initialMsgsPerDay = 5,
+      maxMsgsPerDay = 150,
+    } = body;
 
     if (!sourceInstance || !targetPhone) {
-      return NextResponse.json({ error: 'Faltam campos obrigatórios' }, { status: 400 });
+      return NextResponse.json({ error: 'sourceInstance e targetPhone são obrigatórios' }, { status: 400 });
     }
 
-    // Criar a campanha de warmup
+    // Validações
+    if (startHour < 0 || startHour > 23 || endHour < 1 || endHour > 23 || startHour >= endHour) {
+      return NextResponse.json({ error: 'Horários inválidos' }, { status: 400 });
+    }
+
+    if (initialMsgsPerDay < 1 || initialMsgsPerDay > 50) {
+      return NextResponse.json({ error: 'initialMsgsPerDay deve ser entre 1 e 50' }, { status: 400 });
+    }
+
+    const firstDayTarget = getRampUpTarget(1, initialMsgsPerDay, maxMsgsPerDay);
+
     const campaign = await prisma.warmupCampaign.create({
       data: {
+        name: name || `Aquecimento ${sourceInstance} → ${targetPhone}`,
         sourceInstance,
         targetInstance: targetInstance || null,
         targetPhone,
-        totalDays: totalDays || 7,
-        targetMsgsToday: 15, // Começa com poucas mensagens
-      }
+        totalDays,
+        targetMsgsToday: firstDayTarget,
+        initialMsgsPerDay,
+        maxMsgsPerDay,
+        startHour,
+        endHour,
+      },
     });
 
-    // Agenda a primeira mensagem (Jitter curto inicial de 5s a 30s)
-    await queueWarmupMessage({
-      campaignId: campaign.id,
-      sourceInstance,
-      targetPhone,
-      isFirstMessageOfDay: true
-    }, 5000, 30000);
+    // Agenda a primeira mensagem com jitter curto de 10s-60s
+    await queueWarmupMessage(
+      {
+        campaignId: campaign.id,
+        sourceInstance,
+        targetPhone,
+        isFirstMessageOfDay: true,
+      },
+      30000,
+      20000
+    );
 
     return NextResponse.json(campaign, { status: 201 });
   } catch (error: any) {

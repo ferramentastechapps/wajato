@@ -5,6 +5,19 @@ import { prisma } from '@/lib/prisma';
 
 const INSTANCE_NAME = process.env.EVOLUTION_INSTANCE_NAME || 'wajato-session';
 
+// GET — Lista todas as instâncias cadastradas (para o dropdown no CreateWarmupModal)
+export async function GET() {
+  try {
+    const instances = await prisma.whatsAppInstance.findMany({
+      orderBy: { updatedAt: 'desc' },
+      select: { name: true, status: true, phone: true },
+    });
+    return NextResponse.json(instances);
+  } catch (error: any) {
+    return NextResponse.json({ instances: [] }, { status: 200 });
+  }
+}
+
 export async function POST() {
   try {
     const user = await getSessionUser();

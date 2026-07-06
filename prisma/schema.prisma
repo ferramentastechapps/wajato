@@ -111,29 +111,46 @@ enum WarmupStatus {
 }
 
 model WarmupCampaign {
-  id              String       @id @default(uuid())
-  sourceInstance  String       // Nome da instância que inicia o papo
-  targetInstance  String       // Nome da instância que responde
-  targetPhone     String       // Telefone da instância destino
-  status          WarmupStatus @default(RUNNING)
-  currentDay      Int          @default(1)
-  totalDays       Int          @default(7)
-  msgsSentToday   Int          @default(0)
-  targetMsgsToday Int          @default(15)
-  nextRunAt       DateTime?
-  logs            WarmupLog[]
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
+  id               String       @id @default(uuid())
+  name             String?      // Nome descritivo da campanha
+  sourceInstance   String       // Nome da instância que inicia o papo
+  targetInstance   String?      // Nome da instância que responde (opcional para bidirecional)
+  targetPhone      String       // Telefone da instância destino
+  status           WarmupStatus @default(RUNNING)
+  currentDay       Int          @default(1)
+  totalDays        Int          @default(30)
+  msgsSentToday    Int          @default(0)
+  targetMsgsToday  Int          @default(5)   // Começa conservador: 5 msgs/dia
+  initialMsgsPerDay Int         @default(5)   // Valor inicial do ramp-up
+  maxMsgsPerDay    Int          @default(150) // Teto máximo de mensagens por dia
+  startHour        Int          @default(8)   // Hora de início (0-23)
+  endHour          Int          @default(22)  // Hora de fim (0-23)
+  heatScore        Int          @default(0)   // Score de 0-100 estimado de aquecimento
+  lastMessageAt    DateTime?                  // Última mensagem enviada
+  restPeriodUntil  DateTime?                  // Período de descanso ativo até
+  nextRunAt        DateTime?
+  logs             WarmupLog[]
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+}
+
+enum WarmupMessageType {
+  TEXT
+  EMOJI
+  REACTION
+  STICKER
+  AUDIO
 }
 
 model WarmupLog {
-  id           String         @id @default(uuid())
+  id           String            @id @default(uuid())
   campaignId   String
-  campaign     WarmupCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaign     WarmupCampaign    @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   fromInstance String
   toPhone      String
   message      String
-  status       String         @default("SENT") // SENT, DELIVERED, READ, FAILED
-  delayUsed    Int            @default(0)
-  createdAt    DateTime       @default(now())
+  messageType  WarmupMessageType @default(TEXT)
+  status       String            @default("SENT") // SENT, DELIVERED, READ, FAILED
+  delayUsed    Int               @default(0)
+  createdAt    DateTime          @default(now())
 }

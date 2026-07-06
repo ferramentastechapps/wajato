@@ -189,6 +189,94 @@ export const evolutionApi = {
   },
 
   /**
+   * Envia uma reação (emoji) a uma mensagem específica
+   */
+  async sendReaction(instanceName: string, phone: string, messageId: string, reaction: string): Promise<any> {
+    try {
+      const formattedPhone = this.formatPhone(phone);
+      const response = await evolutionClient.post(`/message/sendReaction/${instanceName}`, {
+        key: {
+          remoteJid: `${formattedPhone}@s.whatsapp.net`,
+          id: messageId,
+        },
+        reaction,
+      });
+      return response.data;
+    } catch (error: any) {
+      console.error(`Erro ao enviar reação para ${phone}:`, error?.response?.data || error.message);
+      // Reações não são críticas, não lança exceção
+      return null;
+    }
+  },
+
+  /**
+   * Marca mensagens de um chat como lidas (simula abertura do chat)
+   */
+  async markAsRead(instanceName: string, phone: string): Promise<void> {
+    try {
+      const formattedPhone = this.formatPhone(phone);
+      await evolutionClient.post(`/chat/markMessageAsRead/${instanceName}`, {
+        readMessages: [
+          {
+            remoteJid: `${formattedPhone}@s.whatsapp.net`,
+            fromMe: false,
+            id: 'all',
+          },
+        ],
+      });
+    } catch (error: any) {
+      // Não crítico, ignora silenciosamente
+      console.warn(`[Warmup] Não foi possível marcar como lido para ${phone}`);
+    }
+  },
+
+  /**
+   * Envia um áudio via URL (formato .ogg PTT - Push to Talk)
+   * Simula nota de voz para máxima humanização
+   */
+  async sendAudioUrl(instanceName: string, phone: string, audioUrl: string): Promise<any> {
+    try {
+      const formattedPhone = this.formatPhone(phone);
+      const response = await evolutionClient.post(`/message/sendMedia/${instanceName}`, {
+        number: formattedPhone,
+        mediaMessage: {
+          mediatype: 'audio',
+          media: audioUrl,
+          mimetype: 'audio/ogg; codecs=opus',
+        },
+        options: {
+          presence: 'recording', // Simula "gravando áudio"
+          delay: 2000,
+        },
+      });
+      return response.data;
+    } catch (error: any) {
+      console.error(`Erro ao enviar áudio para ${phone}:`, error?.response?.data || error.message);
+      throw new Error(error?.response?.data?.message || 'Falha ao enviar áudio');
+    }
+  },
+
+  /**
+   * Envia um sticker via URL (.webp)
+   */
+  async sendSticker(instanceName: string, phone: string, stickerUrl: string): Promise<any> {
+    try {
+      const formattedPhone = this.formatPhone(phone);
+      const response = await evolutionClient.post(`/message/sendSticker/${instanceName}`, {
+        number: formattedPhone,
+        stickerMessage: {
+          image: stickerUrl,
+        },
+      });
+      return response.data;
+    } catch (error: any) {
+      console.error(`Erro ao enviar sticker para ${phone}:`, error?.response?.data || error.message);
+      // Stickers não são críticos, não lança exceção
+      return null;
+    }
+  },
+
+  /**
    * Formata o número do telefone para o padrão do WhatsApp (sem caracteres especiais)
    * Garante o DDI (55 para Brasil)
    */
@@ -201,9 +289,6 @@ export const evolutionApi = {
       cleaned = '55' + cleaned;
     }
     
-    // Corrige nono dígito em números de celular brasileiros se necessário
-    // WhatsApp costuma usar o formato original (com ou sem o 9 dependendo de quando foi criado)
-    // O recomendável é manter o número conforme fornecido, apenas garantindo o DDI 55
     return cleaned;
   }
 };
