@@ -3,8 +3,6 @@ import { getSessionUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import DashboardView from '@/components/dashboard/DashboardView';
 
-const INSTANCE_NAME = process.env.EVOLUTION_INSTANCE_NAME || 'wajato-session';
-
 export const dynamic = 'force-dynamic';
 
 export default async function HomePage() {
@@ -28,7 +26,6 @@ export default async function HomePage() {
     sentToday,
     pendingMessages,
     rawRecentCampaigns,
-    dbInstance,
   ] = await Promise.all([
     prisma.contact.count(),
     prisma.campaign.count(),
@@ -57,9 +54,6 @@ export default async function HomePage() {
         logs: { select: { status: true } },
       },
     }),
-    prisma.whatsAppInstance.findUnique({
-      where: { name: INSTANCE_NAME },
-    }),
   ]);
 
   // Calcula taxa de sucesso
@@ -84,12 +78,6 @@ export default async function HomePage() {
     };
   });
 
-  // Prepara o status do WhatsApp
-  const waStatus = {
-    status: (dbInstance?.status as 'CONNECTED' | 'INITIALIZING' | 'DISCONNECTED') || 'DISCONNECTED',
-    qrCode: dbInstance?.qrCode || null,
-  };
-
   const stats = {
     totalContacts,
     totalCampaigns,
@@ -103,7 +91,6 @@ export default async function HomePage() {
     <DashboardView 
       initialStats={stats} 
       initialCampaigns={recentCampaigns}
-      initialWaStatus={waStatus}
     />
   );
 }

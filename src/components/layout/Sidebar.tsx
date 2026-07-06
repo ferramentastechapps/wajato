@@ -11,7 +11,8 @@ import {
   BarChart3, 
   LogOut, 
   MessageSquare,
-  Flame
+  Flame,
+  Smartphone
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -36,6 +37,7 @@ export default function Sidebar({ username = 'Admin' }: SidebarProps) {
 
   const navItems = [
     { label: 'Dashboard', href: '/', icon: LayoutDashboard },
+    { label: 'Conexões', href: '/connections', icon: Smartphone },
     { label: 'Contatos', href: '/contacts', icon: Users },
     { label: 'Templates', href: '/templates', icon: FileText },
     { label: 'Campanhas', href: '/campaigns', icon: Send },

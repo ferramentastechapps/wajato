@@ -73,20 +73,36 @@ export async function POST(request: Request) {
         if (state === 'open') dbStatus = 'CONNECTED';
         else if (state === 'connecting') dbStatus = 'INITIALIZING';
 
+        // Extrai o telefone do JID do proprietário se disponível
+        const jid = data?.jid || data?.me?.id || data?.me?.jid || data?.ownerJid;
+        let phone = null;
+        if (jid) {
+          phone = jid.split(':')[0].split('@')[0];
+        }
+
+        const profileName = data?.profileName || data?.me?.name || null;
+        const profilePicUrl = data?.profilePicUrl || null;
+
         await prisma.whatsAppInstance.upsert({
           where: { name: instanceName },
           update: {
             status: dbStatus,
-            qrCode: null, // Limpa QR Code se alterou conexão
+            qrCode: dbStatus === 'CONNECTED' ? null : undefined,
+            phone: phone || undefined,
+            profileName: profileName || undefined,
+            profilePicUrl: profilePicUrl || undefined,
             updatedAt: new Date(),
           },
           create: {
             name: instanceName,
             status: dbStatus,
+            phone: phone || null,
+            profileName: profileName || null,
+            profilePicUrl: profilePicUrl || null,
             updatedAt: new Date(),
           },
         });
-        console.log(`[Webhook] Conexão da instância ${instanceName} atualizada para ${dbStatus}`);
+        console.log(`[Webhook] Conexão da instância ${instanceName} atualizada para ${dbStatus}. Fone: ${phone}, Perfil: ${profileName}`);
       }
     }
 

@@ -50,6 +50,19 @@ export const evolutionApi = {
   },
 
   /**
+   * Busca a lista de todas as instâncias no Evolution API
+   */
+  async fetchInstances(): Promise<any[]> {
+    try {
+      const response = await evolutionClient.get('/instance/fetchInstances');
+      return Array.isArray(response.data) ? response.data : [];
+    } catch (error: any) {
+      console.error('Erro ao buscar instâncias no Evolution API:', error?.response?.data || error.message);
+      return [];
+    }
+  },
+
+  /**
    * Obtém o QR Code atual para conexão
    */
   async getQRCode(instanceName: string): Promise<{ base64?: string; code?: string; count?: number }> {
