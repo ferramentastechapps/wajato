@@ -1,0 +1,139 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum CampaignStatus {
+  DRAFT
+  QUEUED
+  SENDING
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+enum MessageStatus {
+  PENDING
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+model User {
+  id        String   @id @default(uuid())
+  username  String   @unique
+  password  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Contact {
+  id        String       @id @default(uuid())
+  name      String?
+  phone     String       @unique
+  tags      String[]     @default([])
+  groupId   String?
+  group     ContactGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  logs      MessageLog[]
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+}
+
+model ContactGroup {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  description String?
+  contacts    Contact[]
+  campaigns   Campaign[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Template {
+  id        String     @id @default(uuid())
+  name      String
+  body      String
+  imageUrl  String?
+  campaigns Campaign[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model Campaign {
+  id          String         @id @default(uuid())
+  name        String
+  status      CampaignStatus @default(DRAFT)
+  templateId  String
+  template    Template       @relation(fields: [templateId], references: [id])
+  groupId     String
+  group       ContactGroup   @relation(fields: [groupId], references: [id])
+  delayMin    Int            @default(5)  // mínimo em segundos
+  delayMax    Int            @default(15) // máximo em segundos
+  scheduledAt DateTime?
+  logs        MessageLog[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+}
+
+model MessageLog {
+  id          String        @id @default(uuid())
+  campaignId  String
+  campaign    Campaign      @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contactId   String
+  contact     Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  status      MessageStatus @default(PENDING)
+  error       String?
+  sentAt      DateTime?
+  deliveredAt DateTime?
+  readAt      DateTime?
+  updatedAt   DateTime      @updatedAt
+}
+
+model WhatsAppInstance {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  status    String   @default("DISCONNECTED") // CONNECTED, DISCONNECTED, INITIALIZING
+  phone     String?
+  qrCode    String?
+  updatedAt DateTime @updatedAt
+}
+
+enum WarmupStatus {
+  RUNNING
+  PAUSED
+  STOPPED
+  COMPLETED
+}
+
+model WarmupCampaign {
+  id              String       @id @default(uuid())
+  sourceInstance  String       // Nome da instância que inicia o papo
+  targetInstance  String       // Nome da instância que responde
+  targetPhone     String       // Telefone da instância destino
+  status          WarmupStatus @default(RUNNING)
+  currentDay      Int          @default(1)
+  totalDays       Int          @default(7)
+  msgsSentToday   Int          @default(0)
+  targetMsgsToday Int          @default(15)
+  nextRunAt       DateTime?
+  logs            WarmupLog[]
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+}
+
+model WarmupLog {
+  id           String         @id @default(uuid())
+  campaignId   String
+  campaign     WarmupCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  fromInstance String
+  toPhone      String
+  message      String
+  status       String         @default("SENT") // SENT, DELIVERED, READ, FAILED
+  delayUsed    Int            @default(0)
+  createdAt    DateTime       @default(now())
+}

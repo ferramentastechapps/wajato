@@ -1,0 +1,99 @@
+import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+
+export async function POST(request: Request) {
+  try {
+    const payload = await request.json();
+    const { event, data } = payload;
+
+    console.log(`[Webhook] Evento recebido: ${event}`);
+
+    // Processa atualizações de status de mensagem
+    if (event === 'MESSAGES_UPDATE') {
+      const messageData = data?.message || data;
+      const status = data?.status || messageData?.status;
+      const remoteJid = data?.key?.remoteJid || messageData?.key?.remoteJid;
+
+      if (remoteJid && status) {
+        // Extrai apenas os números do JID (ex: 5511999999999@s.whatsapp.net -> 5511999999999)
+        const phone = remoteJid.split('@')[0];
+        
+        console.log(`[Webhook] Status update para ${phone}: ${status}`);
+
+        // Busca o log mais recente desse contato que esteja ativo (SENT ou PENDING)
+        const contact = await prisma.contact.findUnique({
+          where: { phone },
+        });
+
+        if (contact) {
+          const log = await prisma.messageLog.findFirst({
+            where: {
+              contactId: contact.id,
+              status: { in: ['PENDING', 'SENT', 'DELIVERED'] },
+            },
+            orderBy: { updatedAt: 'desc' },
+          });
+
+          if (log) {
+            // Mapeia o status do WhatsApp Web/Baileys
+            // 2 ou 'DELIVERY_ACK' ou 'DELIVERED' -> Entregue
+            // 3 ou 'READ' -> Lido
+            let newStatus = log.status;
+            const updateData: any = {};
+
+            if (status === 2 || status === 'DELIVERY_ACK' || status === 'DELIVERED') {
+              newStatus = 'DELIVERED';
+              updateData.deliveredAt = new Date();
+            } else if (status === 3 || status === 'READ') {
+              newStatus = 'READ';
+              updateData.readAt = new Date();
+            }
+
+            if (newStatus !== log.status) {
+              updateData.status = newStatus;
+              
+              await prisma.messageLog.update({
+                where: { id: log.id },
+                data: updateData,
+              });
+              console.log(`[Webhook] Log ${log.id} atualizado para ${newStatus}`);
+            }
+          }
+        }
+      }
+    }
+
+    // Processa atualização do estado da conexão
+    if (event === 'CONNECTION_UPDATE') {
+      const state = data?.state;
+      const instanceName = data?.instance;
+      
+      if (instanceName && state) {
+        let dbStatus = 'DISCONNECTED';
+        if (state === 'open') dbStatus = 'CONNECTED';
+        else if (state === 'connecting') dbStatus = 'INITIALIZING';
+
+        await prisma.whatsAppInstance.upsert({
+          where: { name: instanceName },
+          update: {
+            status: dbStatus,
+            qrCode: null, // Limpa QR Code se alterou conexão
+            updatedAt: new Date(),
+          },
+          create: {
+            name: instanceName,
+            status: dbStatus,
+            updatedAt: new Date(),
+          },
+        });
+        console.log(`[Webhook] Conexão da instância ${instanceName} atualizada para ${dbStatus}`);
+      }
+    }
+
+    return NextResponse.json({ status: 'ok' });
+  } catch (error: any) {
+    console.error('Erro ao processar webhook:', error);
+    // Retorna OK de qualquer forma para evitar loops de retry do servidor da Evolution API
+    return NextResponse.json({ status: 'ignored', error: error.message });
+  }
+}
