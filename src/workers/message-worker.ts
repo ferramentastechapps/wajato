@@ -4,6 +4,7 @@ import { prisma } from '../lib/prisma';
 import { evolutionApi } from '../lib/evolution';
 import { MessageJobData } from '../lib/queue';
 import './warmup-worker'; // Importa para iniciar o worker de aquecimento junto
+import './warmup-pool-worker'; // Importa o worker de pool mútuo
 
 const INSTANCE_NAME = process.env.EVOLUTION_INSTANCE_NAME || 'wajato-session';
 

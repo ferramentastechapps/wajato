@@ -22,7 +22,8 @@ else
   echo "  ⚠️  Migrate deploy falhou — aplicando SQL manual..."
   DATABASE_URL=$(grep DATABASE_URL .env | cut -d '=' -f2- | tr -d '"' | cut -d '?' -f1)
   psql "$DATABASE_URL" -f prisma/migrations/warmup_professional_upgrade.sql
-  echo "  ✅ SQL manual aplicado."
+  psql "$DATABASE_URL" -f prisma/migrations/warmup_pool_upgrade.sql
+  echo "  ✅ SQLs manuais aplicados."
 fi
 
 echo ""

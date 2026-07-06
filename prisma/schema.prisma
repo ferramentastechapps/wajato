@@ -154,3 +154,38 @@ model WarmupLog {
   delayUsed    Int               @default(0)
   createdAt    DateTime          @default(now())
 }
+
+model WarmupPool {
+  id                String            @id @default(uuid())
+  name              String
+  status            WarmupStatus      @default(RUNNING)
+  instanceNames     String[]          @default([])
+  currentDay        Int               @default(1)
+  totalDays         Int               @default(30)
+  msgsSentToday     Int               @default(0)
+  targetMsgsToday   Int               @default(5)
+  initialMsgsPerDay Int               @default(5)
+  maxMsgsPerDay     Int               @default(150)
+  startHour         Int               @default(8)
+  endHour           Int               @default(22)
+  heatScore         Int               @default(0)
+  lastMessageAt     DateTime?
+  restPeriodUntil   DateTime?
+  nextRunAt         DateTime?
+  logs              WarmupPoolLog[]
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+}
+
+model WarmupPoolLog {
+  id           String            @id @default(uuid())
+  poolId       String
+  pool         WarmupPool        @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  fromInstance String
+  toInstance   String
+  message      String
+  messageType  WarmupMessageType @default(TEXT)
+  status       String            @default("SENT")
+  delayUsed    Int               @default(0)
+  createdAt    DateTime          @default(now())
+}
