@@ -450,13 +450,34 @@ export const warmupWorker = new Worker(
             }
           }
 
+          // Atraso inteligente baseado no engajamento do contato
+          const hasReplied = logs.some(l => l.fromInstance === nextPhone);
+          const lastLog = logs[0]; // mais recente
+
+          let meanDelay = 90000;    // 90s padrão
+          let stdDevDelay = 45000;  // 45s padrão
+
+          if (!hasReplied) {
+            // Se o contato nunca respondeu nos logs recentes, espaçamos bastante (2.5h) para não parecer spam
+            meanDelay = 2.5 * 60 * 60 * 1000; // 2.5 horas
+            stdDevDelay = 30 * 60 * 1000;     // 30 minutos
+            console.log(`[Warmup Worker] Destinatário ${nextPhone} nunca respondeu. Agendando próximo envio em ~2.5h.`);
+          } else if (lastLog && lastLog.fromInstance === sourceInstance) {
+            // Se a última mensagem foi nossa e estamos enviando outra consecutiva, espaçamos em ~1h
+            meanDelay = 1 * 60 * 60 * 1000;   // 1 hora
+            stdDevDelay = 15 * 60 * 1000;     // 15 minutos
+            console.log(`[Warmup Worker] Destinatário ${nextPhone} já respondeu antes, mas a última mensagem foi nossa. Agendando em ~1h.`);
+          } else {
+            console.log(`[Warmup Worker] A última mensagem foi do destinatário ${nextPhone}. Agendando resposta rápida em ~90s.`);
+          }
+
           await queueWarmupMessage({
             campaignId,
             sourceInstance,
             targetPhone: nextPhone,
             isFirstMessageOfDay: false,
             currentTopic: topic,
-          });
+          }, meanDelay, stdDevDelay);
         }
       } else {
         console.error(`[Warmup Worker] Falha no envio para campanha ${campaignId}. Reagendando...`);

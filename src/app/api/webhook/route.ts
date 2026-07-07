@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { handleChatbotIncoming } from '@/lib/chatbot-processor';
+import { queueWarmupMessage, cancelCampaignWarmupJobs } from '@/lib/warmup-queue';
 
 export async function POST(request: Request) {
   try {
@@ -25,10 +26,60 @@ export async function POST(request: Request) {
                             messageData?.text || '';
         
         if (messageText) {
-          // Executa processador do chatbot de forma assíncrona (non-blocking)
-          handleChatbotIncoming(phone, messageText, instanceName).catch((err) => {
-            console.error('[Webhook] Erro no processamento do chatbot:', err);
+          // Só processa como resposta externa se o remetente NÃO for uma de nossas instâncias locais
+          const isLocalInstance = await prisma.whatsAppInstance.findFirst({
+            where: { phone }
           });
+
+          const warmupCampaign = !isLocalInstance
+            ? await prisma.warmupCampaign.findFirst({
+                where: {
+                  sourceInstance: instanceName,
+                  status: 'RUNNING',
+                  OR: [
+                    { targetPhone: phone },
+                    { targetPhones: { contains: phone } }
+                  ]
+                }
+              })
+            : null;
+
+          if (warmupCampaign) {
+            console.log(`[Webhook] Mensagem de aquecimento recebida de ${phone} para ${instanceName}`);
+            
+            // Salva no WarmupLog como mensagem vinda do outro número
+            await prisma.warmupLog.create({
+              data: {
+                campaignId: warmupCampaign.id,
+                fromInstance: phone,
+                toPhone: instanceName,
+                message: messageText,
+                messageType: 'TEXT',
+                status: 'READ',
+                delayUsed: 0,
+              }
+            });
+
+            // Cancela os jobs de resposta automática agendados na fila para esta campanha
+            await cancelCampaignWarmupJobs(warmupCampaign.id);
+
+            // Agenda uma resposta da instância de origem para o telefone em 30-90 segundos (resposta rápida)
+            await queueWarmupMessage(
+              {
+                campaignId: warmupCampaign.id,
+                sourceInstance: warmupCampaign.sourceInstance,
+                targetPhone: phone,
+                isFirstMessageOfDay: false,
+              },
+              60000, // média 60s
+              20000  // desvio 20s
+            );
+          } else {
+            // Executa processador do chatbot normal apenas se NÃO for uma mensagem de campanha de aquecimento ativa
+            handleChatbotIncoming(phone, messageText, instanceName).catch((err) => {
+              console.error('[Webhook] Erro no processamento do chatbot:', err);
+            });
+          }
         }
       }
     }
