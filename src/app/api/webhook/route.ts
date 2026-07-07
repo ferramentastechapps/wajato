@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { handleChatbotIncoming } from '@/lib/chatbot-processor';
 
 export async function POST(request: Request) {
   try {
@@ -7,6 +8,30 @@ export async function POST(request: Request) {
     const { event, data } = payload;
 
     console.log(`[Webhook] Evento recebido: ${event}`);
+
+    // Processa novas mensagens recebidas (Chatbot Auto-responder)
+    if (event === 'MESSAGES_UPSERT') {
+      const messageData = data?.message || data;
+      
+      // Ignora mensagens enviadas por nós mesmos para evitar loops infinitos
+      const fromMe = messageData?.key?.fromMe;
+      const remoteJid = messageData?.key?.remoteJid;
+      const instanceName = payload.instance || data?.instance;
+
+      if (!fromMe && remoteJid && remoteJid.endsWith('@s.whatsapp.net') && instanceName) {
+        const phone = remoteJid.split('@')[0];
+        const messageText = messageData?.message?.conversation || 
+                            messageData?.message?.extendedTextMessage?.text || 
+                            messageData?.text || '';
+        
+        if (messageText) {
+          // Executa processador do chatbot de forma assíncrona (non-blocking)
+          handleChatbotIncoming(phone, messageText, instanceName).catch((err) => {
+            console.error('[Webhook] Erro no processamento do chatbot:', err);
+          });
+        }
+      }
+    }
 
     // Processa atualizações de status de mensagem
     if (event === 'MESSAGES_UPDATE') {

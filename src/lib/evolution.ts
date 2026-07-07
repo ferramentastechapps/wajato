@@ -207,6 +207,7 @@ export const evolutionApi = {
         events: [
           'SEND_MESSAGE',
           'MESSAGES_SET',
+          'MESSAGES_UPSERT', // Mensagens recebidas (chatbot auto-responder)
           'MESSAGES_UPDATE', // Contém o status (delivered, read)
           'CONNECTION_UPDATE'
         ]

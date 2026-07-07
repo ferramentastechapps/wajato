@@ -201,3 +201,35 @@ model WarmupPoolLog {
   delayUsed    Int               @default(0)
   createdAt    DateTime          @default(now())
 }
+
+model ChatbotRule {
+  id          String   @id @default(uuid())
+  trigger     String   @unique
+  matchType   String   @default("EXACT") // EXACT, CONTAINS
+  response    String
+  imageUrl    String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model ChatbotConfig {
+  id                String   @id @default("global")
+  aiEnabled         Boolean  @default(false)
+  aiContext         String   @default("Você é um assistente de atendimento virtual prestativo e educado.")
+  businessHoursOnly Boolean  @default(false)
+  startHour         Int      @default(8)
+  endHour           Int      @default(18)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model ChatbotLog {
+  id         String   @id @default(uuid())
+  phone      String
+  messageIn  String
+  messageOut String
+  source     String   // RULE ou AI
+  createdAt  DateTime @default(now())
+}
+

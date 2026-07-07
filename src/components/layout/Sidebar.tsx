@@ -12,7 +12,8 @@ import {
   LogOut, 
   MessageSquare,
   Flame,
-  Smartphone
+  Smartphone,
+  Bot
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -41,6 +42,7 @@ export default function Sidebar({ username = 'Admin' }: SidebarProps) {
     { label: 'Contatos', href: '/contacts', icon: Users },
     { label: 'Templates', href: '/templates', icon: FileText },
     { label: 'Campanhas', href: '/campaigns', icon: Send },
+    { label: 'Auto-Responder', href: '/chatbot', icon: Bot },
     { label: 'Aquecimento', href: '/warmup', icon: Flame },
     { label: 'Métricas', href: '/metrics', icon: BarChart3 },
   ];

@@ -42,3 +42,21 @@ export const campaignSchema = z.object({
   delayMax: z.coerce.number().int().min(1, 'Delay máximo deve ser pelo menos 1 segundo').default(15),
   scheduledAt: z.preprocess((val) => val === '' || val === null ? null : val, z.string().datetime().nullable().optional()),
 });
+
+// Schemas para Chatbot Auto-responder
+export const chatbotRuleSchema = z.object({
+  id: z.string().uuid('ID inválido').optional().nullable(),
+  trigger: z.string().trim().min(1, 'A palavra-chave/gatilho é obrigatória'),
+  matchType: z.enum(['EXACT', 'CONTAINS']),
+  response: z.string().trim().min(1, 'A mensagem de resposta é obrigatória'),
+  imageUrl: z.string().url('URL da imagem inválida').or(z.literal('')).nullable().optional(),
+  isActive: z.boolean().default(true),
+});
+
+export const chatbotConfigSchema = z.object({
+  aiEnabled: z.boolean(),
+  aiContext: z.string().trim().min(1, 'O contexto de inteligência artificial é obrigatório'),
+  businessHoursOnly: z.boolean(),
+  startHour: z.coerce.number().int().min(0).max(23),
+  endHour: z.coerce.number().int().min(0).max(23),
+});
