@@ -15,14 +15,17 @@ import {
   Smartphone,
   Bot,
   ListFilter,
-  Columns
+  Columns,
+  X
 } from 'lucide-react';
 
 interface SidebarProps {
   username?: string;
+  isOpen?: boolean;
+  onClose?: () => void;
 }
 
-export default function Sidebar({ username = 'Admin' }: SidebarProps) {
+export default function Sidebar({ username = 'Admin', isOpen = false, onClose }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
 
@@ -52,12 +55,30 @@ export default function Sidebar({ username = 'Admin' }: SidebarProps) {
   ];
 
   return (
-    <aside className="sidebar">
-      <div className="sidebar-brand">
+    <aside className={`sidebar ${isOpen ? 'open' : ''}`}>
+      <div className="sidebar-brand" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
         <div className="brand-logo">
           <MessageSquare size={24} style={{ fill: 'currentColor' }} />
           <span>WaJato</span>
         </div>
+        {onClose && (
+          <button 
+            onClick={onClose} 
+            style={{ 
+              background: 'none', 
+              border: 'none', 
+              cursor: 'pointer', 
+              color: 'var(--text-secondary)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '0.25rem'
+            }}
+            aria-label="Fechar menu"
+          >
+            <X size={20} />
+          </button>
+        )}
       </div>
 
       <nav className="sidebar-nav">
@@ -69,6 +90,7 @@ export default function Sidebar({ username = 'Admin' }: SidebarProps) {
               key={item.href} 
               href={item.href} 
               className={`nav-link ${isActive ? 'active' : ''}`}
+              onClick={() => onClose && onClose()}
             >
               <Icon size={18} />
               <span>{item.label}</span>
