@@ -22,6 +22,7 @@ async function main() {
       data: {
         username,
         password: hashedPassword,
+        role: 'ADMIN',
       },
     });
     console.log(`Usuário administrador criado: ${user.username}`);

@@ -70,6 +70,8 @@ export async function GET(request: Request) {
   }
 }
 
+import { contactSchema, contactImportSchema } from '@/lib/validation';
+
 export async function POST(request: Request) {
   try {
     const user = await getSessionUser();
@@ -81,7 +83,15 @@ export async function POST(request: Request) {
 
     // Caso de Importação em Massa (Lote) com Grupos Dinâmicos
     if (body.contacts && Array.isArray(body.contacts)) {
-      const { contacts, groupId: defaultGroupId } = body;
+      const result = contactImportSchema.safeParse(body);
+      if (!result.success) {
+        return NextResponse.json(
+          { message: result.error.issues[0].message },
+          { status: 400 }
+        );
+      }
+
+      const { contacts, groupId: defaultGroupId } = result.data;
       
       // 1. Identifica nomes de grupos únicos contidos nas linhas do CSV
       const uniqueGroupNames: string[] = Array.from(
@@ -128,26 +138,28 @@ export async function POST(request: Request) {
         .filter((item: any) => item.phone !== '');
 
       // 4. Salva em lote de forma otimizada
-      const result = await prisma.contact.createMany({
+      const bulkResult = await prisma.contact.createMany({
         data: formattedContacts,
         skipDuplicates: true,
       });
 
       return NextResponse.json({
         success: true,
-        message: `${result.count} contatos importados com sucesso.`,
-        count: result.count,
+        message: `${bulkResult.count} contatos importados com sucesso.`,
+        count: bulkResult.count,
       });
     }
 
     // Caso de Criação Individual
-    const { name, phone, tags, groupId } = body;
-    if (!phone) {
+    const result = contactSchema.safeParse(body);
+    if (!result.success) {
       return NextResponse.json(
-        { message: 'Telefone é obrigatório' },
+        { message: result.error.issues[0].message },
         { status: 400 }
       );
     }
+
+    const { name, phone, tags, groupId } = result.data;
 
     const cleanPhone = evolutionApi.formatPhone(phone);
 

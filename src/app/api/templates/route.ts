@@ -23,6 +23,8 @@ export async function GET() {
   }
 }
 
+import { templateSchema } from '@/lib/validation';
+
 export async function POST(request: Request) {
   try {
     const user = await getSessionUser();
@@ -30,28 +32,37 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: 'Não autorizado' }, { status: 401 });
     }
 
-    const { id, name, body, imageUrl } = await request.json();
+    const body = await request.json();
+    const result = templateSchema.safeParse(body);
 
-    if (!name || !body) {
+    if (!result.success) {
       return NextResponse.json(
-        { message: 'Nome e texto da mensagem são obrigatórios' },
+        { message: result.error.issues[0].message },
         { status: 400 }
       );
     }
 
-    const template = await prisma.template.upsert({
-      where: { id: id || 'new-uuid' },
-      update: {
-        name,
-        body,
-        imageUrl: imageUrl || null,
-      },
-      create: {
-        name,
-        body,
-        imageUrl: imageUrl || null,
-      },
-    });
+    const { id, name, body: messageBody, imageUrl } = result.data;
+
+    let template;
+    if (id) {
+      template = await prisma.template.update({
+        where: { id },
+        data: {
+          name,
+          body: messageBody,
+          imageUrl: imageUrl || null,
+        },
+      });
+    } else {
+      template = await prisma.template.create({
+        data: {
+          name,
+          body: messageBody,
+          imageUrl: imageUrl || null,
+        },
+      });
+    }
 
     return NextResponse.json({ success: true, template });
   } catch (error: any) {

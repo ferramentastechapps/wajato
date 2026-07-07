@@ -67,6 +67,8 @@ export async function GET() {
   }
 }
 
+import { campaignSchema } from '@/lib/validation';
+
 export async function POST(request: Request) {
   try {
     const user = await getSessionUser();
@@ -74,22 +76,26 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: 'Não autorizado' }, { status: 401 });
     }
 
-    const { name, templateId, groupId, delayMin, delayMax } = await request.json();
+    const body = await request.json();
+    const result = campaignSchema.safeParse(body);
 
-    if (!name || !templateId || !groupId) {
+    if (!result.success) {
       return NextResponse.json(
-        { message: 'Nome, template e grupo de contatos são obrigatórios' },
+        { message: result.error.issues[0].message },
         { status: 400 }
       );
     }
+
+    const { name, templateId, groupId, delayMin, delayMax, scheduledAt } = result.data;
 
     const campaign = await prisma.campaign.create({
       data: {
         name,
         templateId,
         groupId,
-        delayMin: parseInt(delayMin || '5', 10),
-        delayMax: parseInt(delayMax || '15', 10),
+        delayMin,
+        delayMax,
+        scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
         status: 'DRAFT',
       },
       include: {

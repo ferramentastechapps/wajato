@@ -52,6 +52,62 @@ export async function GET() {
       take: 1000, // Limita a 1000 logs para evitar sobrecarregar
     });
 
+    // 5. Histórico dos últimos 7 dias para gráficos
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    sevenDaysAgo.setHours(0, 0, 0, 0);
+
+    const recentLogs = await prisma.messageLog.findMany({
+      where: {
+        updatedAt: { gte: sevenDaysAgo },
+        status: { in: ['SENT', 'DELIVERED', 'READ', 'FAILED'] }
+      },
+      select: {
+        status: true,
+        updatedAt: true
+      }
+    });
+
+    const dailyHistory: Record<string, { sent: number; delivered: number; read: number; failed: number }> = {};
+    
+    // Inicializa o mapa com os últimos 7 dias (fuso BRT)
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const dateStr = d.toISOString().split('T')[0];
+      dailyHistory[dateStr] = { sent: 0, delivered: 0, read: 0, failed: 0 };
+    }
+
+    recentLogs.forEach(log => {
+      if (log.updatedAt) {
+        const dateStr = log.updatedAt.toISOString().split('T')[0];
+        if (dailyHistory[dateStr]) {
+          if (log.status === 'SENT') dailyHistory[dateStr].sent++;
+          else if (log.status === 'DELIVERED') dailyHistory[dateStr].delivered++;
+          else if (log.status === 'READ') dailyHistory[dateStr].read++;
+          else if (log.status === 'FAILED') dailyHistory[dateStr].failed++;
+        }
+      }
+    });
+
+    const dailyHistoryArray = Object.entries(dailyHistory).map(([date, counts]) => ({
+      date,
+      ...counts
+    })).sort((a, b) => a.date.localeCompare(b.date));
+
+    // 6. Desempenho e saúde dos chips ativos
+    const chipPerformance = await prisma.whatsAppInstance.findMany({
+      orderBy: { dailyMsgCount: 'desc' },
+      select: {
+        name: true,
+        phone: true,
+        status: true,
+        dailyMsgCount: true,
+        healthScore: true,
+        profileName: true
+      }
+    });
+
     return NextResponse.json({
       success: true,
       metrics: {
@@ -60,6 +116,8 @@ export async function GET() {
         contactsCount,
         failedLogs,
         exportLogs,
+        dailyHistory: dailyHistoryArray,
+        chipPerformance,
       },
     });
   } catch (error: any) {

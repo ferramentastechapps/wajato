@@ -24,13 +24,21 @@ enum MessageStatus {
   FAILED
 }
 
+enum UserRole {
+  ADMIN
+  OPERATOR
+  VIEWER
+}
+
 model User {
   id        String   @id @default(uuid())
   username  String   @unique
   password  String
+  role      UserRole @default(VIEWER)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
 
 model Contact {
   id        String       @id @default(uuid())
@@ -102,6 +110,8 @@ model WhatsAppInstance {
   qrCode        String?
   profileName   String?  // Nome do perfil do WhatsApp
   profilePicUrl String?  // Foto de perfil do WhatsApp
+  dailyMsgCount Int      @default(0)
+  healthScore   Int      @default(100) // 0 a 100
   updatedAt     DateTime @updatedAt
 }
 

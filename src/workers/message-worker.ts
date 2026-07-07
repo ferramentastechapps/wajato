@@ -3,10 +3,9 @@ import { redisConfiguration } from '../lib/redis';
 import { prisma } from '../lib/prisma';
 import { evolutionApi } from '../lib/evolution';
 import { MessageJobData } from '../lib/queue';
+import { getNextWhatsAppInstance, reportChipSuccess, reportChipFailure } from '../lib/chip-router';
 import './warmup-worker'; // Importa para iniciar o worker de aquecimento junto
 import './warmup-pool-worker'; // Importa o worker de pool mútuo
-
-const INSTANCE_NAME = process.env.EVOLUTION_INSTANCE_NAME || 'wajato-session';
 
 console.log('Iniciando o Worker de Mensagens do WaJato...');
 
@@ -54,13 +53,16 @@ const worker = new Worker(
       .replace(/{{nome}}/g, contactName)
       .replace(/{{link}}/g, groupLink);
 
-    // 4. Executa o envio pela Evolution API
+    // 4. Seleciona dinamicamente o chip ativo / saudável
+    const activeInstanceName = await getNextWhatsAppInstance();
+
+    // 5. Executa o envio pela Evolution API
     try {
       let response;
       if (log.campaign.template.imageUrl) {
         // Envia mensagem de mídia (Imagem) com legenda
         response = await evolutionApi.sendMediaMessage(
-          INSTANCE_NAME,
+          activeInstanceName,
           phone,
           log.campaign.template.imageUrl,
           'image',
@@ -69,15 +71,18 @@ const worker = new Worker(
       } else {
         // Envia texto simples
         response = await evolutionApi.sendTextMessage(
-          INSTANCE_NAME,
+          activeInstanceName,
           phone,
           messageText
         );
       }
 
-      console.log(`[Worker] Mensagem ${messageLogId} enviada com sucesso para ${phone}`);
+      console.log(`[Worker] Mensagem ${messageLogId} enviada com sucesso para ${phone} via ${activeInstanceName}`);
 
-      // 5. Atualiza o status no banco local para SENT
+      // Registra sucesso do chip no router
+      await reportChipSuccess(activeInstanceName);
+
+      // 6. Atualiza o status no banco local para SENT
       await prisma.messageLog.update({
         where: { id: messageLogId },
         data: {
@@ -87,17 +92,21 @@ const worker = new Worker(
         },
       });
 
-      // 6. Verifica se esta foi a última mensagem da campanha para finalizá-la
+      // 7. Verifica se esta foi a última mensagem da campanha para finalizá-la
       await checkAndUpdateCampaignStatus(campaignId);
 
     } catch (error: any) {
-      console.error(`[Worker] Erro ao enviar mensagem ${messageLogId}:`, error.message);
+      const errorMsg = error.message || 'Erro desconhecido no envio';
+      console.error(`[Worker] Erro ao enviar mensagem ${messageLogId}:`, errorMsg);
       
+      // Registra falha do chip no router para rebaixar sua saúde
+      await reportChipFailure(activeInstanceName, errorMsg);
+
       await prisma.messageLog.update({
         where: { id: messageLogId },
         data: {
           status: 'FAILED',
-          error: error.message || 'Erro desconhecido no envio',
+          error: errorMsg,
         },
       });
 
