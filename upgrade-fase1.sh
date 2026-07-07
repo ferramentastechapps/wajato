@@ -33,9 +33,7 @@ if npx prisma migrate deploy 2>/dev/null; then
   echo "  ✅ Migrate deploy aplicado com sucesso."
 else
   echo "  ⚠️  Migrate deploy falhou — aplicando SQL manual..."
-  DATABASE_URL=$(grep DATABASE_URL .env | cut -d '=' -f2- | tr -d '"')
-  docker compose exec -T wajato-db psql -U wajato -d wajato_db \
-    -f /opt/wajato/prisma/migrations/fase1_security_chip_router.sql
+  docker compose exec -T wajato-db psql -U wajato -d wajato_db < prisma/migrations/fase1_security_chip_router.sql
   echo "  ✅ SQL manual aplicado."
 fi
 
