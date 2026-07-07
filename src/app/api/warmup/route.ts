@@ -84,6 +84,8 @@ export async function POST(req: Request) {
       sourceInstance,
       targetInstance,
       targetPhone,
+      targetPhones,
+      customContext,
       totalDays = 30,
       startHour = 8,
       endHour = 22,
@@ -91,9 +93,17 @@ export async function POST(req: Request) {
       maxMsgsPerDay = 150,
     } = body;
 
-    if (!sourceInstance || !targetPhone) {
-      return NextResponse.json({ error: 'sourceInstance e targetPhone são obrigatórios' }, { status: 400 });
+    const resolvedTargetPhones = targetPhones || targetPhone;
+
+    if (!sourceInstance || !resolvedTargetPhones) {
+      return NextResponse.json({ error: 'Instância de origem e telefones de destino são obrigatórios' }, { status: 400 });
     }
+
+    const phonesList = resolvedTargetPhones.split(',').map((p: string) => p.trim()).filter(Boolean);
+    if (phonesList.length === 0) {
+      return NextResponse.json({ error: 'Nenhum telefone de destino válido fornecido' }, { status: 400 });
+    }
+    const firstPhone = phonesList[0];
 
     // Validações
     if (startHour < 0 || startHour > 23 || endHour < 1 || endHour > 23 || startHour >= endHour) {
@@ -108,10 +118,12 @@ export async function POST(req: Request) {
 
     const campaign = await prisma.warmupCampaign.create({
       data: {
-        name: name || `Aquecimento ${sourceInstance} → ${targetPhone}`,
+        name: name || `Aquecimento ${sourceInstance}`,
         sourceInstance,
         targetInstance: targetInstance || null,
-        targetPhone,
+        targetPhone: firstPhone,
+        targetPhones: phonesList.join(','),
+        customContext: customContext || null,
         totalDays,
         targetMsgsToday: firstDayTarget,
         initialMsgsPerDay,
@@ -126,7 +138,7 @@ export async function POST(req: Request) {
       {
         campaignId: campaign.id,
         sourceInstance,
-        targetPhone,
+        targetPhone: firstPhone,
         isFirstMessageOfDay: true,
       },
       30000,

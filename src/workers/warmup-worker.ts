@@ -225,6 +225,11 @@ export const warmupWorker = new Worker(
       const recentTopics = logs.slice(-3).map(l => l.message.substring(0, 30));
       const topic = currentTopic || selectConversationTopic(recentTopics);
 
+      // Contexto da persona customizado ou padrão
+      const personaContext = campaign.customContext
+        ? `${campaign.customContext}. Dia ${campaign.currentDay} de conversa. Assunto: ${topic}`
+        : `Você é ${sourceInstance}. Dia ${campaign.currentDay} de conversa. Assunto: ${topic}`;
+
       console.log(`[Warmup Worker] Ação escolhida: ${action} para campanha ${campaignId}`);
 
       // ── 10. Executar ação escolhida ────────────────────────────────────────
@@ -316,7 +321,7 @@ export const warmupWorker = new Worker(
           // Fallback para texto se áudio falhar
           try {
             messageType = 'TEXT';
-            const context = `Você é ${sourceInstance}. Dia ${campaign.currentDay} de conversa. Assunto: ${topic}`;
+            const context = personaContext;
             messageText = await generateNextWarmupMessage(context, history, topic);
             typingDelay = calculateTypingDelay(messageText);
             await new Promise(r => setTimeout(r, typingDelay));
@@ -332,7 +337,7 @@ export const warmupWorker = new Worker(
         messageType = 'TEXT';
         
         // Contexto da persona
-        const context = `Você é ${sourceInstance}. Dia ${campaign.currentDay} de conversa. Assunto: ${topic}`;
+        const context = personaContext;
         
         // Marcar mensagens como lidas antes de responder (comportamento natural)
         if (history.length > 0) {
@@ -390,24 +395,65 @@ export const warmupWorker = new Worker(
           });
 
           if (sourceInst?.phone) {
-            const nextSource = sourceInstance === campaign.sourceInstance
-              ? campaign.targetInstance
-              : campaign.sourceInstance;
+            // Se quem enviou agora foi a origem da campanha, a resposta deve vir do destino
+            if (sourceInstance === campaign.sourceInstance) {
+              await queueWarmupMessage({
+                campaignId,
+                sourceInstance: campaign.targetInstance,
+                targetPhone: sourceInst.phone, // envia de volta para o telefone da origem
+                isFirstMessageOfDay: false,
+                currentTopic: topic,
+              });
+            } else {
+              // Se quem enviou foi o destino, o ciclo completo A -> B -> A acabou.
+              // Agora a origem A inicia nova conversa com o PRÓXIMO telefone da lista (se houver múltiplos).
+              let nextPhone = campaign.targetPhone;
+              if (campaign.targetPhones) {
+                const phones = campaign.targetPhones.split(',').map(p => p.trim()).filter(Boolean);
+                if (phones.length > 1) {
+                  const currentIndex = phones.indexOf(campaign.targetPhone);
+                  const nextIndex = (currentIndex + 1) % phones.length;
+                  nextPhone = phones[nextIndex];
 
-            await queueWarmupMessage({
-              campaignId,
-              sourceInstance: nextSource,
-              targetPhone: sourceInst.phone,
-              isFirstMessageOfDay: false,
-              currentTopic: topic,
-            });
+                  // Atualiza o targetPhone ativo no banco
+                  await prisma.warmupCampaign.update({
+                    where: { id: campaignId },
+                    data: { targetPhone: nextPhone },
+                  });
+                }
+              }
+
+              await queueWarmupMessage({
+                campaignId,
+                sourceInstance: campaign.sourceInstance,
+                targetPhone: nextPhone,
+                isFirstMessageOfDay: false,
+                currentTopic: topic,
+              });
+            }
           }
         } else {
           // Unidirecional: mesma instância continua mandando
+          let nextPhone = targetPhone;
+          if (campaign.targetPhones) {
+            const phones = campaign.targetPhones.split(',').map(p => p.trim()).filter(Boolean);
+            if (phones.length > 1) {
+              const currentIndex = phones.indexOf(targetPhone);
+              const nextIndex = (currentIndex + 1) % phones.length;
+              nextPhone = phones[nextIndex];
+
+              // Atualiza o targetPhone ativo no banco
+              await prisma.warmupCampaign.update({
+                where: { id: campaignId },
+                data: { targetPhone: nextPhone },
+              });
+            }
+          }
+
           await queueWarmupMessage({
             campaignId,
             sourceInstance,
-            targetPhone,
+            targetPhone: nextPhone,
             isFirstMessageOfDay: false,
             currentTopic: topic,
           });

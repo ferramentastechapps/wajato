@@ -152,6 +152,8 @@ model WarmupCampaign {
   sourceInstance   String       // Nome da instância que inicia o papo
   targetInstance   String?      // Nome da instância que responde (opcional para bidirecional)
   targetPhone      String       // Telefone da instância destino
+  targetPhones     String?      // Lista de telefones separados por vírgula para rotação
+  customContext    String?      // Contexto ou Persona customizada de IA
   status           WarmupStatus @default(RUNNING)
   currentDay       Int          @default(1)
   totalDays        Int          @default(30)
