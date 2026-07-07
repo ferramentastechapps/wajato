@@ -59,6 +59,13 @@ export default function ContactsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [importProgress, setImportProgress] = useState<{ current: number; total: number } | null>(null);
 
+  // Exclusão em Massa
+  const [showBulkDelete, setShowBulkDelete] = useState(false);
+  const [bulkDeleteAction, setBulkDeleteAction] = useState<'clear_all' | 'delete_by_group' | 'delete_ungrouped'>('clear_all');
+  const [bulkDeleteGroupId, setBulkDeleteGroupId] = useState('');
+  const [bulkDeleteConfirmText, setBulkDeleteConfirmText] = useState('');
+  const [bulkDeleteError, setBulkDeleteError] = useState('');
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Carrega dados iniciais
@@ -327,6 +334,44 @@ export default function ContactsPage() {
     }
   };
 
+  const handleBulkDeleteSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBulkDeleteError('');
+
+    if (bulkDeleteConfirmText !== 'EXCLUIR') {
+      setBulkDeleteError('Digite EXCLUIR para confirmar.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const response = await fetch('/api/contacts', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: bulkDeleteAction,
+          groupId: bulkDeleteAction === 'delete_by_group' ? bulkDeleteGroupId : undefined,
+        }),
+      });
+
+      if (response.ok) {
+        setShowBulkDelete(false);
+        setBulkDeleteConfirmText('');
+        setBulkDeleteGroupId('');
+        fetchData();
+        setSelectedContacts([]);
+      } else {
+        const data = await response.json();
+        setBulkDeleteError(data.message || 'Erro ao processar exclusão em massa.');
+      }
+    } catch (err) {
+      console.error(err);
+      setBulkDeleteError('Erro ao se conectar ao servidor.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   // Excluir um único contato
   const handleDeleteContact = async (id: string) => {
     if (!confirm('Deseja excluir este contato?')) return;
@@ -387,6 +432,10 @@ export default function ContactsPage() {
             <button onClick={() => setShowImportCSV(true)} className="btn btn-secondary">
               <Upload size={16} />
               Importar CSV
+            </button>
+            <button onClick={() => setShowBulkDelete(true)} className="btn btn-secondary" style={{ color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.2)' }}>
+              <Trash2 size={16} />
+              Excluir em Massa
             </button>
             {selectedContacts.length > 0 && (
               <button onClick={handleDeleteSelected} className="btn btn-danger">
@@ -758,6 +807,135 @@ export default function ContactsPage() {
                   disabled={isSubmitting || !csvFileContent}
                 >
                   {isSubmitting ? 'Importando...' : 'Iniciar Importação'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Exclusão em Massa */}
+      {showBulkDelete && (
+        <div className="modal-overlay">
+          <div className="modal-content" style={{ maxWidth: '450px' }}>
+            <div className="modal-header">
+              <h3 className="modal-title" style={{ color: '#ef4444' }}>Excluir Contatos em Massa</h3>
+              <X className="modal-close" onClick={() => { setShowBulkDelete(false); setBulkDeleteError(''); setBulkDeleteConfirmText(''); }} />
+            </div>
+            <form onSubmit={handleBulkDeleteSubmit}>
+              <div className="modal-body">
+                {bulkDeleteError && (
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                    border: '1px solid rgba(239, 68, 68, 0.2)',
+                    color: '#ef4444',
+                    padding: '0.75rem',
+                    borderRadius: '8px',
+                    marginBottom: '1rem',
+                    fontSize: '0.8125rem'
+                  }}>
+                    <AlertCircle size={16} />
+                    <span>{bulkDeleteError}</span>
+                  </div>
+                )}
+
+                <div className="form-group">
+                  <label className="form-label" style={{ fontWeight: 600 }}>O que você deseja excluir?</label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginTop: '0.5rem' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.85rem', color: 'white' }}>
+                      <input
+                        type="radio"
+                        name="bulkDeleteAction"
+                        checked={bulkDeleteAction === 'clear_all'}
+                        onChange={() => setBulkDeleteAction('clear_all')}
+                      />
+                      Excluir TODOS os contatos ({contacts.length.toLocaleString()})
+                    </label>
+
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.85rem', color: 'white' }}>
+                      <input
+                        type="radio"
+                        name="bulkDeleteAction"
+                        checked={bulkDeleteAction === 'delete_by_group'}
+                        onChange={() => setBulkDeleteAction('delete_by_group')}
+                      />
+                      Excluir contatos de um Grupo
+                    </label>
+
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.85rem', color: 'white' }}>
+                      <input
+                        type="radio"
+                        name="bulkDeleteAction"
+                        checked={bulkDeleteAction === 'delete_ungrouped'}
+                        onChange={() => setBulkDeleteAction('delete_ungrouped')}
+                      />
+                      Excluir contatos Avulsos (Sem grupo)
+                    </label>
+                  </div>
+                </div>
+
+                {bulkDeleteAction === 'delete_by_group' && (
+                  <div className="form-group" style={{ marginTop: '1rem' }}>
+                    <label className="form-label">Selecione o Grupo</label>
+                    <select
+                      className="input-control"
+                      value={bulkDeleteGroupId}
+                      onChange={(e) => setBulkDeleteGroupId(e.target.value)}
+                      required
+                    >
+                      <option value="">Selecione...</option>
+                      {groups.map((g) => (
+                        <option key={g.id} value={g.id}>{g.name} ({g._count?.contacts || 0})</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div style={{
+                  marginTop: '1.5rem',
+                  padding: '0.75rem',
+                  backgroundColor: 'rgba(239,68,68,0.06)',
+                  border: '1px solid rgba(239,68,68,0.15)',
+                  borderRadius: '8px',
+                  fontSize: '0.8rem',
+                  color: '#9ca3af',
+                  lineHeight: '1.4'
+                }}>
+                  <p style={{ fontWeight: 600, color: '#ef4444', marginBottom: 4 }}>⚠️ ATENÇÃO: ESTA AÇÃO É IRREVERSÍVEL!</p>
+                  Todos os dados de envio, histórico de mensagens e campanhas associadas a estes contatos serão removidos de forma permanente.
+                </div>
+
+                <div className="form-group" style={{ marginTop: '1.25rem' }}>
+                  <label className="form-label">Confirme digitando <strong>EXCLUIR</strong> abaixo:</label>
+                  <input
+                    type="text"
+                    className="input-control"
+                    placeholder="EXCLUIR"
+                    style={{ borderColor: bulkDeleteConfirmText === 'EXCLUIR' ? '#25d366' : 'var(--border)' }}
+                    value={bulkDeleteConfirmText}
+                    onChange={(e) => setBulkDeleteConfirmText(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => { setShowBulkDelete(false); setBulkDeleteError(''); setBulkDeleteConfirmText(''); }}
+                  disabled={isSubmitting}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-danger"
+                  disabled={isSubmitting || bulkDeleteConfirmText !== 'EXCLUIR'}
+                >
+                  {isSubmitting ? 'Excluindo...' : 'Confirmar Exclusão'}
                 </button>
               </div>
             </form>

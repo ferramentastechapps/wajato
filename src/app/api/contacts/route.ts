@@ -127,8 +127,48 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ success: true, message: 'Contato excluído' });
     }
 
-    // Excluir múltiplos contatos (IDs enviados no body)
+    // Excluir múltiplos contatos ou ações em massa
     const body = await request.json().catch(() => ({}));
+    
+    // Ação: Excluir todos os contatos
+    if (body.action === 'clear_all') {
+      const result = await prisma.contact.deleteMany();
+      return NextResponse.json({ 
+        success: true, 
+        message: 'Todos os contatos foram excluídos.', 
+        count: result.count 
+      });
+    }
+
+    // Ação: Excluir por grupo
+    if (body.action === 'delete_by_group') {
+      const { groupId } = body;
+      if (!groupId) {
+        return NextResponse.json({ message: 'Grupo não informado' }, { status: 400 });
+      }
+      const result = await prisma.contact.deleteMany({
+        where: { groupId },
+      });
+      return NextResponse.json({ 
+        success: true, 
+        message: 'Contatos do grupo excluídos.', 
+        count: result.count 
+      });
+    }
+
+    // Ação: Excluir avulsos (sem grupo)
+    if (body.action === 'delete_ungrouped') {
+      const result = await prisma.contact.deleteMany({
+        where: { groupId: null },
+      });
+      return NextResponse.json({ 
+        success: true, 
+        message: 'Contatos avulsos excluídos.', 
+        count: result.count 
+      });
+    }
+
+    // Excluir lote de IDs selecionados
     if (body.ids && Array.isArray(body.ids)) {
       await prisma.contact.deleteMany({
         where: {
@@ -139,7 +179,7 @@ export async function DELETE(request: Request) {
     }
 
     return NextResponse.json(
-      { message: 'Parâmetro ID ou lista de IDs ausente' },
+      { message: 'Parâmetro ID, lista de IDs ou ação em massa ausente' },
       { status: 400 }
     );
   } catch (error: any) {
