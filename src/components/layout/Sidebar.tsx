@@ -14,7 +14,8 @@ import {
   Flame,
   Smartphone,
   Bot,
-  ListFilter
+  ListFilter,
+  Columns
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -42,6 +43,7 @@ export default function Sidebar({ username = 'Admin' }: SidebarProps) {
     { label: 'Conexões', href: '/connections', icon: Smartphone },
     { label: 'Contatos', href: '/contacts', icon: Users },
     { label: 'Segmentações', href: '/contacts/segments', icon: ListFilter },
+    { label: 'CRM Kanban', href: '/crm', icon: Columns },
     { label: 'Templates', href: '/templates', icon: FileText },
     { label: 'Campanhas', href: '/campaigns', icon: Send },
     { label: 'Auto-Responder', href: '/chatbot', icon: Bot },
