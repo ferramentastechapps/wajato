@@ -17,8 +17,8 @@ echo "  WaJato — Upgrade Fase 1: Segurança + Chip Router"
 echo "======================================================="
 
 echo ""
-echo "[1/5] Atualizando código do projeto (git pull)..."
-git pull origin master
+echo "[1/5] Atualizando código do projeto (unzip)..."
+unzip -o deploy.zip
 echo "  ✅ Código atualizado."
 
 echo ""
