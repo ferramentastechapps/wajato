@@ -3,18 +3,47 @@ import { getSessionUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { evolutionApi } from '@/lib/evolution';
 
-export async function GET() {
+// GET — Listagem de contatos paginada e com filtros otimizada para o banco
+export async function GET(request: Request) {
   try {
     const user = await getSessionUser();
     if (!user) {
       return NextResponse.json({ message: 'Não autorizado' }, { status: 401 });
     }
 
-    const [contacts, groups] = await Promise.all([
+    const { searchParams } = new URL(request.url);
+    const page = parseInt(searchParams.get('page') || '1', 10);
+    const limit = parseInt(searchParams.get('limit') || '50', 10);
+    const search = searchParams.get('search') || '';
+    const groupId = searchParams.get('groupId') || '';
+
+    // Cláusula de busca no banco
+    const where: any = {};
+
+    if (groupId) {
+      where.groupId = groupId;
+    }
+
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { phone: { contains: search } },
+      ];
+    }
+
+    const skip = (page - 1) * limit;
+    const take = limit;
+
+    // Busca os contatos da página atual, o total e os grupos de filtros
+    const [contacts, total, groups] = await Promise.all([
       prisma.contact.findMany({
-        orderBy: { name: 'asc' },
+        where,
+        orderBy: { updatedAt: 'desc' },
+        skip,
+        take,
         include: { group: { select: { id: true, name: true } } },
       }),
+      prisma.contact.count({ where }),
       prisma.contactGroup.findMany({
         orderBy: { name: 'asc' },
         include: { _count: { select: { contacts: true } } },
@@ -25,6 +54,12 @@ export async function GET() {
       success: true,
       contacts,
       groups,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
     });
   } catch (error: any) {
     console.error('Erro ao listar contatos:', error);
@@ -44,20 +79,55 @@ export async function POST(request: Request) {
 
     const body = await request.json();
 
-    // Caso de Importação em Massa (Lote)
+    // Caso de Importação em Massa (Lote) com Grupos Dinâmicos
     if (body.contacts && Array.isArray(body.contacts)) {
-      const { contacts, groupId } = body;
+      const { contacts, groupId: defaultGroupId } = body;
       
+      // 1. Identifica nomes de grupos únicos contidos nas linhas do CSV
+      const uniqueGroupNames: string[] = Array.from(
+        new Set(
+          contacts
+            .map((c: any) => c.groupName?.trim())
+            .filter((name: any): name is string => typeof name === 'string' && name !== '')
+        )
+      );
+
+      // 2. Resolve ou cria os grupos e mapeia seus IDs
+      const groupMap: Record<string, string> = {};
+      for (const name of uniqueGroupNames) {
+        let group = await prisma.contactGroup.findUnique({
+          where: { name },
+        });
+        if (!group) {
+          group = await prisma.contactGroup.create({
+            data: { name, description: 'Criado automaticamente via importação CSV' },
+          });
+        }
+        groupMap[name] = group.id;
+      }
+
+      // 3. Formata contatos mapeando o groupId
       const formattedContacts = contacts
         .filter((item: any) => item.phone)
-        .map((item: any) => ({
-          phone: evolutionApi.formatPhone(item.phone),
-          name: item.name || null,
-          tags: item.tags || [],
-          groupId: groupId || null,
-        }))
+        .map((item: any) => {
+          let finalGroupId = defaultGroupId || null;
+          if (item.groupName && typeof item.groupName === 'string') {
+            const gName = item.groupName.trim();
+            if (gName && groupMap[gName]) {
+              finalGroupId = groupMap[gName];
+            }
+          }
+
+          return {
+            phone: evolutionApi.formatPhone(item.phone),
+            name: item.name || null,
+            tags: item.tags || [],
+            groupId: finalGroupId,
+          };
+        })
         .filter((item: any) => item.phone !== '');
 
+      // 4. Salva em lote de forma otimizada
       const result = await prisma.contact.createMany({
         data: formattedContacts,
         skipDuplicates: true,

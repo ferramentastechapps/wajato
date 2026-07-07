@@ -66,17 +66,47 @@ export default function ContactsPage() {
   const [bulkDeleteConfirmText, setBulkDeleteConfirmText] = useState('');
   const [bulkDeleteError, setBulkDeleteError] = useState('');
 
+  // Paginação
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(50);
+  const [totalContacts, setTotalContacts] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Carrega dados iniciais
-  const fetchData = async () => {
+  const [debouncedSearch, setDebouncedSearch] = useState(search);
+
+  // Debounce para busca
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 400);
+    return () => clearTimeout(handler);
+  }, [search]);
+
+  // Carrega dados iniciais e paginados
+  const fetchData = async (currentPage = page, searchVal = debouncedSearch, groupFilter = selectedGroupFilter) => {
     setLoading(true);
     try {
-      const response = await fetch('/api/contacts');
+      const query = new URLSearchParams({
+        page: String(currentPage),
+        limit: String(limit),
+        search: searchVal,
+        groupId: groupFilter,
+      });
+      const response = await fetch(`/api/contacts?${query.toString()}`);
       if (response.ok) {
         const data = await response.json();
         setContacts(data.contacts || []);
         setGroups(data.groups || []);
+        if (data.pagination) {
+          setTotalContacts(data.pagination.total || 0);
+          setTotalPages(data.pagination.totalPages || 1);
+          // Atualiza apenas se mudou
+          if (data.pagination.page !== page) {
+            setPage(data.pagination.page);
+          }
+        }
       }
     } catch (err) {
       console.error('Erro ao buscar contatos:', err);
@@ -85,21 +115,18 @@ export default function ContactsPage() {
     }
   };
 
+  // Reseta página para 1 quando o filtro ou busca mudam
   useEffect(() => {
-    fetchData();
-  }, []);
+    setPage(1);
+  }, [selectedGroupFilter, debouncedSearch]);
 
-  // Filtros
-  const filteredContacts = contacts.filter((c) => {
-    const matchesSearch = 
-      (c.name?.toLowerCase().includes(search.toLowerCase()) || false) ||
-      c.phone.includes(search) ||
-      c.tags.some(t => t.toLowerCase().includes(search.toLowerCase()));
-      
-    const matchesGroup = selectedGroupFilter === '' || c.groupId === selectedGroupFilter;
-    
-    return matchesSearch && matchesGroup;
-  });
+  // Dispara o fetch sempre que a página, grupo ou termo buscado mudarem
+  useEffect(() => {
+    fetchData(page, debouncedSearch, selectedGroupFilter);
+  }, [page, selectedGroupFilter, debouncedSearch]);
+
+  // Sem filtro local no frontend (feito 100% no banco de dados)
+  const filteredContacts = contacts;
 
   // Ações de Seleção
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -225,6 +252,7 @@ export default function ContactsPage() {
       let nameIdx = -1;
       let phoneIdx = -1;
       let tagsIdx = -1;
+      let groupNameIdx = -1;
 
       // Mapeamento semântico de telefone
       const phoneKeywords = ['phone number', 'telefone', 'phone', 'celular', 'number', 'numero', 'whatsapp', 'formatted phone', 'tel'];
@@ -241,10 +269,17 @@ export default function ContactsPage() {
       }
 
       // Mapeamento semântico de tags/labels
-      const tagsKeywords = ['tags', 'tag', 'labels', 'label', 'grupo', 'group'];
+      const tagsKeywords = ['tags', 'tag', 'labels', 'label'];
       for (const keyword of tagsKeywords) {
         tagsIdx = headers.findIndex(h => h === keyword || h.includes(keyword));
         if (tagsIdx !== -1) break;
+      }
+
+      // Mapeamento semântico de nome de grupo (evita pegar na mesma coluna de tags)
+      const groupNameKeywords = ['group name', 'nome do grupo', 'group', 'grupo'];
+      for (const keyword of groupNameKeywords) {
+        groupNameIdx = headers.findIndex(h => h === keyword || h.includes(keyword));
+        if (groupNameIdx !== -1) break;
       }
 
       const hasHeaders = nameIdx !== -1 || phoneIdx !== -1;
@@ -260,7 +295,7 @@ export default function ContactsPage() {
         if (nameIdx === -1) nameIdx = phoneIdx === 0 ? 1 : 0;
       }
 
-      const parsedContacts: Array<{ name: string; phone: string; tags: string[] }> = [];
+      const parsedContacts: Array<{ name: string; phone: string; tags: string[]; groupName?: string }> = [];
 
       for (let i = startIndex; i < lines.length; i++) {
         const line = lines[i];
@@ -275,6 +310,7 @@ export default function ContactsPage() {
 
         const name = parts[nameIdx]?.trim() || '';
         const phone = parts[phoneIdx]?.trim() || '';
+        const groupName = groupNameIdx !== -1 ? parts[groupNameIdx]?.trim() || '' : '';
         const rawTags = tagsIdx !== -1 ? parts[tagsIdx]?.trim() || '' : '';
         
         const tags = rawTags
@@ -283,7 +319,7 @@ export default function ContactsPage() {
 
         const digitsOnly = phone.replace(/\D/g, '');
         if (digitsOnly.length >= 8) {
-          parsedContacts.push({ name, phone, tags });
+          parsedContacts.push({ name, phone, tags, groupName });
         }
       }
 
@@ -576,6 +612,49 @@ export default function ContactsPage() {
                 ))}
               </tbody>
             </table>
+
+            {/* Controles de Paginação */}
+            {totalPages > 1 && (
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '1rem 1.5rem',
+                borderTop: '1px solid var(--border)',
+                backgroundColor: 'rgba(255,255,255,0.01)',
+                flexWrap: 'wrap',
+                gap: '1rem'
+              }}>
+                <div style={{ fontSize: '0.8125rem', color: '#9ca3af' }}>
+                  Mostrando <strong>{((page - 1) * limit + 1).toLocaleString()}</strong> a{' '}
+                  <strong>{Math.min(page * limit, totalContacts).toLocaleString()}</strong> de{' '}
+                  <strong>{totalContacts.toLocaleString()}</strong> contatos
+                </div>
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    style={{ padding: '0.375rem 0.75rem', fontSize: '0.8125rem' }}
+                    onClick={() => setPage((p) => Math.max(p - 1, 1))}
+                    disabled={page === 1 || loading}
+                  >
+                    Anterior
+                  </button>
+                  <span style={{ fontSize: '0.8125rem', color: '#e5e7eb', margin: '0 0.5rem' }}>
+                    Página <strong>{page}</strong> de <strong>{totalPages}</strong>
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    style={{ padding: '0.375rem 0.75rem', fontSize: '0.8125rem' }}
+                    onClick={() => setPage((p) => Math.min(p + 1, totalPages))}
+                    disabled={page === totalPages || loading}
+                  >
+                    Próxima
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -852,7 +931,7 @@ export default function ContactsPage() {
                         checked={bulkDeleteAction === 'clear_all'}
                         onChange={() => setBulkDeleteAction('clear_all')}
                       />
-                      Excluir TODOS os contatos ({contacts.length.toLocaleString()})
+                      Excluir TODOS os contatos ({totalContacts.toLocaleString()})
                     </label>
 
                     <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.85rem', color: 'white' }}>
