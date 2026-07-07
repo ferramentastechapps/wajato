@@ -102,9 +102,9 @@ export default function CreateWarmupModal({ onClose, onCreated }: Props) {
       return;
     }
 
-    // Processa e limpa os telefones de destino
+    // Processa e limpa os telefones de destino (aceita quebras de linha, espaços, vírgulas ou ponto e vírgula como separadores)
     const phonesList = targetPhonesInput
-      .split('\n')
+      .split(/[\s,;]+/)
       .map(p => p.replace(/\D/g, ''))
       .filter(Boolean);
 
