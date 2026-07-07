@@ -6,6 +6,7 @@ import { MessageJobData } from '../lib/queue';
 import { getNextWhatsAppInstance, reportChipSuccess, reportChipFailure } from '../lib/chip-router';
 import './warmup-worker'; // Importa para iniciar o worker de aquecimento junto
 import './warmup-pool-worker'; // Importa o worker de pool mútuo
+import './scheduler-worker'; // Importa o worker de agendamento de campanhas
 
 console.log('Iniciando o Worker de Mensagens do WaJato...');
 
