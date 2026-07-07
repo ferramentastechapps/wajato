@@ -4,19 +4,46 @@
  * Inclui: Spintax engine, banco de tópicos dinâmicos, personas ricas.
  */
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { prisma } from './prisma';
 
-let genAI: GoogleGenerativeAI | null = null;
+let cachedGenAI: GoogleGenerativeAI | null = null;
+let cachedApiKey: string | null = null;
 
-const getGenAI = () => {
-  if (!genAI) {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      throw new Error('GEMINI_API_KEY is not defined in environment variables');
+export async function getGenAIInstance(): Promise<GoogleGenerativeAI> {
+  let apiKey = process.env.GEMINI_API_KEY;
+  
+  if (!apiKey) {
+    try {
+      const config = await prisma.chatbotConfig.findUnique({
+        where: { id: 'global' },
+      });
+      if (config?.geminiApiKey) {
+        apiKey = config.geminiApiKey;
+      }
+    } catch (err) {
+      console.error('[Warmup AI] Erro ao buscar API Key no banco de dados:', err);
     }
-    genAI = new GoogleGenerativeAI(apiKey);
   }
-  return genAI;
-};
+
+  if (!apiKey) {
+    throw new Error('GEMINI_API_KEY não configurada no ambiente nem no banco de dados.');
+  }
+
+  if (!cachedGenAI || cachedApiKey !== apiKey) {
+    cachedGenAI = new GoogleGenerativeAI(apiKey);
+    cachedApiKey = apiKey;
+  }
+
+  return cachedGenAI;
+}
+
+// ─── Áudios de Warmup ────────────────────────────────────────────────────────
+// URLs públicas de áudio .ogg (opus) confiáveis para simular mensagens de voz reais.
+export const WARMUP_AUDIO_URLS = [
+  'https://github.com/espressif/esp-adf/raw/master/components/audio_hal/test/test_fatfs_stream/ff-16b-1c-44100hz.ogg',
+  'https://github.com/espressif/esp-adf/raw/master/components/audio_hal/test/test_fatfs_stream/ff-16b-2c-44100hz.ogg',
+  'https://upload.wikimedia.org/wikipedia/commons/c/c8/Example.ogg',
+];
 
 export interface ChatMessage {
   role: 'user' | 'model';
@@ -109,7 +136,7 @@ export async function generateNextWarmupMessage(
   topic?: string
 ): Promise<string> {
   try {
-    const ai = getGenAI();
+    const ai = await getGenAIInstance();
     const model = ai.getGenerativeModel({
       model: 'gemini-2.0-flash',
       systemInstruction: `Você está simulando uma conversa de WhatsApp casual e autêntica entre dois amigos brasileiros.

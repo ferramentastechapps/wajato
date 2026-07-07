@@ -94,6 +94,9 @@ export default function WarmupPage() {
   // Loading states
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
+  // API Key Status state
+  const [apiKeyConfigured, setApiKeyConfigured] = useState<boolean>(true);
+
   const fetchCampaigns = async () => {
     try {
       const res = await fetch('/api/warmup');
@@ -112,9 +115,23 @@ export default function WarmupPage() {
     }
   };
 
+  const checkApiKeyStatus = async () => {
+    try {
+      const res = await fetch('/api/chatbot/config');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.config) {
+          setApiKeyConfigured(!!data.config.geminiApiKey);
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao verificar API Key:', err);
+    }
+  };
+
   const loadAll = async () => {
     setLoading(true);
-    await Promise.all([fetchCampaigns(), fetchPools()]);
+    await Promise.all([fetchCampaigns(), fetchPools(), checkApiKeyStatus()]);
     setLoading(false);
   };
 
@@ -197,6 +214,29 @@ export default function WarmupPage() {
           )}
         </div>
       </div>
+
+      {/* Alert banner if Gemini API Key is missing */}
+      {!apiKeyConfigured && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.75rem',
+          padding: '1rem',
+          background: 'rgba(245, 158, 11, 0.12)',
+          border: '1px solid rgba(245, 158, 11, 0.25)',
+          borderRadius: '12px',
+          marginBottom: '1.5rem',
+          color: 'rgba(255, 255, 255, 0.85)',
+          fontSize: '0.88rem',
+        }}>
+          <span style={{ fontSize: '1.25rem' }}>⚠️</span>
+          <div>
+            <strong style={{ color: '#f59e0b', marginRight: '4px' }}>Chave da API do Google AI Studio Ausente:</strong>
+            O sistema de aquecimento usará mensagens estáticas prontas (Spintax) até que você configure sua chave. 
+            Você pode cadastrar sua chave em <a href="/chatbot" style={{ color: '#f59e0b', textDecoration: 'underline', fontWeight: 600 }}>Configurações do Chatbot</a>.
+          </div>
+        </div>
+      )}
 
       {/* Tabs navigation */}
       <div style={{

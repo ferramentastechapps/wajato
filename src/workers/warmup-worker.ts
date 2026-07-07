@@ -24,6 +24,7 @@ import {
   QUICK_EMOJI_RESPONSES,
   WARMUP_REACTIONS,
   ChatMessage,
+  WARMUP_AUDIO_URLS,
 } from '../lib/warmup-ai';
 import {
   queueWarmupMessage,
@@ -50,22 +51,24 @@ import {
 const WARMUP_QUEUE_NAME = 'warmup-queue';
 
 // Tipos de mensagem disponíveis com seus pesos de probabilidade
-type MessageAction = 'TEXT' | 'EMOJI' | 'REACTION' | 'STICKER';
+type MessageAction = 'TEXT' | 'EMOJI' | 'REACTION' | 'STICKER' | 'AUDIO';
 
 /**
  * Escolhe aleatoriamente o tipo de ação para essa mensagem.
  * Pesos ajustados para simular comportamento humano realista:
- * - Texto: 65% (maioria das interações)
- * - Emoji: 20% (respostas rápidas comuns)
+ * - Texto: 60% (maioria das interações)
+ * - Emoji: 15% (respostas rápidas comuns)
  * - Reação: 10% (recurso mais recente, menos frequente)
  * - Sticker: 5% (ocasional)
+ * - Áudio: 10% (notas de voz humanas altamente confiáveis)
  */
 function chooseMessageAction(): MessageAction {
   const rand = Math.random() * 100;
-  if (rand < 65) return 'TEXT';
-  if (rand < 85) return 'EMOJI';
-  if (rand < 95) return 'REACTION';
-  return 'STICKER';
+  if (rand < 60) return 'TEXT';
+  if (rand < 75) return 'EMOJI';
+  if (rand < 85) return 'REACTION';
+  if (rand < 90) return 'STICKER';
+  return 'AUDIO';
 }
 
 /**
@@ -215,7 +218,7 @@ export const warmupWorker = new Worker(
       // ── 9. Escolher tipo de ação desta mensagem ────────────────────────────
       const action = chooseMessageAction();
       let messageText = '';
-      let messageType: 'TEXT' | 'EMOJI' | 'REACTION' | 'STICKER' = 'TEXT';
+      let messageType: 'TEXT' | 'EMOJI' | 'REACTION' | 'STICKER' | 'AUDIO' = 'TEXT';
       let typingDelay = 1500;
 
       // Selecionar tópico (rotaciona a cada nova conversa ou mantém o atual)
@@ -286,6 +289,40 @@ export const warmupWorker = new Worker(
           try {
             await evolutionApi.sendTextMessage(sourceInstance, targetPhone, messageText);
           } catch (err) {
+            status = 'FAILED';
+          }
+        }
+
+      } else if (action === 'AUDIO') {
+        // Envio de nota de voz (Áudio)
+        messageType = 'AUDIO';
+        messageText = '[Mensagem de voz]';
+        const audioUrl = WARMUP_AUDIO_URLS[Math.floor(Math.random() * WARMUP_AUDIO_URLS.length)];
+        
+        // Simula o tempo de gravação humana
+        typingDelay = 3000 + Math.random() * 4000; // 3-7s gravando
+        
+        if (history.length > 0) {
+          await evolutionApi.markAsRead(sourceInstance, targetPhone);
+          await new Promise(r => setTimeout(r, 400 + Math.random() * 600));
+        }
+        
+        await new Promise(r => setTimeout(r, typingDelay));
+        
+        try {
+          await evolutionApi.sendAudioUrl(sourceInstance, targetPhone, audioUrl);
+        } catch (err) {
+          console.error('[Warmup Worker] Erro ao enviar áudio:', err);
+          // Fallback para texto se áudio falhar
+          try {
+            messageType = 'TEXT';
+            const context = `Você é ${sourceInstance}. Dia ${campaign.currentDay} de conversa. Assunto: ${topic}`;
+            messageText = await generateNextWarmupMessage(context, history, topic);
+            typingDelay = calculateTypingDelay(messageText);
+            await new Promise(r => setTimeout(r, typingDelay));
+            await evolutionApi.sendTextMessage(sourceInstance, targetPhone, messageText);
+          } catch (fallbackErr) {
+            console.error('[Warmup Worker] Erro no fallback de texto do áudio:', fallbackErr);
             status = 'FAILED';
           }
         }

@@ -20,6 +20,7 @@ import {
   QUICK_EMOJI_RESPONSES,
   WARMUP_REACTIONS,
   ChatMessage,
+  WARMUP_AUDIO_URLS,
 } from '../lib/warmup-ai';
 import {
   queuePoolMessage,
@@ -44,14 +45,15 @@ import {
 } from '../lib/warmup-rate-limiter';
 
 const WARMUP_POOL_QUEUE_NAME = 'warmup-pool-queue';
-type MessageAction = 'TEXT' | 'EMOJI' | 'REACTION' | 'STICKER';
+type MessageAction = 'TEXT' | 'EMOJI' | 'REACTION' | 'STICKER' | 'AUDIO';
 
 function chooseMessageAction(): MessageAction {
   const rand = Math.random() * 100;
-  if (rand < 65) return 'TEXT';
-  if (rand < 85) return 'EMOJI';
-  if (rand < 95) return 'REACTION';
-  return 'STICKER';
+  if (rand < 60) return 'TEXT';
+  if (rand < 75) return 'EMOJI';
+  if (rand < 85) return 'REACTION';
+  if (rand < 90) return 'STICKER';
+  return 'AUDIO';
 }
 
 const STICKERS = [
@@ -222,7 +224,7 @@ export const warmupPoolWorker = new Worker(
       // ── 9. Escolher Tipo de Ação ───────────────────────────────────────────
       const action = chooseMessageAction();
       let messageText = '';
-      let messageType: 'TEXT' | 'EMOJI' | 'REACTION' | 'STICKER' = 'TEXT';
+      let messageType: 'TEXT' | 'EMOJI' | 'REACTION' | 'STICKER' | 'AUDIO' = 'TEXT';
       let typingDelay = 1500;
       let status = 'SENT';
 
@@ -266,6 +268,38 @@ export const warmupPoolWorker = new Worker(
           try {
             await evolutionApi.sendTextMessage(finalSender, targetPhone, '🔥');
           } catch { status = 'FAILED'; }
+        }
+
+      } else if (action === 'AUDIO') {
+        messageType = 'AUDIO';
+        messageText = '[Mensagem de voz]';
+        const audioUrl = WARMUP_AUDIO_URLS[Math.floor(Math.random() * WARMUP_AUDIO_URLS.length)];
+        
+        // Simula o tempo de gravação humana
+        typingDelay = 3000 + Math.random() * 4000; // 3-7s gravando
+        
+        if (history.length > 0) {
+          await evolutionApi.markAsRead(finalSender, targetPhone);
+          await new Promise(r => setTimeout(r, 400 + Math.random() * 600));
+        }
+        
+        await new Promise(r => setTimeout(r, typingDelay));
+        
+        try {
+          await evolutionApi.sendAudioUrl(finalSender, targetPhone, audioUrl);
+        } catch (err) {
+          console.error(`[Warmup Pool] Erro ao enviar áudio:`, err);
+          // Fallback para texto se áudio falhar
+          try {
+            messageType = 'TEXT';
+            const context = `Você é ${finalSender} conversando no WhatsApp com seu amigo ${finalReceiver}. Assunto: ${topic}`;
+            messageText = await generateNextWarmupMessage(context, history, topic);
+            typingDelay = calculateTypingDelay(messageText);
+            await new Promise(r => setTimeout(r, typingDelay));
+            await evolutionApi.sendTextMessage(finalSender, targetPhone, messageText);
+          } catch {
+            status = 'FAILED';
+          }
         }
 
       } else {
