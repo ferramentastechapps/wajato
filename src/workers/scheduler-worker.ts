@@ -7,8 +7,9 @@
 import { prisma } from '../lib/prisma';
 import { messageQueue } from '../lib/queue';
 import { resolveContactsForSegment } from '../lib/segment-resolver';
+import { logger } from '../lib/logger';
 
-console.log('[Scheduler] Worker de agendamento de campanhas iniciado.');
+logger.info('Worker de agendamento de campanhas (Scheduler) iniciado.');
 
 const POLL_INTERVAL_MS = 60_000; // 60 segundos
 
@@ -40,7 +41,7 @@ async function dispatchScheduledCampaigns() {
 
     if (campaigns.length === 0) return;
 
-    console.log(`[Scheduler] ${campaigns.length} campanha(s) agendada(s) para despachar.`);
+    logger.info('Campanhas agendadas encontradas para despachar', { count: campaigns.length });
 
     for (const campaign of campaigns) {
       try {
@@ -56,7 +57,7 @@ async function dispatchScheduledCampaigns() {
         }
 
         if (contacts.length === 0) {
-          console.warn(`[Scheduler] Campanha ${campaign.id} sem contatos. Ignorando.`);
+          logger.warn('Campanha sem contatos. Ignorando.', { campaignId: campaign.id });
           // Marca como COMPLETED diretamente
           await prisma.campaign.update({
             where: { id: campaign.id },
@@ -105,18 +106,17 @@ async function dispatchScheduledCampaigns() {
           );
         }
 
-        console.log(
-          `[Scheduler] Campanha "${campaign.name || campaign.id}" despachada: ${contacts.length} mensagens enfileiradas.`
-        );
+        logger.info('Campanha agendada despachada para a fila', {
+          campaignId: campaign.id,
+          campaignName: campaign.name,
+          contactsCount: contacts.length,
+        });
       } catch (err: any) {
-        console.error(
-          `[Scheduler] Erro ao despachar campanha ${campaign.id}:`,
-          err.message
-        );
+        logger.error('Erro ao despachar campanha agendada', { campaignId: campaign.id, error: err.message });
       }
     }
   } catch (err: any) {
-    console.error('[Scheduler] Erro crítico no loop de agendamento:', err.message);
+    logger.error('Erro crítico no loop de agendamento do Scheduler', { error: err.message });
   }
 }
 

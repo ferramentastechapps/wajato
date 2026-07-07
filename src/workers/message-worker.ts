@@ -4,17 +4,18 @@ import { prisma } from '../lib/prisma';
 import { evolutionApi } from '../lib/evolution';
 import { MessageJobData } from '../lib/queue';
 import { getNextWhatsAppInstance, reportChipSuccess, reportChipFailure } from '../lib/chip-router';
+import { logger } from '../lib/logger';
 import './warmup-worker'; // Importa para iniciar o worker de aquecimento junto
 import './warmup-pool-worker'; // Importa o worker de pool mútuo
 import './scheduler-worker'; // Importa o worker de agendamento de campanhas
 
-console.log('Iniciando o Worker de Mensagens do WaJato...');
+logger.info('Iniciando o Worker de Mensagens do WaJato...');
 
 const worker = new Worker(
   'message-queue',
   async (job: Job<MessageJobData>) => {
     const { messageLogId, campaignId, contactId, phone } = job.data;
-    console.log(`[Worker] Processando mensagem ${messageLogId} para o telefone ${phone}`);
+    logger.info('Processando mensagem no worker', { messageLogId, campaignId, contactId, phone });
 
     // 1. Busca os detalhes da campanha e do contato
     const log = await prisma.messageLog.findUnique({
@@ -31,13 +32,13 @@ const worker = new Worker(
     });
 
     if (!log) {
-      console.error(`[Worker] Log de mensagem ${messageLogId} não encontrado no banco.`);
+      logger.error('Log de mensagem não encontrado no banco', { messageLogId });
       return;
     }
 
     // 2. Se a campanha não estiver em andamento (ex: pausada ou cancelada), cancela o envio
     if (log.campaign.status !== 'SENDING') {
-      console.log(`[Worker] Campanha ${campaignId} está com status "${log.campaign.status}". Ignorando envio.`);
+      logger.info('Campanha não está ativa, ignorando envio', { campaignId, status: log.campaign.status, messageLogId });
       await prisma.messageLog.update({
         where: { id: messageLogId },
         data: { status: 'PENDING', error: 'Campanha não está ativa' },
@@ -78,7 +79,7 @@ const worker = new Worker(
         );
       }
 
-      console.log(`[Worker] Mensagem ${messageLogId} enviada com sucesso para ${phone} via ${activeInstanceName}`);
+      logger.info('Mensagem enviada com sucesso', { messageLogId, phone, instance: activeInstanceName });
 
       // Registra sucesso do chip no router
       await reportChipSuccess(activeInstanceName);
@@ -98,7 +99,7 @@ const worker = new Worker(
 
     } catch (error: any) {
       const errorMsg = error.message || 'Erro desconhecido no envio';
-      console.error(`[Worker] Erro ao enviar mensagem ${messageLogId}:`, errorMsg);
+      logger.error('Erro ao enviar mensagem', { messageLogId, error: errorMsg, instance: activeInstanceName });
       
       // Registra falha do chip no router para rebaixar sua saúde
       await reportChipFailure(activeInstanceName, errorMsg);
@@ -139,14 +140,14 @@ async function checkAndUpdateCampaignStatus(campaignId: string) {
       where: { id: campaignId },
       data: { status: 'COMPLETED' },
     });
-    console.log(`[Worker] Campanha ${campaignId} foi CONCLUÍDA com sucesso!`);
+    logger.info('Campanha concluída com sucesso', { campaignId });
   }
 }
 
 worker.on('failed', (job, err) => {
-  console.error(`[Worker] Job ${job?.id} falhou:`, err.message);
+  logger.error('Job de disparo de mensagem falhou', { jobId: job?.id, error: err.message });
 });
 
 worker.on('error', (err) => {
-  console.error('[Worker] Erro fatal no Worker:', err);
+  logger.error('Erro fatal no Message Worker', err);
 });

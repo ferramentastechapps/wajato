@@ -2,6 +2,7 @@ import { prisma } from './prisma';
 import { evolutionApi } from './evolution';
 import { isWithinBusinessHours } from './warmup-schedule';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { logger } from './logger';
 
 /**
  * Processa mensagens recebidas do webhook e executa a lógica do chatbot auto-responder.
@@ -33,7 +34,7 @@ export async function handleChatbotIncoming(phone: string, text: string, instanc
     if (config.businessHoursOnly) {
       const withinHours = isWithinBusinessHours(config.startHour, config.endHour);
       if (!withinHours) {
-        console.log(`[ChatbotProcessor] Mensagem ignorada de ${phone} porque está fora do horário de atendimento (${config.startHour}h-${config.endHour}h).`);
+        logger.info('Mensagem de chatbot ignorada fora do horário de atendimento', { phone, startHour: config.startHour, endHour: config.endHour });
         return;
       }
     }
@@ -61,7 +62,7 @@ export async function handleChatbotIncoming(phone: string, text: string, instanc
 
     // 4. Responder se houver regra correspondente
     if (matchedRule) {
-      console.log(`[ChatbotProcessor] Regra encontrada para "${text}": ${matchedRule.trigger} -> enviando resposta.`);
+      logger.info('Regra de chatbot correspondente encontrada', { trigger: matchedRule.trigger, phone });
       
       if (matchedRule.imageUrl) {
         await evolutionApi.sendMediaMessage(
@@ -89,11 +90,11 @@ export async function handleChatbotIncoming(phone: string, text: string, instanc
 
     // 5. Se nenhuma regra bateu e IA estiver ativada, usar o Gemini
     if (config.aiEnabled) {
-      console.log(`[ChatbotProcessor] Nenhuma regra encontrada. Gerando resposta com IA (Gemini) para ${phone}.`);
+      logger.info('Nenhuma regra encontrada. Gerando resposta com IA (Gemini)', { phone });
       
       const apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey) {
-        console.error('[ChatbotProcessor] Erro: GEMINI_API_KEY não configurada nas variáveis de ambiente.');
+        logger.error('GEMINI_API_KEY não configurada nas variáveis de ambiente');
         return;
       }
 
@@ -146,6 +147,6 @@ Gere uma resposta curta, educada, prestativa e muito natural para o WhatsApp do 
       }
     }
   } catch (error: any) {
-    console.error('[ChatbotProcessor] Erro ao processar chatbot:', error);
+    logger.error('Erro ao processar chatbot incoming', error);
   }
 }
