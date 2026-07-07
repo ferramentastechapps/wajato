@@ -85,12 +85,12 @@ export default function ContactsPage() {
   }, [search]);
 
   // Carrega dados iniciais e paginados
-  const fetchData = async (currentPage = page, searchVal = debouncedSearch, groupFilter = selectedGroupFilter) => {
+  const fetchData = async (currentPage = page, searchVal = debouncedSearch, groupFilter = selectedGroupFilter, currentLimit = limit) => {
     setLoading(true);
     try {
       const query = new URLSearchParams({
         page: String(currentPage),
-        limit: String(limit),
+        limit: String(currentLimit),
         search: searchVal,
         groupId: groupFilter,
       });
@@ -115,15 +115,15 @@ export default function ContactsPage() {
     }
   };
 
-  // Reseta página para 1 quando o filtro ou busca mudam
+  // Reseta página para 1 quando o filtro, busca ou limite de registros por página mudam
   useEffect(() => {
     setPage(1);
-  }, [selectedGroupFilter, debouncedSearch]);
+  }, [selectedGroupFilter, debouncedSearch, limit]);
 
-  // Dispara o fetch sempre que a página, grupo ou termo buscado mudarem
+  // Dispara o fetch sempre que a página, grupo, limite ou termo buscado mudarem
   useEffect(() => {
-    fetchData(page, debouncedSearch, selectedGroupFilter);
-  }, [page, selectedGroupFilter, debouncedSearch]);
+    fetchData(page, debouncedSearch, selectedGroupFilter, limit);
+  }, [page, selectedGroupFilter, debouncedSearch, limit]);
 
   // Sem filtro local no frontend (feito 100% no banco de dados)
   const filteredContacts = contacts;
@@ -254,18 +254,34 @@ export default function ContactsPage() {
       let tagsIdx = -1;
       let groupNameIdx = -1;
 
-      // Mapeamento semântico de telefone
+      // Mapeamento semântico de telefone (Busca correspondência exata primeiro, depois parcial)
       const phoneKeywords = ['phone number', 'telefone', 'phone', 'celular', 'number', 'numero', 'whatsapp', 'formatted phone', 'tel'];
+      // Procura primeiro correspondência exata
       for (const keyword of phoneKeywords) {
-        phoneIdx = headers.findIndex(h => h === keyword || h.includes(keyword));
+        phoneIdx = headers.findIndex(h => h === keyword);
         if (phoneIdx !== -1) break;
+      }
+      // Se não achar, procura correspondência parcial
+      if (phoneIdx === -1) {
+        for (const keyword of phoneKeywords) {
+          phoneIdx = headers.findIndex(h => h.includes(keyword));
+          if (phoneIdx !== -1) break;
+        }
       }
 
       // Mapeamento semântico de nome
-      const nameKeywords = ['saved name', 'name', 'nome', 'public name', 'display name', 'contato', 'contact'];
+      const nameKeywords = ['saved name', 'public name', 'display name', 'nome', 'name', 'contato', 'contact'];
+      // Procura primeiro por cabeçalho exato para evitar correspondência incorreta em colunas como "Country Name"
       for (const keyword of nameKeywords) {
-        nameIdx = headers.findIndex(h => h === keyword || h.includes(keyword));
+        nameIdx = headers.findIndex(h => h === keyword);
         if (nameIdx !== -1) break;
+      }
+      // Se não achar exato, procura por aproximação, mas ignora especificamente 'country'
+      if (nameIdx === -1) {
+        for (const keyword of nameKeywords) {
+          nameIdx = headers.findIndex(h => h.includes(keyword) && !h.includes('country'));
+          if (nameIdx !== -1) break;
+        }
       }
 
       // Mapeamento semântico de tags/labels
@@ -614,7 +630,7 @@ export default function ContactsPage() {
             </table>
 
             {/* Controles de Paginação */}
-            {totalPages > 1 && (
+            {totalContacts > 0 && (
               <div style={{
                 display: 'flex',
                 justifyContent: 'space-between',
@@ -625,34 +641,62 @@ export default function ContactsPage() {
                 flexWrap: 'wrap',
                 gap: '1rem'
               }}>
-                <div style={{ fontSize: '0.8125rem', color: '#9ca3af' }}>
-                  Mostrando <strong>{((page - 1) * limit + 1).toLocaleString()}</strong> a{' '}
-                  <strong>{Math.min(page * limit, totalContacts).toLocaleString()}</strong> de{' '}
-                  <strong>{totalContacts.toLocaleString()}</strong> contatos
-                </div>
-                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    style={{ padding: '0.375rem 0.75rem', fontSize: '0.8125rem' }}
-                    onClick={() => setPage((p) => Math.max(p - 1, 1))}
-                    disabled={page === 1 || loading}
-                  >
-                    Anterior
-                  </button>
-                  <span style={{ fontSize: '0.8125rem', color: '#e5e7eb', margin: '0 0.5rem' }}>
-                    Página <strong>{page}</strong> de <strong>{totalPages}</strong>
+                <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', fontSize: '0.8125rem', color: '#9ca3af' }}>
+                  <span>
+                    Mostrando <strong>{((page - 1) * limit + 1).toLocaleString()}</strong> a{' '}
+                    <strong>{Math.min(page * limit, totalContacts).toLocaleString()}</strong> de{' '}
+                    <strong>{totalContacts.toLocaleString()}</strong> contatos.
                   </span>
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    style={{ padding: '0.375rem 0.75rem', fontSize: '0.8125rem' }}
-                    onClick={() => setPage((p) => Math.min(p + 1, totalPages))}
-                    disabled={page === totalPages || loading}
-                  >
-                    Próxima
-                  </button>
+                  
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', marginLeft: '0.75rem' }}>
+                    Exibir por página:
+                    <select
+                      value={limit}
+                      onChange={(e) => setLimit(Number(e.target.value))}
+                      className="input-control"
+                      style={{ 
+                        padding: '0.2rem 0.5rem', 
+                        width: 'auto', 
+                        fontSize: '0.8125rem', 
+                        height: 'auto', 
+                        background: 'rgba(255,255,255,0.05)', 
+                        borderColor: 'var(--border)',
+                        color: 'white',
+                        borderRadius: '4px'
+                      }}
+                    >
+                      {[50, 100, 200, 300, 500, 1000, 5000, 10000, 20000, 30000, 50000].map((val) => (
+                        <option key={val} value={val} style={{ background: '#121318' }}>{val.toLocaleString()}</option>
+                      ))}
+                    </select>
+                  </span>
                 </div>
+
+                {totalPages > 1 && (
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      style={{ padding: '0.375rem 0.75rem', fontSize: '0.8125rem' }}
+                      onClick={() => setPage((p) => Math.max(p - 1, 1))}
+                      disabled={page === 1 || loading}
+                    >
+                      Anterior
+                    </button>
+                    <span style={{ fontSize: '0.8125rem', color: '#e5e7eb', margin: '0 0.5rem' }}>
+                      Página <strong>{page}</strong> de <strong>{totalPages}</strong>
+                    </span>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      style={{ padding: '0.375rem 0.75rem', fontSize: '0.8125rem' }}
+                      onClick={() => setPage((p) => Math.min(p + 1, totalPages))}
+                      disabled={page === totalPages || loading}
+                    >
+                      Próxima
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
