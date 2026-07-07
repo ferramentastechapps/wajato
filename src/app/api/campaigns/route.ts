@@ -13,6 +13,7 @@ export async function GET() {
       orderBy: { createdAt: 'desc' },
       include: {
         group: { select: { id: true, name: true } },
+        segment: { select: { id: true, name: true } },
         template: { select: { id: true, name: true, imageUrl: true } },
         _count: {
           select: { logs: true },
@@ -86,13 +87,14 @@ export async function POST(request: Request) {
       );
     }
 
-    const { name, templateId, groupId, delayMin, delayMax, scheduledAt } = result.data;
+    const { name, templateId, groupId, segmentId, delayMin, delayMax, scheduledAt } = result.data;
 
     const campaign = await prisma.campaign.create({
       data: {
         name,
         templateId,
-        groupId,
+        groupId: groupId || null,
+        segmentId: segmentId || null,
         delayMin,
         delayMax,
         scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
@@ -100,6 +102,7 @@ export async function POST(request: Request) {
       },
       include: {
         group: { select: { name: true } },
+        segment: { select: { name: true } },
         template: { select: { name: true } },
       },
     });

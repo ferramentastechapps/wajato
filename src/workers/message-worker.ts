@@ -48,7 +48,7 @@ const worker = new Worker(
     // 3. Monta a mensagem interpolando variáveis
     const contactName = log.contact.name || 'Cliente';
     // Se houver {{link}} no template, substitui pela descrição do grupo (onde salvamos o link do grupo)
-    const groupLink = log.campaign.group.description || '';
+    const groupLink = log.campaign.group?.description || '';
     
     let messageText = log.campaign.template.body
       .replace(/{{nome}}/g, contactName)

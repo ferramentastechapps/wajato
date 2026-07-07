@@ -37,10 +37,14 @@ export const templateSchema = z.object({
 export const campaignSchema = z.object({
   name: z.string().trim().min(1, 'O nome da campanha é obrigatório'),
   templateId: z.string().uuid('ID do template inválido'),
-  groupId: z.string().uuid('ID do grupo inválido'),
+  groupId: z.preprocess((val) => val === '' ? null : val, z.string().uuid('ID do grupo inválido').optional().nullable()),
+  segmentId: z.preprocess((val) => val === '' ? null : val, z.string().uuid('ID do segmento inválido').optional().nullable()),
   delayMin: z.coerce.number().int().min(1, 'Delay mínimo deve ser pelo menos 1 segundo').default(5),
   delayMax: z.coerce.number().int().min(1, 'Delay máximo deve ser pelo menos 1 segundo').default(15),
   scheduledAt: z.preprocess((val) => val === '' || val === null ? null : val, z.string().datetime().nullable().optional()),
+}).refine(data => data.groupId || data.segmentId, {
+  message: "Selecione um grupo de contatos ou uma segmentação para a campanha",
+  path: ["groupId"]
 });
 
 // Schemas para Chatbot Auto-responder

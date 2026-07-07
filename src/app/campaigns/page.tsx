@@ -24,9 +24,10 @@ interface Campaign {
   status: 'DRAFT' | 'QUEUED' | 'SENDING' | 'PAUSED' | 'COMPLETED' | 'CANCELLED';
   delayMin: number;
   delayMax: number;
-  groupId: string;
-  templateId: string;
-  group: { id: string; name: string };
+  groupId?: string | null;
+  segmentId?: string | null;
+  group?: { id: string; name: string } | null;
+  segment?: { id: string; name: string } | null;
   template: { id: string; name: string };
   stats: {
     total: number;
@@ -53,13 +54,16 @@ export default function CampaignsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
+  const [segments, setSegments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showAddCampaign, setShowAddCampaign] = useState(false);
 
   // Form states
   const [name, setName] = useState('');
+  const [targetType, setTargetType] = useState<'GROUP' | 'SEGMENT'>('GROUP');
   const [groupId, setGroupId] = useState('');
+  const [segmentId, setSegmentId] = useState('');
   const [templateId, setTemplateId] = useState('');
   const [delayMin, setDelayMin] = useState(15); // Padrão seguro
   const [delayMax, setDelayMax] = useState(45); // Padrão seguro
@@ -93,8 +97,14 @@ export default function CampaignsPage() {
         const data = await templatesRes.json();
         setTemplates(data.templates || []);
       }
+
+      const segmentsRes = await fetch('/api/contacts/segments');
+      if (segmentsRes.ok) {
+        const data = await segmentsRes.json();
+        setSegments(data.segments || []);
+      }
     } catch (err) {
-      console.error('Erro ao carregar grupos/templates:', err);
+      console.error('Erro ao carregar grupos/templates/segmentos:', err);
     }
   };
 
@@ -105,7 +115,9 @@ export default function CampaignsPage() {
 
   const handleOpenModal = () => {
     setName('');
+    setTargetType('GROUP');
     setGroupId(groups[0]?.id || '');
+    setSegmentId(segments[0]?.id || '');
     setTemplateId(templates[0]?.id || '');
     setDelayMin(15);
     setDelayMax(45);
@@ -136,7 +148,14 @@ export default function CampaignsPage() {
       const response = await fetch('/api/campaigns', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, groupId, templateId, delayMin, delayMax }),
+        body: JSON.stringify({
+          name,
+          groupId: targetType === 'GROUP' ? groupId : null,
+          segmentId: targetType === 'SEGMENT' ? segmentId : null,
+          templateId,
+          delayMin,
+          delayMax
+        }),
       });
 
       if (response.ok) {
@@ -251,7 +270,13 @@ export default function CampaignsPage() {
                     <h3 style={{ fontSize: '1.25rem', marginBottom: '0.25rem' }}>{camp.name}</h3>
                     <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', fontSize: '0.75rem', color: '#9ca3af' }}>
                       <span>Template: <strong>{camp.template.name}</strong></span>
-                      <span>Grupo-Alvo: <strong>{camp.group.name}</strong></span>
+                      {camp.group ? (
+                        <span>Grupo-Alvo: <strong>{camp.group.name}</strong></span>
+                      ) : camp.segment ? (
+                        <span>Segmentação: <strong>{camp.segment.name}</strong></span>
+                      ) : (
+                        <span>Destino: <strong>Nenhum</strong></span>
+                      )}
                       <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
                         <Clock size={12} />
                         Delay: {camp.delayMin}s - {camp.delayMax}s
@@ -405,21 +430,69 @@ export default function CampaignsPage() {
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Grupo-Alvo de Contatos</label>
-                  <select
-                    className="input-control"
-                    value={groupId}
-                    onChange={(e) => setGroupId(e.target.value)}
-                    required
-                  >
-                    {groups.length === 0 ? (
-                      <option value="">Crie um grupo de contatos primeiro!</option>
-                    ) : (
-                      groups.map((g) => (
-                        <option key={g.id} value={g.id}>{g.name}</option>
-                      ))
-                    )}
-                  </select>
+                  <label className="form-label">Destinatários</label>
+                  <div style={{ display: 'flex', gap: '1rem', marginBottom: '0.5rem' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.85rem', cursor: 'pointer' }}>
+                      <input 
+                        type="radio" 
+                        name="targetType" 
+                        value="GROUP" 
+                        checked={targetType === 'GROUP'} 
+                        onChange={() => {
+                          setTargetType('GROUP');
+                          setGroupId(groups[0]?.id || '');
+                          setSegmentId('');
+                        }}
+                      />
+                      Grupo Estático
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.85rem', cursor: 'pointer' }}>
+                      <input 
+                        type="radio" 
+                        name="targetType" 
+                        value="SEGMENT" 
+                        checked={targetType === 'SEGMENT'} 
+                        onChange={() => {
+                          setTargetType('SEGMENT');
+                          setSegmentId(segments[0]?.id || '');
+                          setGroupId('');
+                        }}
+                      />
+                      Segmentação Dinâmica
+                    </label>
+                  </div>
+
+                  {targetType === 'GROUP' ? (
+                    <select
+                      className="input-control"
+                      value={groupId}
+                      onChange={(e) => setGroupId(e.target.value)}
+                      required
+                    >
+                      {groups.length === 0 ? (
+                        <option value="">Crie um grupo de contatos primeiro!</option>
+                      ) : (
+                        groups.map((g) => (
+                          <option key={g.id} value={g.id}>{g.name}</option>
+                        ))
+                      )}
+                    </select>
+                  ) : (
+                    <select
+                      className="input-control"
+                      value={segmentId}
+                      onChange={(e) => setSegmentId(e.target.value)}
+                      required
+                    >
+                      {segments.length === 0 ? (
+                        <option value="">Crie uma segmentação primeiro!</option>
+                      ) : (
+                        segments.map((s) => (
+                          <option key={s.id} value={s.id}>{s.name}</option>
+                        ))
+                      )}
+                    </select>
+                  )}
                 </div>
 
                 <div className="form-group">
@@ -497,7 +570,12 @@ export default function CampaignsPage() {
                 <button 
                   type="submit" 
                   className="btn btn-primary" 
-                  disabled={isSubmitting || groups.length === 0 || templates.length === 0}
+                  disabled={
+                    isSubmitting || 
+                    (targetType === 'GROUP' && groups.length === 0) || 
+                    (targetType === 'SEGMENT' && segments.length === 0) || 
+                    templates.length === 0
+                  }
                 >
                   {isSubmitting ? 'Salvando...' : 'Criar Campanha'}
                 </button>

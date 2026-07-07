@@ -3,6 +3,7 @@ import { getSessionUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { queueMessage, cancelCampaignJobs } from '@/lib/queue';
 import { evolutionApi } from '@/lib/evolution';
+import { resolveContactsForSegment } from '@/lib/segment-resolver';
 
 const INSTANCE_NAME = process.env.EVOLUTION_INSTANCE_NAME || 'wajato-session';
 
@@ -21,7 +22,7 @@ export async function POST(
 
     const campaign = await prisma.campaign.findUnique({
       where: { id },
-      include: { group: true },
+      include: { group: true, segment: true },
     });
 
     if (!campaign) {
@@ -38,14 +39,22 @@ export async function POST(
         );
       }
 
-      // 2. Busca contatos vinculados ao grupo da campanha
-      const contacts = await prisma.contact.findMany({
-        where: { groupId: campaign.groupId },
-      });
+      // 2. Busca contatos vinculados ao grupo ou segmento da campanha
+      let contacts: any[] = [];
+      if (campaign.segmentId && campaign.segment) {
+        const filters = typeof campaign.segment.filters === 'string'
+          ? JSON.parse(campaign.segment.filters)
+          : (campaign.segment.filters as any);
+        contacts = await resolveContactsForSegment(filters);
+      } else if (campaign.groupId) {
+        contacts = await prisma.contact.findMany({
+          where: { groupId: campaign.groupId },
+        });
+      }
 
       if (contacts.length === 0) {
         return NextResponse.json(
-          { message: 'O grupo selecionado não possui contatos cadastrados.' },
+          { message: 'A segmentação ou grupo selecionado não possui contatos válidos.' },
           { status: 400 }
         );
       }

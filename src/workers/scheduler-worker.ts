@@ -6,6 +6,7 @@
  */
 import { prisma } from '../lib/prisma';
 import { messageQueue } from '../lib/queue';
+import { resolveContactsForSegment } from '../lib/segment-resolver';
 
 console.log('[Scheduler] Worker de agendamento de campanhas iniciado.');
 
@@ -32,6 +33,7 @@ async function dispatchScheduledCampaigns() {
             },
           },
         },
+        segment: true,
         template: { select: { id: true, name: true } },
       },
     });
@@ -42,10 +44,19 @@ async function dispatchScheduledCampaigns() {
 
     for (const campaign of campaigns) {
       try {
-        const contacts = campaign.group.contacts;
+        let contacts: { id: string; phone: string }[] = [];
+
+        if (campaign.segmentId && campaign.segment) {
+          const filters = typeof campaign.segment.filters === 'string'
+            ? JSON.parse(campaign.segment.filters)
+            : (campaign.segment.filters as any);
+          contacts = await resolveContactsForSegment(filters);
+        } else if (campaign.group) {
+          contacts = campaign.group.contacts;
+        }
 
         if (contacts.length === 0) {
-          console.warn(`[Scheduler] Campanha ${campaign.id} sem contatos no grupo. Ignorando.`);
+          console.warn(`[Scheduler] Campanha ${campaign.id} sem contatos. Ignorando.`);
           // Marca como COMPLETED diretamente
           await prisma.campaign.update({
             where: { id: campaign.id },

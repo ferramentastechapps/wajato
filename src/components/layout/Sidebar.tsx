@@ -13,7 +13,8 @@ import {
   MessageSquare,
   Flame,
   Smartphone,
-  Bot
+  Bot,
+  ListFilter
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -40,6 +41,7 @@ export default function Sidebar({ username = 'Admin' }: SidebarProps) {
     { label: 'Dashboard', href: '/', icon: LayoutDashboard },
     { label: 'Conexões', href: '/connections', icon: Smartphone },
     { label: 'Contatos', href: '/contacts', icon: Users },
+    { label: 'Segmentações', href: '/contacts/segments', icon: ListFilter },
     { label: 'Templates', href: '/templates', icon: FileText },
     { label: 'Campanhas', href: '/campaigns', icon: Send },
     { label: 'Auto-Responder', href: '/chatbot', icon: Bot },
