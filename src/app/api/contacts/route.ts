@@ -48,37 +48,25 @@ export async function POST(request: Request) {
     if (body.contacts && Array.isArray(body.contacts)) {
       const { contacts, groupId } = body;
       
-      const createdContacts = [];
-      
-      for (const item of contacts) {
-        if (!item.phone) continue;
-        
-        // Limpa telefone
-        const cleanPhone = evolutionApi.formatPhone(item.phone);
-        
-        // Upsert no banco
-        const contact = await prisma.contact.upsert({
-          where: { phone: cleanPhone },
-          update: {
-            name: item.name || null,
-            tags: item.tags || [],
-            groupId: groupId || null,
-          },
-          create: {
-            name: item.name || null,
-            phone: cleanPhone,
-            tags: item.tags || [],
-            groupId: groupId || null,
-          },
-        });
-        
-        createdContacts.push(contact);
-      }
+      const formattedContacts = contacts
+        .filter((item: any) => item.phone)
+        .map((item: any) => ({
+          phone: evolutionApi.formatPhone(item.phone),
+          name: item.name || null,
+          tags: item.tags || [],
+          groupId: groupId || null,
+        }))
+        .filter((item: any) => item.phone !== '');
+
+      const result = await prisma.contact.createMany({
+        data: formattedContacts,
+        skipDuplicates: true,
+      });
 
       return NextResponse.json({
         success: true,
-        message: `${createdContacts.length} contatos processados com sucesso.`,
-        count: createdContacts.length,
+        message: `${result.count} contatos importados com sucesso.`,
+        count: result.count,
       });
     }
 

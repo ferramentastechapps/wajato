@@ -57,6 +57,7 @@ export default function ContactsPage() {
   const [csvFileContent, setCsvFileContent] = useState<string | null>(null);
   const [csvError, setCsvError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [importProgress, setImportProgress] = useState<{ current: number; total: number } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -285,30 +286,44 @@ export default function ContactsPage() {
         return;
       }
 
-      const response = await fetch('/api/contacts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contacts: parsedContacts,
-          groupId: importGroupId || null,
-        }),
-      });
+      const batchSize = 1000;
+      const totalContacts = parsedContacts.length;
+      setImportProgress({ current: 0, total: totalContacts });
 
-      if (response.ok) {
-        setCsvFileContent(null);
-        setImportGroupId('');
-        if (fileInputRef.current) fileInputRef.current.value = '';
-        setShowImportCSV(false);
-        fetchData();
-      } else {
-        const data = await response.json();
-        setCsvError(data.message || 'Erro ao importar contatos.');
+      let importedCount = 0;
+
+      for (let i = 0; i < totalContacts; i += batchSize) {
+        const batch = parsedContacts.slice(i, i + batchSize);
+        
+        const response = await fetch('/api/contacts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contacts: batch,
+            groupId: importGroupId || null,
+          }),
+        });
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          throw new Error(data.message || 'Erro ao processar lote de contatos no servidor.');
+        }
+
+        importedCount += batch.length;
+        setImportProgress({ current: importedCount, total: totalContacts });
       }
-    } catch (err) {
+
+      setCsvFileContent(null);
+      setImportGroupId('');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      setShowImportCSV(false);
+      fetchData();
+    } catch (err: any) {
       console.error(err);
-      setCsvError('Erro ao conectar com o servidor.');
+      setCsvError(err.message || 'Erro ao conectar com o servidor.');
     } finally {
       setIsSubmitting(false);
+      setImportProgress(null);
     }
   };
 
@@ -681,34 +696,52 @@ export default function ContactsPage() {
                   </select>
                 </div>
 
-                <div className="form-group">
-                  <label className="form-label">Selecione o arquivo CSV</label>
-                  <input
-                    type="file"
-                    accept=".csv,.txt"
-                    ref={fileInputRef}
-                    onChange={handleCSVChange}
-                    style={{
-                      border: '1px dashed var(--border)',
-                      padding: '1.5rem',
-                      borderRadius: '8px',
-                      cursor: 'pointer',
-                      textAlign: 'center',
-                      backgroundColor: 'rgba(255,255,255,0.01)',
-                      width: '100%'
-                    }}
-                    required
-                  />
-                  <div style={{ marginTop: '0.75rem', fontSize: '0.75rem', color: '#9ca3af', lineHeight: '1.4' }}>
-                    <p style={{ fontWeight: 600 }}>Formato do arquivo esperado:</p>
-                    <p style={{ fontFamily: 'monospace', color: '#25d366', marginTop: '0.25rem' }}>
-                      Nome Cliente,5511999999999,tag1|tag2
-                    </p>
-                    <p style={{ marginTop: '0.5rem' }}>
-                      * A primeira coluna é o nome, a segunda é o número com DDI e DDD (somente números), e a terceira coluna são as tags (separadas por barra vertical | ). A primeira e terceira colunas são opcionais.
+                {importProgress ? (
+                  <div style={{ marginTop: '1rem', padding: '1.25rem', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8125rem', color: '#9ca3af', marginBottom: '0.5rem' }}>
+                      <span>Enviando contatos ao servidor...</span>
+                      <strong>{importProgress.current.toLocaleString()} / {importProgress.total.toLocaleString()} ({Math.round((importProgress.current / importProgress.total) * 100)}%)</strong>
+                    </div>
+                    <div className="progress-container" style={{ height: '8px', background: 'rgba(255,255,255,0.08)', borderRadius: '4px', overflow: 'hidden' }}>
+                      <div 
+                        className="progress-bar progress-bar-animated"
+                        style={{ height: '100%', width: `${(importProgress.current / importProgress.total) * 100}%`, background: '#25d366', borderRadius: '4px', transition: 'width 0.2s ease-out' }} 
+                      />
+                    </div>
+                    <p style={{ color: '#9ca3af', fontSize: '0.75rem', marginTop: '0.75rem', textAlign: 'center' }}>
+                      Por favor, mantenha esta janela aberta até a conclusão.
                     </p>
                   </div>
-                </div>
+                ) : (
+                  <div className="form-group">
+                    <label className="form-label">Selecione o arquivo CSV</label>
+                    <input
+                      type="file"
+                      accept=".csv,.txt"
+                      ref={fileInputRef}
+                      onChange={handleCSVChange}
+                      style={{
+                        border: '1px dashed var(--border)',
+                        padding: '1.5rem',
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        textAlign: 'center',
+                        backgroundColor: 'rgba(255,255,255,0.01)',
+                        width: '100%'
+                      }}
+                      required
+                    />
+                    <div style={{ marginTop: '0.75rem', fontSize: '0.75rem', color: '#9ca3af', lineHeight: '1.4' }}>
+                      <p style={{ fontWeight: 600 }}>Formato do arquivo esperado:</p>
+                      <p style={{ fontFamily: 'monospace', color: '#25d366', marginTop: '0.25rem' }}>
+                        Nome Cliente,5511999999999,tag1|tag2
+                      </p>
+                      <p style={{ marginTop: '0.5rem' }}>
+                        * A primeira coluna é o nome, a segunda é o número com DDI e DDD (somente números), e a terceira coluna são as tags (separadas por barra vertical | ). A primeira e terceira colunas são opcionais.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="modal-footer">
                 <button 
