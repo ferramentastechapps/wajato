@@ -60,6 +60,7 @@ export const chatbotRuleSchema = z.object({
 export const chatbotConfigSchema = z.object({
   aiEnabled: z.boolean(),
   aiContext: z.string().trim().min(1, 'O contexto de inteligência artificial é obrigatório'),
+  geminiApiKey: z.string().trim().nullable().optional(),
   businessHoursOnly: z.boolean(),
   startHour: z.coerce.number().int().min(0).max(23),
   endHour: z.coerce.number().int().min(0).max(23),

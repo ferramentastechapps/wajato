@@ -15,6 +15,7 @@ import {
   Save, 
   AlertCircle,
   Eye,
+  EyeOff,
   CheckCircle2,
   X
 } from 'lucide-react';
@@ -42,6 +43,7 @@ interface ChatbotLog {
 interface ChatbotConfig {
   aiEnabled: boolean;
   aiContext: string;
+  geminiApiKey?: string | null;
   businessHoursOnly: boolean;
   startHour: number;
   endHour: number;
@@ -53,6 +55,7 @@ export default function ChatbotPage() {
   const [config, setConfig] = useState<ChatbotConfig>({
     aiEnabled: false,
     aiContext: 'Você é um assistente de atendimento virtual prestativo e educado.',
+    geminiApiKey: '',
     businessHoursOnly: false,
     startHour: 8,
     endHour: 18,
@@ -70,6 +73,7 @@ export default function ChatbotPage() {
   const [ruleImageUrl, setRuleImageUrl] = useState('');
   const [ruleIsActive, setRuleIsActive] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
+  const [showApiKey, setShowApiKey] = useState(false);
 
   const fetchData = async () => {
     try {
@@ -272,6 +276,33 @@ export default function ChatbotPage() {
                   style={{ minHeight: '120px', fontSize: '0.85rem', resize: 'vertical' }}
                   placeholder="Ex: Você é o atendente da loja X. Seja gentil, ofereça ajuda sobre calçados e redirecione para o telefone X se pedirem suporte avançado."
                 />
+              </div>
+            )}
+
+            {/* API Key do Gemini Individual */}
+            {config.aiEnabled && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <label style={{ fontSize: '0.85rem', color: '#9ca3af', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Chave de API do Gemini (Google AI Studio):</span>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--primary)', opacity: 0.85 }}>Opcional (usa a global do servidor se vazia)</span>
+                </label>
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                  <input 
+                    type={showApiKey ? "text" : "password"}
+                    value={config.geminiApiKey || ''}
+                    onChange={(e) => setConfig({ ...config, geminiApiKey: e.target.value })}
+                    className="form-control"
+                    style={{ paddingRight: '2.5rem', fontSize: '0.85rem' }}
+                    placeholder="Cole sua chave de API Gemini (AI_ZAsy...)"
+                  />
+                  <button 
+                    type="button"
+                    onClick={() => setShowApiKey(!showApiKey)}
+                    style={{ position: 'absolute', right: '0.75rem', background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+                  >
+                    {showApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
               </div>
             )}
 

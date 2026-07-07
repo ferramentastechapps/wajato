@@ -241,6 +241,7 @@ model ChatbotConfig {
   id                String   @id @default("global")
   aiEnabled         Boolean  @default(false)
   aiContext         String   @default("Você é um assistente de atendimento virtual prestativo e educado.")
+  geminiApiKey      String?
   businessHoursOnly Boolean  @default(false)
   startHour         Int      @default(8)
   endHour           Int      @default(18)

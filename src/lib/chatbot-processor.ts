@@ -92,9 +92,9 @@ export async function handleChatbotIncoming(phone: string, text: string, instanc
     if (config.aiEnabled) {
       logger.info('Nenhuma regra encontrada. Gerando resposta com IA (Gemini)', { phone });
       
-      const apiKey = process.env.GEMINI_API_KEY;
+      const apiKey = config.geminiApiKey || process.env.GEMINI_API_KEY;
       if (!apiKey) {
-        logger.error('GEMINI_API_KEY não configurada nas variáveis de ambiente');
+        logger.error('Chave de API do Gemini não configurada (nem individualmente nem globalmente no servidor)');
         return;
       }
 

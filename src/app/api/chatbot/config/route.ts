@@ -20,6 +20,7 @@ export async function GET() {
           id: 'global',
           aiEnabled: false,
           aiContext: 'Você é um assistente de atendimento virtual prestativo e educado.',
+          geminiApiKey: null,
           businessHoursOnly: false,
           startHour: 8,
           endHour: 18,
@@ -27,7 +28,13 @@ export async function GET() {
       });
     }
 
-    return NextResponse.json({ success: true, config });
+    // Mascarar a API Key se ela existir para evitar expor no frontend
+    const responseConfig = {
+      ...config,
+      geminiApiKey: config.geminiApiKey ? '********' : null,
+    };
+
+    return NextResponse.json({ success: true, config: responseConfig });
   } catch (error: any) {
     console.error('Erro ao buscar configuração do chatbot:', error);
     return NextResponse.json(
@@ -54,13 +61,34 @@ export async function POST(request: Request) {
       );
     }
 
-    const { aiEnabled, aiContext, businessHoursOnly, startHour, endHour } = result.data;
+    const { aiEnabled, aiContext, geminiApiKey, businessHoursOnly, startHour, endHour } = result.data;
+
+    // Busca a config existente para saber a chave anterior
+    const existingConfig = await prisma.chatbotConfig.findUnique({
+      where: { id: 'global' },
+    });
+
+    let finalApiKey = existingConfig?.geminiApiKey || null;
+
+    if (geminiApiKey !== undefined) {
+      if (geminiApiKey === '********') {
+        // O usuário não alterou a chave mascarada
+        finalApiKey = existingConfig?.geminiApiKey || null;
+      } else if (geminiApiKey === '' || geminiApiKey === null) {
+        // O usuário limpou o campo
+        finalApiKey = null;
+      } else {
+        // O usuário digitou uma nova chave
+        finalApiKey = geminiApiKey;
+      }
+    }
 
     const config = await prisma.chatbotConfig.upsert({
       where: { id: 'global' },
       update: {
         aiEnabled,
         aiContext,
+        geminiApiKey: finalApiKey,
         businessHoursOnly,
         startHour,
         endHour,
@@ -69,13 +97,20 @@ export async function POST(request: Request) {
         id: 'global',
         aiEnabled,
         aiContext,
+        geminiApiKey: finalApiKey,
         businessHoursOnly,
         startHour,
         endHour,
       },
     });
 
-    return NextResponse.json({ success: true, config });
+    // Retorna a config mascarada
+    const responseConfig = {
+      ...config,
+      geminiApiKey: config.geminiApiKey ? '********' : null,
+    };
+
+    return NextResponse.json({ success: true, config: responseConfig });
   } catch (error: any) {
     console.error('Erro ao salvar configuração do chatbot:', error);
     return NextResponse.json(

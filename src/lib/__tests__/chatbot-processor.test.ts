@@ -187,4 +187,30 @@ describe('Chatbot Processor Unit Tests', () => {
       },
     });
   });
+
+  it('deve priorizar a chave de API individual do banco de dados (geminiApiKey) em relação à do servidor', async () => {
+    // Configura chave do servidor e chave individual
+    process.env.GEMINI_API_KEY = 'global-server-key';
+
+    vi.mocked(prisma.chatbotConfig.findUnique).mockResolvedValueOnce({
+      id: 'global',
+      aiEnabled: true,
+      aiContext: 'Você é um assistente.',
+      geminiApiKey: 'individual-client-key',
+      businessHoursOnly: false,
+      startHour: 8,
+      endHour: 18,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    vi.mocked(prisma.chatbotRule.findMany).mockResolvedValueOnce([]);
+    vi.mocked(prisma.chatbotLog.findMany).mockResolvedValueOnce([]);
+
+    await handleChatbotIncoming('5511999999999', 'Olá', 'instancia-teste');
+
+    // Verifica se instanciou o GoogleGenerativeAI com a chave individual do banco
+    expect(GoogleGenerativeAI).toHaveBeenCalledWith('individual-client-key');
+    expect(evolutionApi.sendTextMessage).toHaveBeenCalledWith('instancia-teste', '5511999999999', 'Olá, sou a IA!');
+  });
 });
