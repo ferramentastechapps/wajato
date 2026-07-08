@@ -287,6 +287,7 @@ export const evolutionApi = {
   },
 
   /**
+  /**
    * Envia um sticker via URL (.webp)
    */
   async sendSticker(instanceName: string, phone: string, stickerUrl: string): Promise<any> {
@@ -307,10 +308,71 @@ export const evolutionApi = {
   },
 
   /**
+   * Posta um Story/Status de texto ou imagem
+   */
+  async sendStatusUpdate(instanceName: string, text: string, statusType: 'text' | 'image' = 'text', mediaUrl?: string): Promise<any> {
+    try {
+      const response = await evolutionClient.post(`/message/sendStory/${instanceName}`, {
+        storyMessage: {
+          type: statusType,
+          text: text,
+          media: mediaUrl || '',
+          backgroundColor: '#0f172a',
+          font: 3
+        }
+      });
+      return response.data;
+    } catch (error: any) {
+      console.error(`Erro ao postar status para ${instanceName}:`, error?.response?.data || error.message);
+      return null;
+    }
+  },
+
+  /**
+   * Envia uma localização geográfica
+   */
+  async sendLocationMessage(instanceName: string, phone: string, latitude: number, longitude: number, name: string, address: string): Promise<any> {
+    try {
+      const formattedPhone = this.formatPhone(phone);
+      const response = await evolutionClient.post(`/message/sendLocation/${instanceName}`, {
+        number: formattedPhone,
+        locationMessage: {
+          latitude,
+          longitude,
+          name,
+          address
+        }
+      });
+      return response.data;
+    } catch (error: any) {
+      console.error(`Erro ao enviar localização para ${phone}:`, error?.response?.data || error.message);
+      return null;
+    }
+  },
+
+  /**
+   * Define as configurações de Proxy para uma instância do Evolution API
+   */
+  async setInstanceProxy(instanceName: string, proxyUrl: string | null): Promise<any> {
+    try {
+      const response = await evolutionClient.post(`/instance/setProxy/${instanceName}`, {
+        proxy: proxyUrl || ''
+      });
+      return response.data;
+    } catch (error: any) {
+      console.error(`Erro ao configurar proxy para ${instanceName}:`, error?.response?.data || error.message);
+      throw new Error(error?.response?.data?.message || 'Falha ao configurar proxy');
+    }
+  },
+
+  /**
    * Formata o número do telefone para o padrão do WhatsApp (sem caracteres especiais)
-   * Garante o DDI (55 para Brasil)
+   * Garante o DDI (55 para Brasil). Retorna intacto se contiver '@'.
    */
   formatPhone(phone: string): string {
+    if (phone.includes('@')) {
+      return phone;
+    }
     // Remove tudo o que não for número
     let cleaned = phone.replace(/\D/g, '');
 

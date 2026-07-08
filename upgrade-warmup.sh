@@ -25,6 +25,7 @@ else
   psql "$DATABASE_URL" -f prisma/migrations/warmup_pool_upgrade.sql
   psql "$DATABASE_URL" -f prisma/migrations/warmup_instances_upgrade.sql
   psql "$DATABASE_URL" -f prisma/migrations/warmup_v2_2_upgrade.sql
+  psql "$DATABASE_URL" -f prisma/migrations/warmup_v2_4_upgrade.sql
   echo "  ✅ SQLs manuais aplicados."
 fi
 

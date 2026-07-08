@@ -34,6 +34,7 @@ interface Instance {
   activeWarmupType: 'SINGLE' | 'POOL' | 'NONE';
   warmupCampaignId: string | null;
   warmupPoolId: string | null;
+  proxy: string | null;
 }
 
 export default function ConnectionsPage() {
@@ -41,6 +42,7 @@ export default function ConnectionsPage() {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newInstanceName, setNewInstanceName] = useState('');
+  const [proxy, setProxy] = useState('');
   const [modalError, setModalError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   
@@ -86,12 +88,16 @@ export default function ConnectionsPage() {
       const res = await fetch('/api/whatsapp/instances', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newInstanceName.trim() }),
+        body: JSON.stringify({ 
+          name: newInstanceName.trim(),
+          proxy: proxy.trim() || null
+        }),
       });
       const data = await res.json();
       if (res.ok) {
         setIsModalOpen(false);
         setNewInstanceName('');
+        setProxy('');
         await fetchInstances();
       } else {
         setModalError(data.error || 'Erro ao criar instância.');
@@ -335,6 +341,11 @@ export default function ConnectionsPage() {
                     <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>
                       {inst.phone ? `+${inst.phone}` : 'Não conectado'}
                     </div>
+                    {inst.proxy && (
+                      <div style={{ fontSize: '0.65rem', color: '#10b981', marginTop: 2, display: 'flex', alignItems: 'center', gap: '3px' }}>
+                        🌐 Proxy: {inst.proxy.includes('@') ? inst.proxy.split('@')[1] : inst.proxy}
+                      </div>
+                    )}
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: 4 }}>
                       <span style={{
@@ -661,6 +672,23 @@ export default function ConnectionsPage() {
                   value={newInstanceName}
                   onChange={e => setNewInstanceName(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))}
                 />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', marginBottom: 6, display: 'block' }}>
+                  Proxy de Conexão (Opcional)
+                </label>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="Ex: http://usuario:senha@ip:porta"
+                  value={proxy}
+                  onChange={e => setProxy(e.target.value)}
+                  style={{ width: '100%', padding: '0.5rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '6px', color: '#fff', outline: 'none' }}
+                />
+                <small style={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.68rem', marginTop: 2, display: 'block' }}>
+                  Suporta HTTP ou SOCKS5 para evitar bloqueios de IP pela Meta.
+                </small>
               </div>
 
               {modalError && (

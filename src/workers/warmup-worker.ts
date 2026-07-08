@@ -51,24 +51,30 @@ import {
 const WARMUP_QUEUE_NAME = 'warmup-queue';
 
 // Tipos de mensagem disponíveis com seus pesos de probabilidade
-type MessageAction = 'TEXT' | 'EMOJI' | 'REACTION' | 'STICKER' | 'AUDIO';
+type MessageAction = 'TEXT' | 'EMOJI' | 'REACTION' | 'STICKER' | 'AUDIO' | 'STATUS' | 'LOCATION' | 'IMAGE';
 
 /**
  * Escolhe aleatoriamente o tipo de ação para essa mensagem.
  * Pesos ajustados para simular comportamento humano realista:
- * - Texto: 60% (maioria das interações)
+ * - Texto: 55% (maioria das interações)
  * - Emoji: 15% (respostas rápidas comuns)
  * - Reação: 10% (recurso mais recente, menos frequente)
  * - Sticker: 5% (ocasional)
- * - Áudio: 10% (notas de voz humanas altamente confiáveis)
+ * - Áudio: 5% (notas de voz humanas altamente confiáveis)
+ * - Imagem: 5% (mídia)
+ * - Localização: 3% (geolocalização humana)
+ * - Status/Stories: 2% (postagem social)
  */
 function chooseMessageAction(): MessageAction {
   const rand = Math.random() * 100;
-  if (rand < 60) return 'TEXT';
-  if (rand < 75) return 'EMOJI';
-  if (rand < 85) return 'REACTION';
-  if (rand < 90) return 'STICKER';
-  return 'AUDIO';
+  if (rand < 55) return 'TEXT';
+  if (rand < 70) return 'EMOJI';
+  if (rand < 80) return 'REACTION';
+  if (rand < 85) return 'STICKER';
+  if (rand < 90) return 'AUDIO';
+  if (rand < 95) return 'IMAGE';
+  if (rand < 98) return 'LOCATION';
+  return 'STATUS';
 }
 
 /**
@@ -79,6 +85,32 @@ const WARMUP_STICKER_URLS = [
   'https://www.gstatic.com/webp/gallery3/1.webp',
   'https://www.gstatic.com/webp/gallery3/2.webp',
   'https://www.gstatic.com/webp/gallery3/3.webp',
+];
+
+const WARMUP_IMAGE_URLS = [
+  'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=600&auto=format&fit=crop',
+  'https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=600&auto=format&fit=crop',
+  'https://images.unsplash.com/photo-1498050108023-c5249f4df085?w=600&auto=format&fit=crop',
+  'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop',
+  'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=600&auto=format&fit=crop',
+];
+
+const WARMUP_STATUS_TEXTS = [
+  'Bom dia a todos! Que o dia seja produtivo e abençoado. 🙌✨',
+  'Mais um dia de foco e muito trabalho. Bora vencer! 💻💪',
+  'A vida é feita de escolhas, escolha ser feliz hoje. 🌸🍃',
+  'Café da manhã reforçado para aguentar a rotina. ☕🥪',
+  'A determinação de hoje é o sucesso de amanhã. 🚀💫',
+  'Gratidão por mais um dia de vida e saúde. 🙏❤️',
+];
+
+const WARMUP_LOCATIONS = [
+  { lat: -23.5505, lng: -46.6333, name: 'Praça da Sé', addr: 'Centro, São Paulo - SP, Brasil' },
+  { lat: -23.5617, lng: -46.6560, name: 'Avenida Paulista', addr: 'Bela Vista, São Paulo - SP, Brasil' },
+  { lat: -22.9068, lng: -43.1729, name: 'Centro do Rio', addr: 'Rio de Janeiro - RJ, Brasil' },
+  { lat: -15.7942, lng: -47.8822, name: 'Esplanada dos Ministérios', addr: 'Brasília - DF, Brasil' },
+  { lat: -19.9167, lng: -43.9345, name: 'Praça da Liberdade', addr: 'Funcionários, Belo Horizonte - MG, Brasil' },
+  { lat: -25.4284, lng: -49.2733, name: 'Jardim Botânico', addr: 'Curitiba - PR, Brasil' },
 ];
 
 export const warmupWorker = new Worker(
@@ -332,6 +364,61 @@ export const warmupWorker = new Worker(
           }
         }
 
+      } else if (action === 'IMAGE') {
+        // Envio de foto com legenda
+        messageType = 'TEXT';
+        const imageUrl = WARMUP_IMAGE_URLS[Math.floor(Math.random() * WARMUP_IMAGE_URLS.length)];
+        
+        try {
+          const context = `Gere uma legenda curta de WhatsApp (1 frase) em português para acompanhar o envio de uma foto. Use tom amigável.`;
+          messageText = await generateNextWarmupMessage(context, [], topic);
+        } catch (e) {
+          messageText = 'Olha que legal essa foto! 📸';
+        }
+        
+        typingDelay = 2000 + Math.random() * 3000;
+        await new Promise(r => setTimeout(r, typingDelay));
+        
+        try {
+          await evolutionApi.sendMediaMessage(sourceInstance, targetPhone, imageUrl, 'image', messageText);
+          messageText = `[Foto] ${messageText}`;
+        } catch (err) {
+          console.error('[Warmup Worker] Erro ao enviar imagem:', err);
+          status = 'FAILED';
+        }
+
+      } else if (action === 'LOCATION') {
+        // Envio de localização
+        messageType = 'TEXT';
+        const loc = WARMUP_LOCATIONS[Math.floor(Math.random() * WARMUP_LOCATIONS.length)];
+        messageText = `[Localização] ${loc.name} - ${loc.addr}`;
+        
+        typingDelay = 1500 + Math.random() * 2000;
+        await new Promise(r => setTimeout(r, typingDelay));
+        
+        try {
+          await evolutionApi.sendLocationMessage(sourceInstance, targetPhone, loc.lat, loc.lng, loc.name, loc.addr);
+        } catch (err) {
+          console.error('[Warmup Worker] Erro ao enviar localização:', err);
+          status = 'FAILED';
+        }
+
+      } else if (action === 'STATUS') {
+        // Postagem no Status/Stories
+        messageType = 'TEXT';
+        const statusText = WARMUP_STATUS_TEXTS[Math.floor(Math.random() * WARMUP_STATUS_TEXTS.length)];
+        messageText = `[Status] ${statusText}`;
+        
+        typingDelay = 1000 + Math.random() * 1000;
+        await new Promise(r => setTimeout(r, typingDelay));
+        
+        try {
+          await evolutionApi.sendStatusUpdate(sourceInstance, statusText, 'text');
+        } catch (err) {
+          console.error('[Warmup Worker] Erro ao postar status:', err);
+          status = 'FAILED';
+        }
+
       } else {
         // TEXT — geração via IA Gemini
         messageType = 'TEXT';
@@ -451,24 +538,31 @@ export const warmupWorker = new Worker(
           }
 
           // Atraso inteligente baseado no engajamento do contato
-          const hasReplied = logs.some(l => l.fromInstance === nextPhone);
-          const lastLog = logs[0]; // mais recente
-
           let meanDelay = 90000;    // 90s padrão
           let stdDevDelay = 45000;  // 45s padrão
 
-          if (!hasReplied) {
-            // Se o contato nunca respondeu nos logs recentes, espaçamos bastante (2.5h) para não parecer spam
-            meanDelay = 2.5 * 60 * 60 * 1000; // 2.5 horas
-            stdDevDelay = 30 * 60 * 1000;     // 30 minutos
-            console.log(`[Warmup Worker] Destinatário ${nextPhone} nunca respondeu. Agendando próximo envio em ~2.5h.`);
-          } else if (lastLog && lastLog.fromInstance === sourceInstance) {
-            // Se a última mensagem foi nossa e estamos enviando outra consecutiva, espaçamos em ~1h
-            meanDelay = 1 * 60 * 60 * 1000;   // 1 hora
-            stdDevDelay = 15 * 60 * 1000;     // 15 minutos
-            console.log(`[Warmup Worker] Destinatário ${nextPhone} já respondeu antes, mas a última mensagem foi nossa. Agendando em ~1h.`);
+          if (campaign.isGroup) {
+            // Para grupos, espaçamos em ~45 minutos por padrão para simular participação natural
+            meanDelay = 45 * 60 * 1000;
+            stdDevDelay = 15 * 60 * 1000;
+            console.log(`[Warmup Worker] Campanha em grupo. Agendando próximo envio em ~45min.`);
           } else {
-            console.log(`[Warmup Worker] A última mensagem foi do destinatário ${nextPhone}. Agendando resposta rápida em ~90s.`);
+            const hasReplied = logs.some(l => l.fromInstance === nextPhone);
+            const lastLog = logs[0]; // mais recente
+
+            if (!hasReplied) {
+              // Se o contato nunca respondeu nos logs recentes, espaçamos bastante (2.5h) para não parecer spam
+              meanDelay = 2.5 * 60 * 60 * 1000; // 2.5 horas
+              stdDevDelay = 30 * 60 * 1000;     // 30 minutos
+              console.log(`[Warmup Worker] Destinatário ${nextPhone} nunca respondeu. Agendando próximo envio em ~2.5h.`);
+            } else if (lastLog && lastLog.fromInstance === sourceInstance) {
+              // Se a última mensagem foi nossa e estamos enviando outra consecutiva, espaçamos em ~1h
+              meanDelay = 1 * 60 * 60 * 1000;   // 1 hora
+              stdDevDelay = 15 * 60 * 1000;     // 15 minutos
+              console.log(`[Warmup Worker] Destinatário ${nextPhone} já respondeu antes, mas a última mensagem foi nossa. Agendando em ~1h.`);
+            } else {
+              console.log(`[Warmup Worker] A última mensagem foi do destinatário ${nextPhone}. Agendando resposta rápida em ~90s.`);
+            }
           }
 
           await queueWarmupMessage({

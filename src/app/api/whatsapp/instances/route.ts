@@ -127,6 +127,7 @@ export async function GET() {
           activeWarmupType,
           warmupCampaignId,
           warmupPoolId,
+          proxy: dbInst.proxy,
           updatedAt: dbInst.updatedAt,
         };
       })
@@ -148,7 +149,7 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { name } = body;
+    const { name, proxy } = body;
 
     if (!name || typeof name !== 'string') {
       return NextResponse.json({ error: 'O nome da instância é obrigatório' }, { status: 400 });
@@ -196,10 +197,21 @@ export async function POST(req: Request) {
         name: cleanName,
         status: dbStatus,
         qrCode: qrCodeBase64,
+        proxy: proxy || null,
       },
     });
 
-    // 3. Configura Webhook
+    // 3. Configura Proxy se fornecida
+    if (proxy) {
+      try {
+        await evolutionApi.setInstanceProxy(cleanName, proxy);
+        console.log(`[POST Instance] Proxy configurado com sucesso para ${cleanName}`);
+      } catch (proxyErr) {
+        console.error(`[POST Instance] Erro ao configurar proxy para ${cleanName}:`, proxyErr);
+      }
+    }
+
+    // 4. Configura Webhook
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
     try {
       await evolutionApi.setWebhook(cleanName, `${appUrl}/api/webhook`);

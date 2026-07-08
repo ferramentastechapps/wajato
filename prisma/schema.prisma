@@ -136,6 +136,7 @@ model WhatsAppInstance {
   profilePicUrl String?  // Foto de perfil do WhatsApp
   dailyMsgCount Int      @default(0)
   healthScore   Int      @default(100) // 0 a 100
+  proxy         String?  // Proxy associada à instância
   updatedAt     DateTime @updatedAt
 }
 
@@ -154,6 +155,7 @@ model WarmupCampaign {
   targetPhone      String       // Telefone da instância destino
   targetPhones     String?      // Lista de telefones separados por vírgula para rotação
   customContext    String?      // Contexto ou Persona customizada de IA
+  isGroup          Boolean      @default(false) // Se o aquecimento é para um grupo
   status           WarmupStatus @default(RUNNING)
   currentDay       Int          @default(1)
   totalDays        Int          @default(30)

@@ -80,6 +80,7 @@ export default function CreateWarmupModal({ onClose, onCreated }: Props) {
   const [intensity, setIntensity] = useState<Intensity>('soft');
   const [startHour, setStartHour] = useState(8);
   const [endHour, setEndHour] = useState(22);
+  const [isGroup, setIsGroup] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -102,15 +103,26 @@ export default function CreateWarmupModal({ onClose, onCreated }: Props) {
       return;
     }
 
-    // Processa e limpa os telefones de destino (aceita quebras de linha, espaços, vírgulas ou ponto e vírgula como separadores)
-    const phonesList = targetPhonesInput
-      .split(/[\s,;]+/)
-      .map(p => p.replace(/\D/g, ''))
-      .filter(Boolean);
+    let phonesList: string[] = [];
 
-    if (phonesList.length === 0) {
-      setError('Insira pelo menos um telefone de destino válido.');
-      return;
+    if (isGroup) {
+      const gJid = targetPhonesInput.trim();
+      if (!gJid || !gJid.endsWith('@g.us')) {
+        setError('Por favor, informe um JID de grupo válido (deve terminar com @g.us).');
+        return;
+      }
+      phonesList = [gJid];
+    } else {
+      // Processa e limpa os telefones de destino (aceita quebras de linha, espaços, vírgulas ou ponto e vírgula como separadores)
+      phonesList = targetPhonesInput
+        .split(/[\s,;]+/)
+        .map(p => p.replace(/\D/g, ''))
+        .filter(Boolean);
+
+      if (phonesList.length === 0) {
+        setError('Insira pelo menos um telefone de destino válido.');
+        return;
+      }
     }
 
     if (startHour >= endHour) {
@@ -140,6 +152,7 @@ export default function CreateWarmupModal({ onClose, onCreated }: Props) {
           targetPhone: phonesList[0],
           targetPhones: phonesList.join(','),
           customContext: finalContext,
+          isGroup,
           totalDays: config.days,
           initialMsgsPerDay: config.initial,
           maxMsgsPerDay: config.max,
@@ -290,23 +303,88 @@ export default function CreateWarmupModal({ onClose, onCreated }: Props) {
                 </div>
               </div>
 
-              {/* Múltiplos Telefones */}
+              {/* Tipo de Destino (Individual vs Grupo) */}
               <div>
                 <label style={{ fontSize: '0.82rem', fontWeight: 700, color: 'rgba(255,255,255,0.85)', marginBottom: '0.4rem', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Lista de Telefones de Destino * <span style={{ fontWeight: 400, textTransform: 'none', color: 'rgba(255,255,255,0.4)', letterSpacing: 0 }}>(Um número por linha com DDI)</span>
+                  Tipo de Destino
                 </label>
-                <textarea
-                  className="form-input"
-                  required
-                  rows={4}
-                  value={targetPhonesInput}
-                  onChange={e => setTargetPhonesInput(e.target.value)}
-                  placeholder="5511999999999&#10;5511888888888&#10;5511777777777"
-                  style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', color: '#fff', outline: 'none', fontFamily: 'monospace', resize: 'vertical', fontSize: '0.85rem' }}
-                />
-                <small style={{ color: 'rgba(255,255,255,0.4)', display: 'block', marginTop: 4 }}>
-                  💡 O robô rotacionará os envios automaticamente entre estes números, evitando falar com apenas um chip.
-                </small>
+                <div style={{ display: 'flex', gap: '0.75rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => { setIsGroup(false); setTargetPhonesInput(''); }}
+                    style={{
+                      flex: 1,
+                      padding: '0.55rem',
+                      borderRadius: '8px',
+                      border: `1px solid ${!isGroup ? '#f59e0b' : 'rgba(255,255,255,0.08)'}`,
+                      background: !isGroup ? 'rgba(245, 158, 11, 0.08)' : 'rgba(255,255,255,0.02)',
+                      color: '#fff',
+                      cursor: 'pointer',
+                      fontSize: '0.8rem',
+                      fontWeight: 700
+                    }}
+                  >
+                    👤 Contatos Individuais
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setIsGroup(true); setTargetPhonesInput(''); }}
+                    style={{
+                      flex: 1,
+                      padding: '0.55rem',
+                      borderRadius: '8px',
+                      border: `1px solid ${isGroup ? '#f59e0b' : 'rgba(255,255,255,0.08)'}`,
+                      background: isGroup ? 'rgba(245, 158, 11, 0.08)' : 'rgba(255,255,255,0.02)',
+                      color: '#fff',
+                      cursor: 'pointer',
+                      fontSize: '0.8rem',
+                      fontWeight: 700
+                    }}
+                  >
+                    👥 Grupo de WhatsApp
+                  </button>
+                </div>
+              </div>
+
+              {/* Múltiplos Telefones ou Grupo */}
+              <div>
+                {isGroup ? (
+                  <>
+                    <label style={{ fontSize: '0.82rem', fontWeight: 700, color: 'rgba(255,255,255,0.85)', marginBottom: '0.4rem', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      JID do Grupo de Destino *
+                    </label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      required
+                      value={targetPhonesInput}
+                      onChange={e => setTargetPhonesInput(e.target.value)}
+                      placeholder="Ex: 12036302839201@g.us"
+                      style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', color: '#fff', outline: 'none' }}
+                    />
+                    <small style={{ color: 'rgba(255,255,255,0.4)', display: 'block', marginTop: 4 }}>
+                      💡 A instância enviará mensagens neste grupo a cada ~45 minutos.
+                    </small>
+                  </>
+                ) : (
+                  <>
+                    <label style={{ fontSize: '0.82rem', fontWeight: 700, color: 'rgba(255,255,255,0.85)', marginBottom: '0.4rem', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      Lista de Telefones de Destino * <span style={{ fontWeight: 400, textTransform: 'none', color: 'rgba(255,255,255,0.4)', letterSpacing: 0 }}>(Um número por linha com DDI)</span>
+                    </label>
+                    <textarea
+                      className="form-input"
+                      required
+                      rows={4}
+                      value={targetPhonesInput}
+                      onChange={e => setTargetPhonesInput(e.target.value)}
+                      placeholder="5511999999999&#10;5511888888888&#10;5511777777777"
+                      style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', color: '#fff', outline: 'none', fontFamily: 'monospace', resize: 'vertical', fontSize: '0.85rem' }}
+                    />
+                    <small style={{ color: 'rgba(255,255,255,0.4)', display: 'block', marginTop: 4 }}>
+                      💡 O robô rotacionará os envios automaticamente entre estes números, evitando falar com apenas um chip.
+                    </small>
+                  </>
+                )}
               </div>
 
               {error && (
@@ -320,12 +398,20 @@ export default function CreateWarmupModal({ onClose, onCreated }: Props) {
                 className="btn btn-primary"
                 style={{ marginTop: '0.5rem', width: '100%', padding: '0.85rem', fontWeight: 700, background: 'linear-gradient(135deg, #10b981, #059669)', border: 'none', borderRadius: '10px', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(16, 185, 129, 0.2)' }}
                 onClick={() => {
-                  if (sourceInstance && targetPhonesInput.trim()) {
-                    setStep(2);
-                    setError('');
-                  } else {
-                    setError('Preencha os campos obrigatórios (Origem e Telefones de Destino).');
+                  if (!sourceInstance) {
+                    setError('Selecione a instância de origem.');
+                    return;
                   }
+                  if (!targetPhonesInput.trim()) {
+                    setError(isGroup ? 'Informe o JID do Grupo.' : 'Informe os telefones de destino.');
+                    return;
+                  }
+                  if (isGroup && !targetPhonesInput.trim().endsWith('@g.us')) {
+                    setError('O JID do grupo deve terminar com @g.us');
+                    return;
+                  }
+                  setStep(2);
+                  setError('');
                 }}
               >
                 Configurar Persona & Horários →
