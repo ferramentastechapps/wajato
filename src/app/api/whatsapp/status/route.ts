@@ -28,27 +28,33 @@ export async function GET() {
 
     const status = connectionState === 'CONNECTED' ? 'CONNECTED' : (qrCodeBase64 ? 'DISCONNECTED' : 'INITIALIZING');
 
-    // 2. Atualiza no banco local
-    const instance = await prisma.whatsAppInstance.upsert({
+    // 2. Atualiza no banco local apenas se a instância principal existir
+    const existingInstance = await prisma.whatsAppInstance.findUnique({
       where: { name: INSTANCE_NAME },
-      update: {
-        status,
-        qrCode: qrCodeBase64,
-        updatedAt: new Date(),
-      },
-      create: {
-        name: INSTANCE_NAME,
-        status,
-        qrCode: qrCodeBase64,
-        updatedAt: new Date(),
-      },
     });
+
+    let status = connectionState === 'CONNECTED' ? 'CONNECTED' : (qrCodeBase64 ? 'DISCONNECTED' : 'INITIALIZING');
+    let updatedAt = new Date();
+
+    if (existingInstance) {
+      await prisma.whatsAppInstance.update({
+        where: { name: INSTANCE_NAME },
+        data: {
+          status,
+          qrCode: qrCodeBase64,
+          updatedAt,
+        },
+      });
+    } else {
+      // Se a instância principal foi excluída pelo usuário, não recriamos ela
+      status = 'DISCONNECTED';
+    }
 
     return NextResponse.json({
       success: true,
-      status: instance.status,
-      qrCode: instance.qrCode,
-      updatedAt: instance.updatedAt,
+      status,
+      qrCode: qrCodeBase64,
+      updatedAt,
     });
   } catch (error: any) {
     console.error('Erro ao verificar status do WhatsApp:', error);
