@@ -29,6 +29,7 @@ export async function getWebshareProxies(): Promise<string[]> {
   try {
     const response = await axios.get('https://proxy.webshare.io/api/v2/proxy/list/', {
       params: {
+        mode: 'direct',
         page: 1,
         page_size: 100,
       },
