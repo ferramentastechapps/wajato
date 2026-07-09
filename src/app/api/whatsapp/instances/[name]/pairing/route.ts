@@ -35,7 +35,14 @@ export async function POST(req: Request, { params }: Params) {
       return NextResponse.json({ error: 'Instância não encontrada no banco' }, { status: 404 });
     }
 
-    // 2. Chama o Evolution API para gerar o código de pareamento
+    // 2. Garante que a instância é desconectada antes de pedir o pairing code (evita estado 'connecting' travado)
+    try {
+      await evolutionApi.logoutInstance(name);
+    } catch {
+      // Ignora erro de logout se a instância já estiver desconectada
+    }
+
+    // 3. Chama o Evolution API para gerar o código de pareamento
     const pairingData = await evolutionApi.getPairingCode(name, formattedPhone);
 
     if (!pairingData || !pairingData.code) {

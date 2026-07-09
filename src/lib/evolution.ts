@@ -81,10 +81,15 @@ export const evolutionApi = {
   async getPairingCode(instanceName: string, phone: string): Promise<{ code: string }> {
     try {
       const formattedPhone = this.formatPhone(phone);
-      const response = await evolutionClient.get(`/instance/connect/pairingCode/${instanceName}`, {
+      // Na Evolution API v2, o endpoint de conexão com a query ?number retorna o pairingCode no JSON
+      const response = await evolutionClient.get(`/instance/connect/${instanceName}`, {
         params: { number: formattedPhone },
       });
-      return response.data;
+      const pairingCode = response.data?.pairingCode;
+      if (!pairingCode) {
+        throw new Error('Evolution API não retornou o pairingCode no formato esperado.');
+      }
+      return { code: pairingCode };
     } catch (error: any) {
       console.error(`Erro ao buscar Pairing Code para ${instanceName}:`, error?.response?.data || error.message);
       throw new Error(error?.response?.data?.message || 'Falha ao obter código de pareamento');
