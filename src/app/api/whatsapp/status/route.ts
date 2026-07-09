@@ -26,8 +26,6 @@ export async function GET() {
       }
     }
 
-    const status = connectionState === 'CONNECTED' ? 'CONNECTED' : (qrCodeBase64 ? 'DISCONNECTED' : 'INITIALIZING');
-
     // 2. Atualiza no banco local apenas se a instância principal existir
     const existingInstance = await prisma.whatsAppInstance.findUnique({
       where: { name: INSTANCE_NAME },
