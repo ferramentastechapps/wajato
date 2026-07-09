@@ -46,6 +46,10 @@ export default function ConnectionsPage() {
   const [modalError, setModalError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   
+  // Integração Webshare
+  const [webshareAvailable, setWebshareAvailable] = useState(false);
+  const [loadingWebshare, setLoadingWebshare] = useState(false);
+  
   // Ações de carregamento individuais por instância
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
@@ -68,8 +72,39 @@ export default function ConnectionsPage() {
     }
   };
 
+  const checkWebshareStatus = async () => {
+    try {
+      const res = await fetch('/api/whatsapp/webshare-proxies?action=status');
+      const data = await res.json();
+      if (data.success && data.configured) {
+        setWebshareAvailable(true);
+      }
+    } catch (err) {
+      console.error('Erro ao checar status do Webshare:', err);
+    }
+  };
+
+  const handleGetWebshareProxy = async () => {
+    setLoadingWebshare(true);
+    setModalError('');
+    try {
+      const res = await fetch('/api/whatsapp/webshare-proxies?action=random');
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setProxy(data.proxy);
+      } else {
+        setModalError(data.error || 'Nenhum proxy disponível na sua conta Webshare.');
+      }
+    } catch (err) {
+      setModalError('Falha ao conectar na API da Webshare.');
+    } finally {
+      setLoadingWebshare(false);
+    }
+  };
+
   useEffect(() => {
     fetchInstances();
+    checkWebshareStatus();
     const interval = setInterval(fetchInstances, 10000);
     return () => clearInterval(interval);
   }, []);
@@ -675,9 +710,30 @@ export default function ConnectionsPage() {
               </div>
 
               <div>
-                <label style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', marginBottom: 6, display: 'block' }}>
-                  Proxy de Conexão (Opcional)
-                </label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <label style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', margin: 0 }}>
+                    Proxy de Conexão (Opcional)
+                  </label>
+                  {webshareAvailable && (
+                    <button
+                      type="button"
+                      onClick={handleGetWebshareProxy}
+                      disabled={loadingWebshare}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: '#10b981',
+                        fontSize: '0.72rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        textDecoration: 'underline',
+                        padding: 0
+                      }}
+                    >
+                      {loadingWebshare ? 'Buscando IP...' : '⚡ Gerar via Webshare'}
+                    </button>
+                  )}
+                </div>
                 <input
                   type="text"
                   className="form-input"
