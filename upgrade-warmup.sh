@@ -61,11 +61,18 @@ echo "  ✅ Build concluído."
 
 echo ""
 echo "[6/6] Reiniciando serviços no PM2..."
-pm2 restart wajato-web --update-env 2>/dev/null || pm2 start npm --name "wajato-web" -- run start
-pm2 restart wajato-worker --update-env 2>/dev/null || NODE_ENV=production pm2 start "npx tsx src/workers/message-worker.ts" --name "wajato-worker"
-pm2 restart wajato-warmup --update-env 2>/dev/null || NODE_ENV=production pm2 start "npx tsx src/workers/warmup-worker.ts" --name "wajato-warmup"
-pm2 restart wajato-warmup-pool --update-env 2>/dev/null || NODE_ENV=production pm2 start "npx tsx src/workers/warmup-pool-worker.ts" --name "wajato-warmup-pool"
-pm2 restart wajato-scheduler --update-env 2>/dev/null || NODE_ENV=production pm2 start "npx tsx src/workers/scheduler-worker.ts" --name "wajato-scheduler"
+# Garante que os processos executam no diretório correto (/opt/wajato) especificando o --cwd
+pm2 delete wajato-web 2>/dev/null || true
+pm2 delete wajato-worker 2>/dev/null || true
+pm2 delete wajato-warmup 2>/dev/null || true
+pm2 delete wajato-warmup-pool 2>/dev/null || true
+pm2 delete wajato-scheduler 2>/dev/null || true
+
+NODE_ENV=production pm2 start npm --name "wajato-web" --cwd "/opt/wajato" -- run start
+NODE_ENV=production pm2 start "npx tsx src/workers/message-worker.ts" --name "wajato-worker" --cwd "/opt/wajato"
+NODE_ENV=production pm2 start "npx tsx src/workers/warmup-worker.ts" --name "wajato-warmup" --cwd "/opt/wajato"
+NODE_ENV=production pm2 start "npx tsx src/workers/warmup-pool-worker.ts" --name "wajato-warmup-pool" --cwd "/opt/wajato"
+NODE_ENV=production pm2 start "npx tsx src/workers/scheduler-worker.ts" --name "wajato-scheduler" --cwd "/opt/wajato"
 pm2 save
 echo "  ✅ PM2 reiniciado."
 
