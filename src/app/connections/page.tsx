@@ -17,9 +17,26 @@ import {
   Copy,
   Check,
   ChevronLeft,
-  Key
+  ChevronDown,
+  ChevronUp,
+  Key,
+  Shield,
+  ShieldAlert,
+  ShieldCheck,
+  AlertTriangle,
+  Zap,
+  Clock,
+  Globe,
+  Snowflake,
+  BookOpen,
+  Info
 } from 'lucide-react';
 import Link from 'next/link';
+
+interface Alert {
+  message: string;
+  severity: 'HIGH' | 'MEDIUM' | 'LOW';
+}
 
 interface Instance {
   id: string;
@@ -35,7 +52,74 @@ interface Instance {
   warmupCampaignId: string | null;
   warmupPoolId: string | null;
   proxy: string | null;
+  // Novos campos de proteção
+  dailyMsgCount: number;
+  hourlyMsgCount: number;
+  healthScore: number;
+  lastMessageAt: string | null;
+  isInCooldown: boolean;
+  protectionScore: number;
+  alerts: Alert[];
 }
+
+const MAX_DAILY = 200;
+const MAX_HOURLY = 60;
+
+function LimitBar({ value, max, label, color }: { value: number; max: number; label: string; color: string }) {
+  const pct = Math.min(100, (value / max) * 100);
+  const isDanger = pct >= 90;
+  const isWarning = pct > 75;
+  const barColor = isDanger ? '#ef4444' : isWarning ? '#f59e0b' : color;
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+        <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.4)' }}>{label}</span>
+        <span style={{ 
+          fontSize: '0.7rem', fontWeight: 700, 
+          color: isDanger ? '#ef4444' : isWarning ? '#f59e0b' : 'rgba(255,255,255,0.6)' 
+        }}>
+          {value}/{max}
+        </span>
+      </div>
+      <div style={{ height: 4, background: 'rgba(255,255,255,0.08)', borderRadius: 2, overflow: 'hidden' }}>
+        <div style={{
+          height: '100%',
+          width: `${pct}%`,
+          background: barColor,
+          borderRadius: 2,
+          transition: 'width 0.6s ease',
+        }} />
+      </div>
+    </div>
+  );
+}
+
+function ProtectionBadge({ score }: { score: number }) {
+  const color = score >= 80 ? '#10b981' : score >= 50 ? '#f59e0b' : '#ef4444';
+  const label = score >= 80 ? 'Protegido' : score >= 50 ? 'Parcial' : 'Em Risco';
+  const Icon = score >= 80 ? ShieldCheck : score >= 50 ? Shield : ShieldAlert;
+  return (
+    <div style={{
+      display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
+      padding: '2px 8px', borderRadius: 999,
+      background: `${color}18`,
+      border: `1px solid ${color}30`,
+      fontSize: '0.65rem', fontWeight: 700, color,
+    }}>
+      <Icon size={11} />
+      {label} ({score}%)
+    </div>
+  );
+}
+
+const PROTECTION_GUIDE = [
+  { icon: '🌐', title: 'Configure um Proxy para cada chip', desc: 'Cada número precisa de um IP dedicado. Sem proxy, todos os chips compartilham o mesmo IP do servidor, facilitando o ban em cascata pela Meta.' },
+  { icon: '🔥', title: 'Aqueça antes de disparar', desc: 'Nunca use um chip novo/frio para campanhas. Inicie um ciclo de aquecimento de 7-30 dias com conversas naturais antes de fazer envios em massa.' },
+  { icon: '📊', title: 'Respeite os limites', desc: 'Máximo 200 mensagens/dia e 60 mensagens/hora por chip. O sistema bloqueia automaticamente ao atingir esses limites.' },
+  { icon: '⏸️', title: 'Não force chips com saúde baixa', desc: 'Se a saúde cair abaixo de 40%, pause todos os envios por 24h. O chip precisa de descanso para recuperar.' },
+  { icon: '💬', title: 'Interaja naturalmente', desc: 'Responda mensagens recebidas, não só envie. O WhatsApp penaliza contas que só disparam sem receber respostas.' },
+  { icon: '🔄', title: 'Use múltiplos chips em rodízio', desc: 'O Chip Router distribui envios automaticamente entre chips saudáveis. Quanto mais chips, menor a carga individual.' },
+];
 
 export default function ConnectionsPage() {
   const [instances, setInstances] = useState<Instance[]>([]);
@@ -45,6 +129,7 @@ export default function ConnectionsPage() {
   const [proxy, setProxy] = useState('');
   const [modalError, setModalError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
   
   // Integração Webshare
   const [webshareAvailable, setWebshareAvailable] = useState(false);
@@ -232,9 +317,21 @@ export default function ConnectionsPage() {
   // Estatísticas do topo
   const total = instances.length;
   const connected = instances.filter(i => i.status === 'CONNECTED').length;
-  const avgWarmup = total > 0
-    ? Math.round(instances.reduce((acc, i) => acc + i.warmupProgress, 0) / total)
+  const avgProtection = total > 0
+    ? Math.round(instances.reduce((acc, i) => acc + (i.protectionScore || 0), 0) / total)
     : 0;
+  const totalAlerts = instances.reduce((acc, i) => acc + (i.alerts?.length || 0), 0);
+  const highAlerts = instances.reduce((acc, i) => acc + (i.alerts?.filter(a => a.severity === 'HIGH').length || 0), 0);
+
+  // Score de proteção global
+  const globalProtectionColor = avgProtection >= 80 ? '#10b981' : avgProtection >= 50 ? '#f59e0b' : '#ef4444';
+  const globalProtectionLabel = avgProtection >= 80 ? 'Excelente' : avgProtection >= 50 ? 'Parcial' : 'Em Risco';
+  const GlobalIcon = avgProtection >= 80 ? ShieldCheck : avgProtection >= 50 ? Shield : ShieldAlert;
+
+  // Todos os alertas agrupados
+  const allAlerts = instances.flatMap(i => 
+    (i.alerts || []).map(a => ({ ...a, chipName: i.profileName || i.name }))
+  );
 
   return (
     <AppLayout title="Conexões WhatsApp">
@@ -243,10 +340,10 @@ export default function ConnectionsPage() {
         <div>
           <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
             <Smartphone style={{ color: '#10b981' }} size={24} />
-            Conexões WhatsApp (Instâncias)
+            Conexões WhatsApp
           </h1>
           <p className="page-description">
-            Adicione e gerencie múltiplos números de WhatsApp para envio de campanhas e ciclos de aquecimento mútuo.
+            Gerencie múltiplos chips com proteção anti-ban inteligente.
           </p>
         </div>
         <button className="btn btn-primary" onClick={() => setIsModalOpen(true)}>
@@ -255,38 +352,189 @@ export default function ConnectionsPage() {
         </button>
       </div>
 
-      {/* Estatísticas resumidas do topo */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '2rem' }}>
-        <div className="card-glass" style={{ padding: '1.25rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <div style={{ padding: '0.75rem', background: 'rgba(59,130,246,0.1)', color: '#3b82f6', borderRadius: '12px' }}>
-            <Smartphone size={24} />
+      {/* ═══════════════ PAINEL DE PROTEÇÃO GLOBAL ═══════════════ */}
+      {total > 0 && (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(4, 1fr)',
+          gap: '1rem',
+          marginBottom: '1.25rem',
+        }}>
+          {/* Score Global */}
+          <div className="card-glass" style={{
+            padding: '1.25rem',
+            display: 'flex', alignItems: 'center', gap: '1rem',
+            border: `1px solid ${globalProtectionColor}25`,
+          }}>
+            <div style={{
+              padding: '0.75rem',
+              background: `${globalProtectionColor}15`,
+              color: globalProtectionColor,
+              borderRadius: '12px',
+            }}>
+              <GlobalIcon size={24} />
+            </div>
+            <div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 800, color: globalProtectionColor }}>
+                {avgProtection}%
+              </div>
+              <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)' }}>
+                Proteção {globalProtectionLabel}
+              </div>
+            </div>
           </div>
-          <div>
-            <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'white' }}>{total}</div>
-            <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)' }}>Total de Chips Cadastrados</div>
+
+          {/* Total de Chips */}
+          <div className="card-glass" style={{ padding: '1.25rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <div style={{ padding: '0.75rem', background: 'rgba(59,130,246,0.1)', color: '#3b82f6', borderRadius: '12px' }}>
+              <Smartphone size={24} />
+            </div>
+            <div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'white' }}>{total}</div>
+              <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)' }}>Chips Cadastrados</div>
+            </div>
+          </div>
+
+          {/* Conectados */}
+          <div className="card-glass" style={{ padding: '1.25rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <div style={{ padding: '0.75rem', background: 'rgba(16,185,129,0.1)', color: '#10b981', borderRadius: '12px' }}>
+              <Wifi size={24} />
+            </div>
+            <div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#10b981' }}>{connected}</div>
+              <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)' }}>Conectados</div>
+            </div>
+          </div>
+
+          {/* Alertas */}
+          <div className="card-glass" style={{
+            padding: '1.25rem', display: 'flex', alignItems: 'center', gap: '1rem',
+            border: highAlerts > 0 ? '1px solid rgba(239,68,68,0.2)' : undefined,
+          }}>
+            <div style={{
+              padding: '0.75rem',
+              background: highAlerts > 0 ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)',
+              color: highAlerts > 0 ? '#ef4444' : '#f59e0b',
+              borderRadius: '12px',
+            }}>
+              <AlertTriangle size={24} />
+            </div>
+            <div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 800, color: highAlerts > 0 ? '#ef4444' : totalAlerts > 0 ? '#f59e0b' : '#10b981' }}>
+                {totalAlerts}
+              </div>
+              <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)' }}>
+                {totalAlerts === 0 ? 'Sem Alertas' : `Alertas Ativos (${highAlerts} críticos)`}
+              </div>
+            </div>
           </div>
         </div>
-        <div className="card-glass" style={{ padding: '1.25rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <div style={{ padding: '0.75rem', background: 'rgba(16,185,129,0.1)', color: '#10b981', borderRadius: '12px' }}>
-            <Wifi size={24} />
+      )}
+
+      {/* ═══════════════ ALERTAS PROATIVOS ═══════════════ */}
+      {allAlerts.length > 0 && (
+        <div className="card-glass" style={{
+          padding: '1rem 1.25rem',
+          marginBottom: '1.25rem',
+          border: '1px solid rgba(245,158,11,0.15)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+            <AlertTriangle size={16} color="#f59e0b" />
+            <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#f59e0b' }}>
+              Ações Recomendadas para Proteger Seus Números
+            </span>
           </div>
-          <div>
-            <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#10b981' }}>{connected}</div>
-            <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)' }}>Chips Conectados</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+            {allAlerts.slice(0, 8).map((alert, i) => {
+              const sevColor = alert.severity === 'HIGH' ? '#ef4444' : alert.severity === 'MEDIUM' ? '#f59e0b' : '#3b82f6';
+              const sevIcon = alert.severity === 'HIGH' ? '🔴' : alert.severity === 'MEDIUM' ? '⚠️' : '💡';
+              return (
+                <div key={i} style={{
+                  display: 'flex', alignItems: 'center', gap: '0.5rem',
+                  padding: '0.4rem 0.65rem',
+                  background: `${sevColor}08`,
+                  borderRadius: '6px',
+                  borderLeft: `3px solid ${sevColor}`,
+                  fontSize: '0.75rem',
+                }}>
+                  <span>{sevIcon}</span>
+                  <span style={{ fontWeight: 700, color: sevColor, minWidth: '80px' }}>
+                    {alert.chipName}
+                  </span>
+                  <span style={{ color: 'rgba(255,255,255,0.6)' }}>
+                    {alert.message}
+                  </span>
+                </div>
+              );
+            })}
+            {allAlerts.length > 8 && (
+              <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.4)', textAlign: 'center', padding: '0.25rem' }}>
+                +{allAlerts.length - 8} alertas adicionais
+              </div>
+            )}
           </div>
         </div>
-        <div className="card-glass" style={{ padding: '1.25rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <div style={{ padding: '0.75rem', background: 'rgba(245,158,11,0.1)', color: '#f59e0b', borderRadius: '12px' }}>
-            <Flame size={24} />
+      )}
+
+      {/* ═══════════════ GUIA DE PROTEÇÃO ═══════════════ */}
+      <div className="card-glass" style={{
+        marginBottom: '1.25rem',
+        border: '1px solid rgba(59,130,246,0.1)',
+        overflow: 'hidden',
+      }}>
+        <button
+          type="button"
+          onClick={() => setShowGuide(!showGuide)}
+          style={{
+            width: '100%',
+            background: 'none',
+            border: 'none',
+            color: 'white',
+            padding: '0.85rem 1.25rem',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <BookOpen size={16} color="#3b82f6" />
+            <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#3b82f6' }}>
+              📖 Como Proteger Seus Números — Guia Anti-Ban
+            </span>
           </div>
-          <div>
-            <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#f59e0b' }}>{avgWarmup}%</div>
-            <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)' }}>Média de Aquecimento</div>
+          {showGuide ? <ChevronUp size={16} color="rgba(255,255,255,0.4)" /> : <ChevronDown size={16} color="rgba(255,255,255,0.4)" />}
+        </button>
+        {showGuide && (
+          <div style={{
+            padding: '0 1.25rem 1.25rem',
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+            gap: '0.75rem',
+          }}>
+            {PROTECTION_GUIDE.map((item, i) => (
+              <div key={i} style={{
+                padding: '0.85rem 1rem',
+                background: 'rgba(255,255,255,0.03)',
+                borderRadius: '8px',
+                border: '1px solid rgba(255,255,255,0.05)',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem' }}>
+                  <span style={{ fontSize: '1.1rem' }}>{item.icon}</span>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'white' }}>
+                    {i + 1}. {item.title}
+                  </span>
+                </div>
+                <p style={{ margin: 0, fontSize: '0.72rem', color: 'rgba(255,255,255,0.45)', lineHeight: 1.45 }}>
+                  {item.desc}
+                </p>
+              </div>
+            ))}
           </div>
-        </div>
+        )}
       </div>
 
-      {/* Grid de Instâncias */}
+      {/* ═══════════════ GRID DE INSTÂNCIAS ═══════════════ */}
       {loading && instances.length === 0 ? (
         <div className="card" style={{ textAlign: 'center', padding: '3rem' }}>
           <div style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.5)' }}>Buscando chips conectados...</div>
@@ -304,7 +552,7 @@ export default function ConnectionsPage() {
           </button>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '1.25rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(370px, 1fr))', gap: '1.25rem' }}>
           {instances.map(inst => {
             const isConnected = inst.status === 'CONNECTED';
             const isInitializing = inst.status === 'INITIALIZING';
@@ -313,6 +561,8 @@ export default function ConnectionsPage() {
             const pairingCode = pairingCodes[inst.name];
             const isPairLoading = pairingLoading[inst.name];
             const pairError = pairingErrors[inst.name];
+            const chipAlerts = inst.alerts || [];
+            const hasHighAlert = chipAlerts.some(a => a.severity === 'HIGH');
 
             return (
               <div
@@ -322,11 +572,15 @@ export default function ConnectionsPage() {
                   padding: 0,
                   display: 'flex',
                   flexDirection: 'column',
-                  border: isConnected ? '1px solid rgba(16,185,129,0.2)' : '1px solid rgba(255,255,255,0.06)',
+                  border: hasHighAlert 
+                    ? '1px solid rgba(239,68,68,0.25)' 
+                    : isConnected 
+                      ? '1px solid rgba(16,185,129,0.2)' 
+                      : '1px solid rgba(255,255,255,0.06)',
                   overflow: 'hidden',
                 }}
               >
-                {/* Perfil & Status */}
+                {/* ── Perfil & Status ── */}
                 <div style={{
                   padding: '1.25rem',
                   borderBottom: '1px solid rgba(255,255,255,0.05)',
@@ -376,75 +630,170 @@ export default function ConnectionsPage() {
                     <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>
                       {inst.phone ? `+${inst.phone}` : 'Não conectado'}
                     </div>
-                    {inst.proxy && (
-                      <div style={{ fontSize: '0.65rem', color: '#10b981', marginTop: 2, display: 'flex', alignItems: 'center', gap: '3px' }}>
-                        🌐 Proxy: {inst.proxy.includes('@') ? inst.proxy.split('@')[1] : inst.proxy}
-                      </div>
-                    )}
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: 4 }}>
-                      <span style={{
-                        width: 6,
-                        height: 6,
-                        background: isConnected ? '#10b981' : isInitializing ? '#f59e0b' : '#ef4444',
-                        borderRadius: '50%',
-                        animation: isInitializing ? 'pulse 1.2s infinite' : 'none',
-                      }} />
-                      <span style={{
-                        fontSize: '0.68rem',
-                        fontWeight: 700,
-                        color: isConnected ? '#10b981' : isInitializing ? '#f59e0b' : '#ef4444',
-                      }}>
-                        {isConnected ? 'ONLINE' : isInitializing ? 'GERANDO...' : 'DESCONECTADO'}
-                      </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: 4, flexWrap: 'wrap' }}>
+                      {/* Status badge */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                        <span style={{
+                          width: 6, height: 6,
+                          background: isConnected ? '#10b981' : isInitializing ? '#f59e0b' : '#ef4444',
+                          borderRadius: '50%',
+                          animation: isInitializing ? 'pulse 1.2s infinite' : 'none',
+                        }} />
+                        <span style={{
+                          fontSize: '0.68rem', fontWeight: 700,
+                          color: isConnected ? '#10b981' : isInitializing ? '#f59e0b' : '#ef4444',
+                        }}>
+                          {isConnected ? 'ONLINE' : isInitializing ? 'GERANDO...' : 'DESCONECTADO'}
+                        </span>
+                      </div>
+
+                      {/* Protection badge */}
+                      {isConnected && inst.protectionScore !== undefined && (
+                        <ProtectionBadge score={inst.protectionScore} />
+                      )}
                     </div>
                   </div>
                 </div>
 
-                {/* Área Interna - Warmup ou QR Code */}
-                <div style={{ padding: '1.25rem', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', minHeight: '230px' }}>
+                {/* ── Área Interna ── */}
+                <div style={{ padding: '1rem 1.25rem', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', minHeight: '250px' }}>
                   {isConnected ? (
-                    // Mostrar progresso do Aquecimento (%) se conectado
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                      {/* Barras de limite */}
+                      <LimitBar value={inst.dailyMsgCount || 0} max={MAX_DAILY} label="📤 Mensagens Hoje" color="#3b82f6" />
+                      <LimitBar value={inst.hourlyMsgCount || 0} max={MAX_HOURLY} label="⏱️ Última Hora (sliding)" color="#10b981" />
+                      
+                      {/* Grau de Aquecimento */}
                       <div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', marginBottom: 4 }}>
-                          <span style={{ color: 'rgba(255,255,255,0.5)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <Flame size={12} color="#f59e0b" /> Grau de Aquecimento
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.68rem', marginBottom: 3 }}>
+                          <span style={{ color: 'rgba(255,255,255,0.4)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <Flame size={11} color="#f59e0b" /> Aquecimento
                           </span>
                           <strong style={{ color: '#f59e0b' }}>{inst.warmupProgress}%</strong>
                         </div>
-                        <div style={{ height: 6, background: 'rgba(255,255,255,0.08)', borderRadius: 3 }}>
+                        <div style={{ height: 4, background: 'rgba(255,255,255,0.08)', borderRadius: 2 }}>
                           <div style={{
                             height: '100%',
                             width: `${inst.warmupProgress}%`,
                             background: 'linear-gradient(90deg, #f59e0b, #ef4444)',
-                            borderRadius: 3,
+                            borderRadius: 2,
+                            transition: 'width 0.6s ease',
                           }} />
                         </div>
                       </div>
 
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0.75rem', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                        <span style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.4)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <Activity size={12} color="#10b981" /> Saúde do Chip
-                        </span>
-                        <span style={{
-                          fontSize: '0.75rem',
-                          fontWeight: 700,
-                          color: inst.heatScore >= 80 ? '#10b981' : inst.heatScore >= 50 ? '#f59e0b' : '#ef4444',
+                      {/* Status de Proteção detalhado */}
+                      <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1fr 1fr',
+                        gap: '0.4rem',
+                        marginTop: '0.15rem',
+                      }}>
+                        {/* Proxy */}
+                        <div style={{
+                          padding: '0.4rem 0.6rem',
+                          background: inst.proxy ? 'rgba(16,185,129,0.06)' : 'rgba(239,68,68,0.06)',
+                          borderRadius: '6px',
+                          border: `1px solid ${inst.proxy ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)'}`,
+                          fontSize: '0.65rem',
                         }}>
-                          {inst.heatScore}% {inst.heatScore >= 80 ? '(Excelente)' : inst.heatScore >= 50 ? '(Médio)' : '(Risco de Ban)'}
-                        </span>
+                          <div style={{ color: inst.proxy ? '#10b981' : '#ef4444', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '3px' }}>
+                            <Globe size={10} />
+                            {inst.proxy ? '✓ Proxy Ativo' : '✗ Sem Proxy'}
+                          </div>
+                          {inst.proxy && (
+                            <div style={{ color: 'rgba(255,255,255,0.3)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {inst.proxy.includes('@') ? inst.proxy.split('@')[1] : inst.proxy}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Saúde */}
+                        <div style={{
+                          padding: '0.4rem 0.6rem',
+                          background: (inst.healthScore || 0) >= 70 ? 'rgba(16,185,129,0.06)' : (inst.healthScore || 0) >= 40 ? 'rgba(245,158,11,0.06)' : 'rgba(239,68,68,0.06)',
+                          borderRadius: '6px',
+                          border: `1px solid ${(inst.healthScore || 0) >= 70 ? 'rgba(16,185,129,0.12)' : (inst.healthScore || 0) >= 40 ? 'rgba(245,158,11,0.12)' : 'rgba(239,68,68,0.12)'}`,
+                          fontSize: '0.65rem',
+                        }}>
+                          <div style={{
+                            color: (inst.healthScore || 0) >= 70 ? '#10b981' : (inst.healthScore || 0) >= 40 ? '#f59e0b' : '#ef4444',
+                            fontWeight: 700,
+                            display: 'flex', alignItems: 'center', gap: '3px',
+                          }}>
+                            <Activity size={10} />
+                            Saúde: {inst.healthScore ?? 0}%
+                          </div>
+                          <div style={{ color: 'rgba(255,255,255,0.3)', marginTop: 1 }}>
+                            {(inst.healthScore || 0) >= 70 ? 'Excelente' : (inst.healthScore || 0) >= 40 ? 'Degradada' : 'Crítica — pause!'}
+                          </div>
+                        </div>
+
+                        {/* Warmup */}
+                        <div style={{
+                          padding: '0.4rem 0.6rem',
+                          background: inst.activeWarmupType !== 'NONE' ? 'rgba(245,158,11,0.06)' : 'rgba(100,116,139,0.06)',
+                          borderRadius: '6px',
+                          border: `1px solid ${inst.activeWarmupType !== 'NONE' ? 'rgba(245,158,11,0.12)' : 'rgba(100,116,139,0.12)'}`,
+                          fontSize: '0.65rem',
+                        }}>
+                          <div style={{
+                            color: inst.activeWarmupType !== 'NONE' ? '#f59e0b' : '#64748b',
+                            fontWeight: 700,
+                            display: 'flex', alignItems: 'center', gap: '3px',
+                          }}>
+                            {inst.activeWarmupType !== 'NONE' ? <Flame size={10} /> : <Snowflake size={10} />}
+                            {inst.activeWarmupType === 'SINGLE' ? '🔥 Aquecendo' : inst.activeWarmupType === 'POOL' ? '👥 Pool Ativo' : '🧊 Chip Frio'}
+                          </div>
+                        </div>
+
+                        {/* Cooldown / Último envio */}
+                        <div style={{
+                          padding: '0.4rem 0.6rem',
+                          background: inst.isInCooldown ? 'rgba(59,130,246,0.06)' : 'rgba(100,116,139,0.06)',
+                          borderRadius: '6px',
+                          border: `1px solid ${inst.isInCooldown ? 'rgba(59,130,246,0.12)' : 'rgba(100,116,139,0.12)'}`,
+                          fontSize: '0.65rem',
+                        }}>
+                          <div style={{
+                            color: inst.isInCooldown ? '#3b82f6' : '#64748b',
+                            fontWeight: 700,
+                            display: 'flex', alignItems: 'center', gap: '3px',
+                          }}>
+                            <Clock size={10} />
+                            {inst.isInCooldown ? '⏸️ Em Descanso' : 'Último Envio'}
+                          </div>
+                          <div style={{ color: 'rgba(255,255,255,0.3)', marginTop: 1 }}>
+                            {inst.lastMessageAt
+                              ? new Date(inst.lastMessageAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+                              : 'Nenhum'}
+                          </div>
+                        </div>
                       </div>
 
-                      <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.4)', textAlign: 'center' }}>
-                        {inst.activeWarmupType === 'SINGLE' ? (
-                          <span style={{ color: '#f59e0b' }}>🔥 Rodando em Aquecimento Individual</span>
-                        ) : inst.activeWarmupType === 'POOL' ? (
-                          <span style={{ color: '#3b82f6' }}>👥 Rodando em Grupo de Aquecimento Mútuo</span>
-                        ) : (
-                          <span>💤 Não está rodando nenhum ciclo ativo de aquecimento.</span>
-                        )}
-                      </div>
+                      {/* Alertas do chip */}
+                      {chipAlerts.length > 0 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginTop: '0.2rem' }}>
+                          {chipAlerts.slice(0, 3).map((alert, i) => {
+                            const ac = alert.severity === 'HIGH' ? '#ef4444' : alert.severity === 'MEDIUM' ? '#f59e0b' : '#3b82f6';
+                            return (
+                              <div key={i} style={{
+                                display: 'flex', alignItems: 'center', gap: '0.35rem',
+                                padding: '0.3rem 0.5rem',
+                                background: `${ac}08`,
+                                borderLeft: `2px solid ${ac}`,
+                                borderRadius: '4px',
+                                fontSize: '0.65rem',
+                                color: 'rgba(255,255,255,0.55)',
+                              }}>
+                                <AlertTriangle size={10} color={ac} />
+                                {alert.message}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   ) : (
                     // Mostrar Conexão Alternativa (QR Code ou Código de Pareamento)
@@ -520,14 +869,14 @@ export default function ConnectionsPage() {
                             <div style={{ textAlign: 'center', padding: '1rem 0' }}>
                               <div style={{ width: '24px', height: '24px', border: '3px solid rgba(255,255,255,0.1)', borderTopColor: '#10b981', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 0.5rem' }} />
                               <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.4)' }}>
-                                Clique em "Gerar QR Code" abaixo.
+                                Clique em &quot;Gerar QR Code&quot; abaixo.
                               </div>
                             </div>
                           )}
                         </div>
                       )}
 
-                      {/* Conteúdo da Aba Código de Celular (Inclusão do Número) */}
+                      {/* Conteúdo da Aba Código de Celular */}
                       {currentTab === 'code' && !pairingCode && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', justifyContent: 'center', flex: 1 }}>
                           <div>
@@ -604,7 +953,7 @@ export default function ConnectionsPage() {
                             <strong>Como conectar:</strong><br />
                             1. Abra o WhatsApp no celular.<br />
                             2. Vá em Aparelhos Conectados &gt; Conectar aparelho.<br />
-                            3. Toque em <strong>"Conectar com número de telefone"</strong> e insira o código acima.
+                            3. Toque em <strong>&quot;Conectar com número de telefone&quot;</strong> e insira o código acima.
                           </div>
 
                           <button
@@ -636,7 +985,7 @@ export default function ConnectionsPage() {
                   )}
                 </div>
 
-                {/* Footer / Ações */}
+                {/* ── Footer / Ações ── */}
                 <div style={{
                   padding: '0.6rem 1rem',
                   background: 'rgba(0,0,0,0.15)',
@@ -745,6 +1094,22 @@ export default function ConnectionsPage() {
                 <small style={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.68rem', marginTop: 2, display: 'block' }}>
                   Suporta HTTP ou SOCKS5 para evitar bloqueios de IP pela Meta.
                 </small>
+              </div>
+
+              {/* Dica de proteção no modal */}
+              <div style={{
+                padding: '0.5rem 0.7rem',
+                background: 'rgba(59,130,246,0.06)',
+                border: '1px solid rgba(59,130,246,0.12)',
+                borderRadius: '6px',
+                fontSize: '0.7rem',
+                color: 'rgba(255,255,255,0.5)',
+                display: 'flex', alignItems: 'flex-start', gap: '0.4rem',
+              }}>
+                <Info size={14} color="#3b82f6" style={{ flexShrink: 0, marginTop: 1 }} />
+                <span>
+                  <strong style={{ color: '#3b82f6' }}>Dica:</strong> Configure um proxy ao cadastrar para proteger seu número desde o início. Chips sem proxy compartilham o IP do servidor.
+                </span>
               </div>
 
               {modalError && (

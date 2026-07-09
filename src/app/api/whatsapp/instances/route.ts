@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSessionUser } from '@/lib/auth';
 import { evolutionApi } from '@/lib/evolution';
 import { prisma } from '@/lib/prisma';
+import { getInstanceDailyCount, getInstanceHourlyCount } from '@/lib/warmup-rate-limiter';
 
 // GET — Lista e sincroniza todas as instâncias do banco local com a Evolution API
 export async function GET() {
@@ -114,6 +115,63 @@ export async function GET() {
           }
         }
 
+        // 5. Buscar contadores em tempo real do Redis
+        const [redisDailyCount, redisHourlyCount] = await Promise.all([
+          getInstanceDailyCount(dbInst.name).catch(() => 0),
+          getInstanceHourlyCount(dbInst.name).catch(() => 0),
+        ]);
+
+        // Usar o maior entre banco e Redis para garantir precisão
+        const dailyMsgCount = Math.max(dbInst.dailyMsgCount, redisDailyCount);
+        const hourlyMsgCount = redisHourlyCount;
+        const healthScore = dbInst.healthScore;
+
+        // 6. Buscar último envio (warmup log mais recente)
+        const lastLog = await prisma.warmupLog.findFirst({
+          where: { fromInstance: dbInst.name },
+          orderBy: { createdAt: 'desc' },
+          select: { createdAt: true },
+        });
+        const lastMessageAt = lastLog?.createdAt || null;
+
+        // 7. Verificar se está em cooldown (descanso ativo)
+        let isInCooldown = false;
+        if (campaign?.restPeriodUntil && new Date(campaign.restPeriodUntil) > new Date()) {
+          isInCooldown = true;
+        }
+
+        // 8. Calcular Score de Proteção (0-100)
+        const hasProxy = !!dbInst.proxy;
+        const isWarming = activeWarmupType !== 'NONE';
+        const protectionScore = (
+          (hasProxy ? 30 : 0) +
+          (healthScore >= 70 ? 30 : healthScore >= 40 ? 15 : 0) +
+          (isWarming ? 20 : 0) +
+          (dailyMsgCount < 160 ? 20 : dailyMsgCount < 200 ? 10 : 0)
+        );
+
+        // 9. Gerar alertas proativos
+        const alerts: { message: string; severity: 'HIGH' | 'MEDIUM' | 'LOW' }[] = [];
+        if (status === 'CONNECTED') {
+          if (!hasProxy) {
+            alerts.push({ message: 'Sem proxy — risco de ban por IP compartilhado', severity: 'HIGH' });
+          }
+          if (healthScore < 40) {
+            alerts.push({ message: `Saúde crítica (${healthScore}%) — pause envios por 24h`, severity: 'HIGH' });
+          } else if (healthScore < 70) {
+            alerts.push({ message: `Saúde degradada (${healthScore}%) — monitore de perto`, severity: 'LOW' });
+          }
+          if (dailyMsgCount > 160) {
+            alerts.push({ message: `${dailyMsgCount}/200 msgs hoje — perto do limite diário`, severity: 'MEDIUM' });
+          }
+          if (hourlyMsgCount > 48) {
+            alerts.push({ message: `${hourlyMsgCount}/60 msgs/h — perto do limite horário`, severity: 'MEDIUM' });
+          }
+          if (!isWarming) {
+            alerts.push({ message: 'Chip frio — aqueça antes de usar para campanhas', severity: 'LOW' });
+          }
+        }
+
         return {
           id: dbInst.id,
           name: dbInst.name,
@@ -129,6 +187,14 @@ export async function GET() {
           warmupPoolId,
           proxy: dbInst.proxy,
           updatedAt: dbInst.updatedAt,
+          // Novos campos de proteção
+          dailyMsgCount,
+          hourlyMsgCount,
+          healthScore,
+          lastMessageAt,
+          isInCooldown,
+          protectionScore,
+          alerts,
         };
       })
     );
