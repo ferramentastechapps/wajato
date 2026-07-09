@@ -6,11 +6,13 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getInstanceDailyCount, getInstanceHourlyCount } from '@/lib/warmup-rate-limiter';
-import { requireAuth } from '@/lib/auth';
+import { getSessionUser } from '@/lib/auth';
 
 export async function GET(req: Request) {
-  const authError = await requireAuth(req, ['ADMIN', 'OPERATOR', 'VIEWER']);
-  if (authError) return authError;
+  const user = await getSessionUser();
+  if (!user) {
+    return NextResponse.json({ message: 'Não autorizado' }, { status: 401 });
+  }
 
   try {
     // Busca todos os chips registrados no banco
