@@ -43,6 +43,10 @@ import {
   recordInstanceHourlyMessage,
   isInstanceWithinHourlyLimit,
 } from '../lib/warmup-rate-limiter';
+import {
+  reportChipSuccess,
+  reportChipFailure,
+} from '../lib/chip-router';
 
 const WARMUP_POOL_QUEUE_NAME = 'warmup-pool-queue';
 type MessageAction = 'TEXT' | 'EMOJI' | 'REACTION' | 'STICKER' | 'AUDIO';
@@ -221,12 +225,14 @@ export const warmupPoolWorker = new Worker(
         parts: [{ text: l.message }],
       }));
 
-      // ── 9. Escolher Tipo de Ação ───────────────────────────────────────────
+      // ── 9. Escolher Tipo de Ação ──────────────────────────────────────────────────────
       const action = chooseMessageAction();
       let messageText = '';
       let messageType: 'TEXT' | 'EMOJI' | 'REACTION' | 'STICKER' | 'AUDIO' = 'TEXT';
       let typingDelay = 1500;
       let status = 'SENT';
+      // ID real da mensagem retornado pela Evolution API (para reações futuras)
+      let sentMessageId: string | null = null;
 
       const recentTopics = pairLogs.slice(-3).map(l => l.message.substring(0, 30));
       const topic = selectConversationTopic(recentTopics);
@@ -238,7 +244,8 @@ export const warmupPoolWorker = new Worker(
         typingDelay = 1000 + Math.random() * 1000;
         await new Promise(r => setTimeout(r, typingDelay));
         try {
-          await evolutionApi.sendTextMessage(finalSender, targetPhone, messageText);
+          const res = await evolutionApi.sendTextMessage(finalSender, targetPhone, messageText);
+          sentMessageId = res?.key?.id || null;
         } catch { status = 'FAILED'; }
 
       } else if (action === 'REACTION' && pairLogs.length > 0) {
@@ -249,7 +256,8 @@ export const warmupPoolWorker = new Worker(
         await evolutionApi.markAsRead(finalSender, targetPhone);
         await new Promise(r => setTimeout(r, 600));
 
-        const ok = await evolutionApi.sendReaction(finalSender, targetPhone, `${Date.now()}`, reaction);
+        const lastMessageId = pairLogs[pairLogs.length - 1].messageId;
+        const ok = lastMessageId ? await evolutionApi.sendReaction(finalSender, targetPhone, lastMessageId, reaction) : false;
         if (!ok) {
           try {
             await evolutionApi.sendTextMessage(finalSender, targetPhone, reaction);
@@ -317,14 +325,15 @@ export const warmupPoolWorker = new Worker(
 
         await new Promise(r => setTimeout(r, typingDelay));
         try {
-          await evolutionApi.sendTextMessage(finalSender, targetPhone, messageText);
+          const res = await evolutionApi.sendTextMessage(finalSender, targetPhone, messageText);
+          sentMessageId = res?.key?.id || null;
         } catch (err) {
           console.error(`[Warmup Pool] Erro de envio:`, err);
           status = 'FAILED';
         }
       }
 
-      // ── 11. Salvar Logs e Incrementar ──────────────────────────────────────
+      // ── 11. Salvar Logs e Incrementar ──────────────────────────────────────────────
       await prisma.warmupPoolLog.create({
         data: {
           poolId,
@@ -333,6 +342,7 @@ export const warmupPoolWorker = new Worker(
           message: messageText,
           messageType: messageType as any,
           status,
+          messageId: sentMessageId,
           delayUsed: Math.round(typingDelay),
         },
       });
@@ -340,6 +350,8 @@ export const warmupPoolWorker = new Worker(
       if (status === 'SENT') {
         await recordInstanceMessage(finalSender);
         await recordInstanceHourlyMessage(finalSender);
+        // Reporta sucesso para o ChipRouter atualizar health score
+        await reportChipSuccess(finalSender);
 
         await prisma.warmupPool.update({
           where: { id: poolId },
@@ -358,7 +370,8 @@ export const warmupPoolWorker = new Worker(
           isFirstMessageOfDay: false,
         });
       } else {
-        // Falhou: re-agenda disparo novo após 5 min
+        // Falhou: reporta falha e re-agenda disparo novo após 5 min
+        await reportChipFailure(finalSender, `Falha no pool ${poolId}`);
         await queuePoolMessage({ poolId }, 300000, 60000);
       }
 

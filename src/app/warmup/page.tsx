@@ -2,13 +2,14 @@
 
 import React, { useEffect, useState } from 'react';
 import AppLayout from '@/components/layout/AppLayout';
-import { Flame, Plus, MessageSquare, Pause, Play, TrendingUp, Clock, Activity, Users } from 'lucide-react';
+import { Flame, Plus, MessageSquare, Pause, Play, TrendingUp, Clock, Activity, Users, HeartPulse } from 'lucide-react';
 import CreateWarmupModal from '@/components/warmup/CreateWarmupModal';
 import CreateWarmupPoolModal from '@/components/warmup/CreateWarmupPoolModal';
 import WarmupChatViewer from '@/components/warmup/WarmupChatViewer';
 import WarmupPoolChatViewer from '@/components/warmup/WarmupPoolChatViewer';
 import WarmupHeatGauge from '@/components/warmup/WarmupHeatGauge';
 import WarmupDayChart from '@/components/warmup/WarmupDayChart';
+import ChipHealthDashboard from '@/components/warmup/ChipHealthDashboard';
 
 interface Campaign {
   id: string;
@@ -76,7 +77,7 @@ const TYPE_ICONS: Record<string, string> = {
 };
 
 export default function WarmupPage() {
-  const [activeTab, setActiveTab] = useState<'single' | 'pool'>('single');
+  const [activeTab, setActiveTab] = useState<'single' | 'pool' | 'chips'>('single');
   
   // Data lists
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -286,6 +287,27 @@ export default function WarmupPage() {
           <Users size={16} />
           Grupos Mútuos / P2P ({pools.length})
         </button>
+        <button
+          onClick={() => setActiveTab('chips')}
+          style={{
+            background: 'none',
+            border: 'none',
+            borderBottom: activeTab === 'chips' ? '2px solid #10b981' : 'none',
+            color: activeTab === 'chips' ? '#10b981' : 'rgba(255,255,255,0.5)',
+            padding: '0.5rem 1rem',
+            cursor: 'pointer',
+            fontWeight: 700,
+            fontSize: '0.9rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem',
+            transition: 'color 0.2s',
+            marginLeft: 'auto',
+          }}
+        >
+          <HeartPulse size={16} />
+          Saúde dos Chips
+        </button>
       </div>
 
       {/* Stats Overview */}
@@ -322,7 +344,10 @@ export default function WarmupPage() {
       )}
 
       {/* Main Grid Content */}
-      {loading ? (
+      {activeTab === 'chips' ? (
+        /* --- SAÚDE DOS CHIPS --- */
+        <ChipHealthDashboard />
+      ) : loading ? (
         <div className="card" style={{ textAlign: 'center', padding: '3rem' }}>
           <div style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.5)' }}>Carregando dados...</div>
         </div>

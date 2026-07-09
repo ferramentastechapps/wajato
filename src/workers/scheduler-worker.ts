@@ -123,3 +123,44 @@ async function dispatchScheduledCampaigns() {
 // Executa imediatamente na inicialização e depois a cada intervalo
 dispatchScheduledCampaigns();
 setInterval(dispatchScheduledCampaigns, POLL_INTERVAL_MS);
+
+// ─── Cron diário: zera contadores de chip às 00:05 BRT ──────────────────────
+/**
+ * Agenda o reset diário dos contadores (dailyMsgCount) de todos os chips.
+ * Executa às 00:05 BRT (03:05 UTC) todo dia.
+ *
+ * Isso corrige o bug identificado v3.0: resetDailyMsgCounters() nunca
+ * era chamado automaticamente, fazendo o dailyMsgCount acumular para sempre.
+ */
+async function scheduleDailyChipReset() {
+  const { resetDailyMsgCounters } = await import('../lib/chip-router');
+
+  function getMsUntilNextReset(): number {
+    const now = new Date();
+    // Próximo 03:05 UTC = 00:05 BRT
+    const next = new Date(now);
+    next.setUTCHours(3, 5, 0, 0);
+    if (next.getTime() <= now.getTime()) {
+      // Já passou hoje, agenda para amanhã
+      next.setUTCDate(next.getUTCDate() + 1);
+    }
+    return next.getTime() - now.getTime();
+  }
+
+  async function runReset() {
+    logger.info('[Scheduler] Iniciando reset diário dos contadores de chip...');
+    await resetDailyMsgCounters();
+    logger.info('[Scheduler] ✅ Reset diário dos chips concluído.');
+    // Re-agenda para o próximo dia
+    setTimeout(runReset, getMsUntilNextReset());
+  }
+
+  // Agenda o primeiro reset
+  const msUntilFirst = getMsUntilNextReset();
+  logger.info(`[Scheduler] Reset de chips agendado em ${Math.round(msUntilFirst / 3600000)}h.`);
+  setTimeout(runReset, msUntilFirst);
+}
+
+scheduleDailyChipReset().catch(err =>
+  logger.error('[Scheduler] Erro ao iniciar cron de reset de chips:', err)
+);

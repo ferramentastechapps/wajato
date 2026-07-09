@@ -47,6 +47,10 @@ import {
   recordInstanceHourlyMessage,
   isInstanceWithinHourlyLimit,
 } from '../lib/warmup-rate-limiter';
+import {
+  reportChipSuccess,
+  reportChipFailure,
+} from '../lib/chip-router';
 
 const WARMUP_QUEUE_NAME = 'warmup-queue';
 
@@ -247,7 +251,7 @@ export const warmupWorker = new Worker(
         parts: [{ text: log.message }],
       }));
 
-      // ── 9. Escolher tipo de ação desta mensagem ────────────────────────────
+      // ── 9. Escolher tipo de ação desta mensagem ─────────────────────────────────
       const action = chooseMessageAction();
       let messageText = '';
       let messageType: 'TEXT' | 'EMOJI' | 'REACTION' | 'STICKER' | 'AUDIO' = 'TEXT';
@@ -264,8 +268,10 @@ export const warmupWorker = new Worker(
 
       console.log(`[Warmup Worker] Ação escolhida: ${action} para campanha ${campaignId}`);
 
-      // ── 10. Executar ação escolhida ────────────────────────────────────────
+      // ── 10. Executar ação escolhida ───────────────────────────────────────────
       let status = 'SENT';
+      // ID real da mensagem retornado pela Evolution API (para reações futuras)
+      let sentMessageId: string | null = null;
 
       if (action === 'EMOJI') {
         // Resposta rápida com emoji
@@ -276,14 +282,15 @@ export const warmupWorker = new Worker(
         await new Promise(r => setTimeout(r, typingDelay));
         
         try {
-          await evolutionApi.sendTextMessage(sourceInstance, targetPhone, messageText);
+          const res = await evolutionApi.sendTextMessage(sourceInstance, targetPhone, messageText);
+          sentMessageId = res?.key?.id || res?.id || null;
         } catch (err) {
           console.error('[Warmup Worker] Erro ao enviar emoji:', err);
           status = 'FAILED';
         }
 
       } else if (action === 'REACTION' && logs.length > 0) {
-        // Reação a uma mensagem anterior
+        // Reação a uma mensagem anterior usando o messageId real salvo no log
         messageType = 'REACTION';
         const reaction = WARMUP_REACTIONS[Math.floor(Math.random() * WARMUP_REACTIONS.length)];
         messageText = reaction;
@@ -292,19 +299,22 @@ export const warmupWorker = new Worker(
         await evolutionApi.markAsRead(sourceInstance, targetPhone);
         await new Promise(r => setTimeout(r, 500 + Math.random() * 1000));
         
-        // Tenta reagir — usa ID fictício pois não armazenamos IDs de msg da Evolution
-        // Na prática, envia um emoji como texto se a reação falhar
-        const reactionResult = await evolutionApi.sendReaction(
-          sourceInstance,
-          targetPhone,
-          `${Date.now()}`, // Fallback — em produção, guardar messageId no log
-          reaction
-        );
+        // Busca o messageId real do log mais recente da outra parte
+        const lastReceivedLog = logs.find(l => l.fromInstance !== sourceInstance && l.messageId);
+        const targetMessageId = lastReceivedLog?.messageId || null;
         
-        if (!reactionResult) {
+        let reactionSuccess = false;
+        if (targetMessageId) {
+          reactionSuccess = !!(await evolutionApi.sendReaction(
+            sourceInstance, targetPhone, targetMessageId, reaction
+          ));
+        }
+        
+        if (!reactionSuccess) {
           // Fallback: envia o emoji como texto
           try {
-            await evolutionApi.sendTextMessage(sourceInstance, targetPhone, reaction);
+            const res = await evolutionApi.sendTextMessage(sourceInstance, targetPhone, reaction);
+            sentMessageId = res?.key?.id || res?.id || null;
           } catch (err) {
             status = 'FAILED';
           }
@@ -319,15 +329,18 @@ export const warmupWorker = new Worker(
         typingDelay = 1000 + Math.random() * 2000;
         await new Promise(r => setTimeout(r, typingDelay));
         
-        const result = await evolutionApi.sendSticker(sourceInstance, targetPhone, stickerUrl);
-        if (!result) {
+        const stickerResult = await evolutionApi.sendSticker(sourceInstance, targetPhone, stickerUrl);
+        if (!stickerResult) {
           // Fallback para emoji se sticker falhar
           messageText = '😄';
           try {
-            await evolutionApi.sendTextMessage(sourceInstance, targetPhone, messageText);
+            const res = await evolutionApi.sendTextMessage(sourceInstance, targetPhone, messageText);
+            sentMessageId = res?.key?.id || res?.id || null;
           } catch (err) {
             status = 'FAILED';
           }
+        } else {
+          sentMessageId = stickerResult?.key?.id || stickerResult?.id || null;
         }
 
       } else if (action === 'AUDIO') {
@@ -347,17 +360,18 @@ export const warmupWorker = new Worker(
         await new Promise(r => setTimeout(r, typingDelay));
         
         try {
-          await evolutionApi.sendAudioUrl(sourceInstance, targetPhone, audioUrl);
+          const res = await evolutionApi.sendAudioUrl(sourceInstance, targetPhone, audioUrl);
+          sentMessageId = res?.key?.id || res?.id || null;
         } catch (err) {
           console.error('[Warmup Worker] Erro ao enviar áudio:', err);
           // Fallback para texto se áudio falhar
           try {
             messageType = 'TEXT';
-            const context = personaContext;
-            messageText = await generateNextWarmupMessage(context, history, topic);
+            messageText = await generateNextWarmupMessage(personaContext, history, topic);
             typingDelay = calculateTypingDelay(messageText);
             await new Promise(r => setTimeout(r, typingDelay));
-            await evolutionApi.sendTextMessage(sourceInstance, targetPhone, messageText);
+            const res = await evolutionApi.sendTextMessage(sourceInstance, targetPhone, messageText);
+            sentMessageId = res?.key?.id || res?.id || null;
           } catch (fallbackErr) {
             console.error('[Warmup Worker] Erro no fallback de texto do áudio:', fallbackErr);
             status = 'FAILED';
@@ -380,7 +394,8 @@ export const warmupWorker = new Worker(
         await new Promise(r => setTimeout(r, typingDelay));
         
         try {
-          await evolutionApi.sendMediaMessage(sourceInstance, targetPhone, imageUrl, 'image', messageText);
+          const res = await evolutionApi.sendMediaMessage(sourceInstance, targetPhone, imageUrl, 'image', messageText);
+          sentMessageId = res?.key?.id || res?.id || null;
           messageText = `[Foto] ${messageText}`;
         } catch (err) {
           console.error('[Warmup Worker] Erro ao enviar imagem:', err);
@@ -397,7 +412,8 @@ export const warmupWorker = new Worker(
         await new Promise(r => setTimeout(r, typingDelay));
         
         try {
-          await evolutionApi.sendLocationMessage(sourceInstance, targetPhone, loc.lat, loc.lng, loc.name, loc.addr);
+          const res = await evolutionApi.sendLocationMessage(sourceInstance, targetPhone, loc.lat, loc.lng, loc.name, loc.addr);
+          sentMessageId = res?.key?.id || res?.id || null;
         } catch (err) {
           console.error('[Warmup Worker] Erro ao enviar localização:', err);
           status = 'FAILED';
@@ -423,16 +439,13 @@ export const warmupWorker = new Worker(
         // TEXT — geração via IA Gemini
         messageType = 'TEXT';
         
-        // Contexto da persona
-        const context = personaContext;
-        
         // Marcar mensagens como lidas antes de responder (comportamento natural)
         if (history.length > 0) {
           await evolutionApi.markAsRead(sourceInstance, targetPhone);
           await new Promise(r => setTimeout(r, 300 + Math.random() * 700));
         }
         
-        messageText = await generateNextWarmupMessage(context, history, topic);
+        messageText = await generateNextWarmupMessage(personaContext, history, topic);
         typingDelay = calculateTypingDelay(messageText);
 
         console.log(`[Warmup Worker] Texto gerado: "${messageText.substring(0, 50)}..." | Typing: ${Math.round(typingDelay / 1000)}s`);
@@ -441,7 +454,8 @@ export const warmupWorker = new Worker(
         await new Promise(r => setTimeout(r, typingDelay));
 
         try {
-          await evolutionApi.sendTextMessage(sourceInstance, targetPhone, messageText);
+          const res = await evolutionApi.sendTextMessage(sourceInstance, targetPhone, messageText);
+          sentMessageId = res?.key?.id || res?.id || null;
         } catch (err) {
           console.error('[Warmup Worker] Erro ao enviar texto:', err);
           status = 'FAILED';
@@ -457,14 +471,17 @@ export const warmupWorker = new Worker(
           message: messageText,
           messageType: messageType as any,
           status,
+          messageId: sentMessageId,
           delayUsed: Math.round(typingDelay),
         },
       });
 
-      // ── 12. Atualizar campanha ─────────────────────────────────────────────
+      // ── 12. Atualizar campanha + Chip Health Score ─────────────────────────
       if (status === 'SENT') {
         await recordInstanceMessage(sourceInstance);
         await recordInstanceHourlyMessage(sourceInstance);
+        // Reporta sucesso para o ChipRouter atualizar health score
+        await reportChipSuccess(sourceInstance);
         
         await prisma.warmupCampaign.update({
           where: { id: campaignId },
@@ -575,6 +592,8 @@ export const warmupWorker = new Worker(
         }
       } else {
         console.error(`[Warmup Worker] Falha no envio para campanha ${campaignId}. Reagendando...`);
+        // Reporta falha para o ChipRouter atualizar health score
+        await reportChipFailure(sourceInstance, `Falha na campanha ${campaignId}`);
         // Em caso de falha, reagenda com delay maior
         await queueWarmupMessage({ campaignId, sourceInstance, targetPhone }, 300000, 60000); // 5 min ± 1 min
       }

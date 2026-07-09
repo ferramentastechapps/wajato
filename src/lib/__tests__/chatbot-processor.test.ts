@@ -163,6 +163,7 @@ describe('Chatbot Processor Unit Tests', () => {
       id: 'global',
       aiEnabled: true,
       aiContext: 'Você é um vendedor.',
+      geminiApiKey: null,
       businessHoursOnly: false,
       startHour: 8,
       endHour: 18,
