@@ -370,7 +370,7 @@ export const evolutionApi = {
    */
   async fetchGroups(instanceName: string): Promise<any[]> {
     try {
-      const response = await evolutionClient.get(`/group/fetchAll/${instanceName}`);
+      const response = await evolutionClient.get(`/group/fetchAllGroups/${instanceName}`);
       return Array.isArray(response.data) ? response.data : [];
     } catch (error: any) {
       console.error(`Erro ao buscar grupos da instância ${instanceName}:`, error?.response?.data || error.message);
