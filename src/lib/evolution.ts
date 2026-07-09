@@ -366,6 +366,19 @@ export const evolutionApi = {
   },
 
   /**
+   * Busca todos os grupos em que a instância está participando
+   */
+  async fetchGroups(instanceName: string): Promise<any[]> {
+    try {
+      const response = await evolutionClient.get(`/group/fetchAll/${instanceName}`);
+      return Array.isArray(response.data) ? response.data : [];
+    } catch (error: any) {
+      console.error(`Erro ao buscar grupos da instância ${instanceName}:`, error?.response?.data || error.message);
+      return [];
+    }
+  },
+
+  /**
    * Formata o número do telefone para o padrão do WhatsApp (sem caracteres especiais)
    * Garante o DDI (55 para Brasil). Retorna intacto se contiver '@'.
    */

@@ -82,6 +82,9 @@ export default function CreateWarmupModal({ onClose, onCreated }: Props) {
   const [endHour, setEndHour] = useState(22);
   const [isGroup, setIsGroup] = useState(false);
   const [error, setError] = useState('');
+  const [groups, setGroups] = useState<{ id: string; subject: string }[]>([]);
+  const [loadingGroups, setLoadingGroups] = useState(false);
+  const [showManualJid, setShowManualJid] = useState(false);
 
   useEffect(() => {
     // Buscar instâncias conectadas
@@ -93,6 +96,39 @@ export default function CreateWarmupModal({ onClose, onCreated }: Props) {
       })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (isGroup && sourceInstance) {
+      setLoadingGroups(true);
+      setError('');
+      setTargetPhonesInput('');
+      setGroups([]);
+      setShowManualJid(false);
+      fetch(`/api/whatsapp/instances/${sourceInstance}/groups`)
+        .then(r => r.json())
+        .then(data => {
+          if (data.success) {
+            setGroups(data.groups || []);
+            // Se não encontrar grupos, ativa o manual por padrão
+            if (!data.groups || data.groups.length === 0) {
+              setShowManualJid(true);
+            }
+          } else {
+            setError(data.error || 'Erro ao carregar os grupos desta instância.');
+            setShowManualJid(true);
+          }
+        })
+        .catch(() => {
+          setError('Erro de conexão ao buscar grupos.');
+          setShowManualJid(true);
+        })
+        .finally(() => {
+          setLoadingGroups(false);
+        });
+    } else {
+      setGroups([]);
+    }
+  }, [isGroup, sourceInstance]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -350,18 +386,68 @@ export default function CreateWarmupModal({ onClose, onCreated }: Props) {
               <div>
                 {isGroup ? (
                   <>
-                    <label style={{ fontSize: '0.82rem', fontWeight: 700, color: 'rgba(255,255,255,0.85)', marginBottom: '0.4rem', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                      JID do Grupo de Destino *
-                    </label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      required
-                      value={targetPhonesInput}
-                      onChange={e => setTargetPhonesInput(e.target.value)}
-                      placeholder="Ex: 12036302839201@g.us"
-                      style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', color: '#fff', outline: 'none' }}
-                    />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+                      <label style={{ fontSize: '0.82rem', fontWeight: 700, color: 'rgba(255,255,255,0.85)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        Grupo de Destino *
+                      </label>
+                      {sourceInstance && (
+                        <button
+                          type="button"
+                          onClick={() => setShowManualJid(!showManualJid)}
+                          style={{ background: 'none', border: 'none', color: '#f59e0b', fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+                        >
+                          {showManualJid ? 'Selecionar da Lista' : 'Digitar JID Manual'}
+                        </button>
+                      )}
+                    </div>
+
+                    {!sourceInstance ? (
+                      <div style={{ padding: '0.75rem', background: 'rgba(255,255,255,0.02)', border: '1px dashed rgba(255,255,255,0.1)', borderRadius: '10px', color: 'rgba(255,255,255,0.4)', fontSize: '0.78rem', textAlign: 'center' }}>
+                        ⚠️ Selecione uma Instância de Origem conectada primeiro.
+                      </div>
+                    ) : loadingGroups ? (
+                      <div style={{ padding: '0.75rem', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', color: 'rgba(255,255,255,0.6)', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '0.5rem', justifyContent: 'center' }}>
+                        <span className="spinner" style={{ width: '12px', height: '12px', border: '2px solid rgba(255,255,255,0.2)', borderTopColor: '#f59e0b', borderRadius: '50%', display: 'inline-block', animation: 'spin 1s linear infinite' }} />
+                        Buscando grupos da instância no WhatsApp...
+                      </div>
+                    ) : showManualJid ? (
+                      <input
+                        type="text"
+                        className="form-input"
+                        required
+                        value={targetPhonesInput}
+                        onChange={e => setTargetPhonesInput(e.target.value)}
+                        placeholder="Ex: 12036302839201@g.us"
+                        style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', color: '#fff', outline: 'none' }}
+                      />
+                    ) : groups.length === 0 ? (
+                      <div style={{ padding: '0.75rem', background: 'rgba(255,255,255,0.02)', border: '1px dashed rgba(239,68,68,0.2)', borderRadius: '10px', color: 'rgba(255,255,255,0.5)', fontSize: '0.78rem', textAlign: 'center' }}>
+                        Nenhum grupo encontrado nesta instância.
+                        <button
+                          type="button"
+                          onClick={() => setShowManualJid(true)}
+                          style={{ display: 'block', margin: '4px auto 0', background: '#f59e0b22', border: '1px solid #f59e0b44', color: '#f59e0b', fontSize: '0.7rem', padding: '3px 8px', borderRadius: '4px', cursor: 'pointer' }}
+                        >
+                          Digitar JID Manualmente
+                        </button>
+                      </div>
+                    ) : (
+                      <select
+                        className="form-input"
+                        value={targetPhonesInput}
+                        onChange={e => setTargetPhonesInput(e.target.value)}
+                        required
+                        style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', color: '#fff', outline: 'none' }}
+                      >
+                        <option value="" style={{ background: '#0b0f19' }}>Selecione um grupo...</option>
+                        {groups.map(g => (
+                          <option key={g.id} value={g.id} style={{ background: '#0b0f19' }}>
+                            👥 {g.subject}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+
                     <small style={{ color: 'rgba(255,255,255,0.4)', display: 'block', marginTop: 4 }}>
                       💡 A instância enviará mensagens neste grupo a cada ~45 minutos.
                     </small>
