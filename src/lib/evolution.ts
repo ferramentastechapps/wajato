@@ -400,5 +400,57 @@ export const evolutionApi = {
     }
     
     return cleaned;
+  },
+
+  /**
+   * Configura o proxy de uma instância no Evolution API
+   */
+  async setInstanceProxy(instanceName: string, proxyUrl: string | null): Promise<void> {
+    try {
+      if (!proxyUrl) {
+        await evolutionClient.post(`/proxy/set/${instanceName}`, {
+          enabled: false
+        });
+        return;
+      }
+
+      const parsed = parseProxyUrl(proxyUrl);
+      if (!parsed) {
+        throw new Error('Formato de Proxy inválido. Use o padrão http://usuario:senha@ip:porta');
+      }
+
+      await evolutionClient.post(`/proxy/set/${instanceName}`, parsed);
+    } catch (error: any) {
+      console.error(`Erro ao definir proxy para instância ${instanceName}:`, error?.response?.data || error.message);
+      throw new Error(error?.response?.data?.message || 'Falha ao definir proxy no gateway');
+    }
   }
 };
+
+/**
+ * Função utilitária para fazer parse da URL do proxy no formato esperado pela Evolution API v2
+ */
+export function parseProxyUrl(proxyUrl: string) {
+  try {
+    const url = new URL(proxyUrl);
+    const protocol = url.protocol.replace(':', '');
+    const host = url.hostname;
+    const port = parseInt(url.port);
+    const username = url.username ? decodeURIComponent(url.username) : undefined;
+    const password = url.password ? decodeURIComponent(url.password) : undefined;
+    
+    return {
+      enabled: true,
+      proxy: {
+        host,
+        port,
+        protocol,
+        username,
+        password
+      }
+    };
+  } catch (error) {
+    console.error('Erro ao fazer parse da URL do proxy:', proxyUrl, error);
+    return null;
+  }
+}

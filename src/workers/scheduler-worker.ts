@@ -8,6 +8,7 @@ import { prisma } from '../lib/prisma';
 import { messageQueue } from '../lib/queue';
 import { resolveContactsForSegment } from '../lib/segment-resolver';
 import { logger } from '../lib/logger';
+import { runProxySelfHealer } from '../lib/proxy-healer';
 
 logger.info('Worker de agendamento de campanhas (Scheduler) iniciado.');
 
@@ -164,3 +165,14 @@ async function scheduleDailyChipReset() {
 scheduleDailyChipReset().catch(err =>
   logger.error('[Scheduler] Erro ao iniciar cron de reset de chips:', err)
 );
+
+// ─── Cron de Auto-Healing de Proxies (Verificação a cada 5 minutos) ──────────
+const PROXY_CHECK_INTERVAL_MS = 300_000;
+runProxySelfHealer().catch(err =>
+  logger.error('[Scheduler] Erro na verificação inicial de proxies:', err)
+);
+setInterval(() => {
+  runProxySelfHealer().catch(err =>
+    logger.error('[Scheduler] Erro na execução periódica do Proxy Healer:', err)
+  );
+}, PROXY_CHECK_INTERVAL_MS);
