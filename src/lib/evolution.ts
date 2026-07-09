@@ -358,15 +358,24 @@ export const evolutionApi = {
   /**
    * Define as configurações de Proxy para uma instância do Evolution API
    */
-  async setInstanceProxy(instanceName: string, proxyUrl: string | null): Promise<any> {
+  async setInstanceProxy(instanceName: string, proxyUrl: string | null): Promise<void> {
     try {
-      const response = await evolutionClient.post(`/instance/setProxy/${instanceName}`, {
-        proxy: proxyUrl || ''
-      });
-      return response.data;
+      if (!proxyUrl) {
+        await evolutionClient.post(`/proxy/set/${instanceName}`, {
+          enabled: false
+        });
+        return;
+      }
+
+      const parsed = parseProxyUrl(proxyUrl);
+      if (!parsed) {
+        throw new Error('Formato de Proxy inválido. Use o padrão http://usuario:senha@ip:porta');
+      }
+
+      await evolutionClient.post(`/proxy/set/${instanceName}`, parsed);
     } catch (error: any) {
-      console.error(`Erro ao configurar proxy para ${instanceName}:`, error?.response?.data || error.message);
-      throw new Error(error?.response?.data?.message || 'Falha ao configurar proxy');
+      console.error(`Erro ao definir proxy para instância ${instanceName}:`, error?.response?.data || error.message);
+      throw new Error(error?.response?.data?.message || 'Falha ao definir proxy no gateway');
     }
   },
 
@@ -400,30 +409,6 @@ export const evolutionApi = {
     }
     
     return cleaned;
-  },
-
-  /**
-   * Configura o proxy de uma instância no Evolution API
-   */
-  async setInstanceProxy(instanceName: string, proxyUrl: string | null): Promise<void> {
-    try {
-      if (!proxyUrl) {
-        await evolutionClient.post(`/proxy/set/${instanceName}`, {
-          enabled: false
-        });
-        return;
-      }
-
-      const parsed = parseProxyUrl(proxyUrl);
-      if (!parsed) {
-        throw new Error('Formato de Proxy inválido. Use o padrão http://usuario:senha@ip:porta');
-      }
-
-      await evolutionClient.post(`/proxy/set/${instanceName}`, parsed);
-    } catch (error: any) {
-      console.error(`Erro ao definir proxy para instância ${instanceName}:`, error?.response?.data || error.message);
-      throw new Error(error?.response?.data?.message || 'Falha ao definir proxy no gateway');
-    }
   }
 };
 
