@@ -20,6 +20,17 @@ export async function POST(request: Request) {
       const instanceName = payload.instance || data?.instance;
 
       if (!fromMe && remoteJid && remoteJid.endsWith('@s.whatsapp.net') && instanceName) {
+        // Zera o contador de mensagens consecutivas sem resposta da instância
+        try {
+          await prisma.whatsAppInstance.updateMany({
+            where: { name: instanceName },
+            data: { unrepliedMsgCount: 0 },
+          });
+          console.log(`[Webhook] Resetado unrepliedMsgCount para a instância: ${instanceName}`);
+        } catch (err: any) {
+          console.error(`[Webhook] Erro ao resetar unrepliedMsgCount para ${instanceName}:`, err.message);
+        }
+
         const phone = remoteJid.split('@')[0];
         const messageText = messageData?.message?.conversation || 
                             messageData?.message?.extendedTextMessage?.text || 

@@ -60,6 +60,10 @@ interface Instance {
   isInCooldown: boolean;
   protectionScore: number;
   alerts: Alert[];
+  // Mensagens sem resposta
+  unrepliedMsgCount: number;
+  maxUnrepliedLimit: number;
+  unrepliedBlockEnabled: boolean;
 }
 
 const MAX_DAILY = 200;
@@ -145,6 +149,50 @@ export default function ConnectionsPage() {
   const [pairingLoading, setPairingLoading] = useState<Record<string, boolean>>({});
   const [pairingErrors, setPairingErrors] = useState<Record<string, string>>({});
   const [copiedInstance, setCopiedInstance] = useState<string | null>(null);
+
+  // Estados para Proteção anti-ban por mensagens sem resposta
+  const [protectionEnabled, setProtectionEnabled] = useState<Record<string, boolean>>({});
+  const [protectionLimit, setProtectionLimit] = useState<Record<string, number>>({});
+  const [savingProtection, setSavingProtection] = useState<Record<string, boolean>>({});
+
+  const handleToggleProtection = (name: string, checked: boolean, defaultLimit: number) => {
+    setProtectionEnabled(prev => ({ ...prev, [name]: checked }));
+    if (protectionLimit[name] === undefined) {
+      setProtectionLimit(prev => ({ ...prev, [name]: defaultLimit }));
+    }
+  };
+
+  const handleLimitChange = (name: string, limit: number) => {
+    setProtectionLimit(prev => ({ ...prev, [name]: limit }));
+  };
+
+  const handleSaveProtectionSettings = async (name: string, inst: Instance) => {
+    const enabled = protectionEnabled[name] !== undefined ? protectionEnabled[name] : inst.unrepliedBlockEnabled;
+    const limit = protectionLimit[name] !== undefined ? protectionLimit[name] : inst.maxUnrepliedLimit;
+
+    setSavingProtection(prev => ({ ...prev, [name]: true }));
+    try {
+      const res = await fetch(`/api/whatsapp/instances/${name}/protection`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          unrepliedBlockEnabled: enabled,
+          maxUnrepliedLimit: limit,
+        }),
+      });
+      if (res.ok) {
+        await fetchInstances();
+        alert(`Configurações de proteção do chip "${inst.profileName || name}" salvas com sucesso!`);
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Erro ao salvar configurações de proteção.');
+      }
+    } catch (err) {
+      alert('Erro de conexão ao salvar.');
+    } finally {
+      setSavingProtection(prev => ({ ...prev, [name]: false }));
+    }
+  };
 
   const fetchInstances = async () => {
     try {
@@ -652,6 +700,25 @@ export default function ConnectionsPage() {
                       {isConnected && inst.protectionScore !== undefined && (
                         <ProtectionBadge score={inst.protectionScore} />
                       )}
+
+                      {/* Status de Bloqueio por falta de resposta */}
+                      {isConnected && inst.unrepliedBlockEnabled && inst.unrepliedMsgCount >= inst.maxUnrepliedLimit && (
+                        <div style={{
+                          fontSize: '0.65rem',
+                          fontWeight: 800,
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          background: 'rgba(239, 68, 68, 0.15)',
+                          border: '1px solid rgba(239, 68, 68, 0.3)',
+                          color: '#ef4444',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '2px',
+                          animation: 'pulse 1.5s infinite'
+                        }}>
+                          🚫 PAUSADO (SEM RESPOSTA)
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -663,6 +730,15 @@ export default function ConnectionsPage() {
                       {/* Barras de limite */}
                       <LimitBar value={inst.dailyMsgCount || 0} max={MAX_DAILY} label="📤 Mensagens Hoje" color="#3b82f6" />
                       <LimitBar value={inst.hourlyMsgCount || 0} max={MAX_HOURLY} label="⏱️ Última Hora (sliding)" color="#10b981" />
+                      
+                      {inst.unrepliedBlockEnabled && (
+                        <LimitBar 
+                          value={inst.unrepliedMsgCount || 0} 
+                          max={inst.maxUnrepliedLimit || 20} 
+                          label="⚠️ Disparos Sem Resposta (outbound)" 
+                          color="#f59e0b" 
+                        />
+                      )}
                       
                       {/* Grau de Aquecimento */}
                       <div>
@@ -770,6 +846,56 @@ export default function ConnectionsPage() {
                               : 'Nenhum'}
                           </div>
                         </div>
+                      </div>
+
+                      {/* Configurações de Proteção do Chip */}
+                      <div style={{
+                        padding: '0.65rem 0.8rem',
+                        background: 'rgba(255, 255, 255, 0.02)',
+                        border: '1px solid rgba(255, 255, 255, 0.05)',
+                        borderRadius: '8px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '0.4rem',
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <label style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', margin: 0 }}>
+                            <input
+                              type="checkbox"
+                              checked={protectionEnabled[inst.name] !== undefined ? protectionEnabled[inst.name] : inst.unrepliedBlockEnabled}
+                              onChange={(e) => handleToggleProtection(inst.name, e.target.checked, inst.maxUnrepliedLimit)}
+                            />
+                            Pausar chip se ficar sem respostas
+                          </label>
+                        </div>
+                        
+                        {(protectionEnabled[inst.name] !== undefined ? protectionEnabled[inst.name] : inst.unrepliedBlockEnabled) && (
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', marginTop: 2 }}>
+                            <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.45)' }}>
+                              Limite de disparos sem resposta:
+                            </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                              <input
+                                type="number"
+                                min="1"
+                                max="1000"
+                                className="form-input"
+                                style={{ width: '50px', padding: '0.15rem 0.3rem', fontSize: '0.72rem', textAlign: 'center', height: '24px' }}
+                                value={protectionLimit[inst.name] !== undefined ? protectionLimit[inst.name] : inst.maxUnrepliedLimit}
+                                onChange={(e) => handleLimitChange(inst.name, parseInt(e.target.value) || 20)}
+                              />
+                              <button
+                                type="button"
+                                className="btn btn-primary"
+                                style={{ padding: '0.15rem 0.4rem', fontSize: '0.68rem', height: '24px', whiteSpace: 'nowrap' }}
+                                onClick={() => handleSaveProtectionSettings(inst.name, inst)}
+                                disabled={savingProtection[inst.name]}
+                              >
+                                {savingProtection[inst.name] ? 'Salvar...' : 'Salvar'}
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       {/* Alertas do chip */}

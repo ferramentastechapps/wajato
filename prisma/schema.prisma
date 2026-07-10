@@ -127,17 +127,20 @@ model MessageLog {
 }
 
 model WhatsAppInstance {
-  id            String   @id @default(uuid())
-  name          String   @unique
-  status        String   @default("DISCONNECTED") // CONNECTED, DISCONNECTED, INITIALIZING
-  phone         String?
-  qrCode        String?
-  profileName   String?  // Nome do perfil do WhatsApp
-  profilePicUrl String?  // Foto de perfil do WhatsApp
-  dailyMsgCount Int      @default(0)
-  healthScore   Int      @default(100) // 0 a 100
-  proxy         String?  // Proxy associada à instância
-  updatedAt     DateTime @updatedAt
+  id                    String   @id @default(uuid())
+  name                  String   @unique
+  status                String   @default("DISCONNECTED") // CONNECTED, DISCONNECTED, INITIALIZING
+  phone                 String?
+  qrCode                String?
+  profileName           String?  // Nome do perfil do WhatsApp
+  profilePicUrl         String?  // Foto de perfil do WhatsApp
+  dailyMsgCount         Int      @default(0)
+  healthScore           Int      @default(100) // 0 a 100
+  proxy                 String?  // Proxy associada à instância
+  unrepliedMsgCount     Int      @default(0)
+  maxUnrepliedLimit     Int      @default(20)
+  unrepliedBlockEnabled Boolean  @default(true)
+  updatedAt             DateTime @updatedAt
 }
 
 enum WarmupStatus {

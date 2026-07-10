@@ -23,8 +23,22 @@ export async function getNextWhatsAppInstance(): Promise<string> {
       return DEFAULT_INSTANCE;
     }
 
+    // Filtra chips que atingiram o limite de mensagens consecutivas sem resposta (outbound puro)
+    const activeInstances = healthyInstances.filter(inst => {
+      if (inst.unrepliedBlockEnabled && inst.unrepliedMsgCount >= inst.maxUnrepliedLimit) {
+        console.warn(`[ChipRouter] Instância ${inst.name} ignorada: atingiu o limite de ${inst.unrepliedMsgCount}/${inst.maxUnrepliedLimit} mensagens sem resposta.`);
+        return false;
+      }
+      return true;
+    });
+
+    if (activeInstances.length === 0) {
+      console.warn(`[ChipRouter] Todos os chips conectados atingiram o limite de mensagens sem resposta. Usando fallback padrão: ${DEFAULT_INSTANCE}`);
+      return DEFAULT_INSTANCE;
+    }
+
     // Seleciona a melhor instância (primeira da fila após a ordenação)
-    const selectedInstance = healthyInstances[0];
+    const selectedInstance = activeInstances[0];
     console.log(`[ChipRouter] Instância selecionada para envio: ${selectedInstance.name} (Envios hoje: ${selectedInstance.dailyMsgCount}, Saúde: ${selectedInstance.healthScore}%)`);
     return selectedInstance.name;
   } catch (error) {
@@ -43,6 +57,7 @@ export async function reportChipSuccess(instanceName: string): Promise<void> {
       data: {
         dailyMsgCount: { increment: 1 },
         healthScore: { increment: 1 }, // Aumenta a saúde gradualmente com o sucesso
+        unrepliedMsgCount: { increment: 1 }, // Incrementa mensagens consecutivas sem resposta
       },
     });
 

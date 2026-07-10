@@ -143,16 +143,29 @@ export async function GET() {
         // 8. Calcular Score de Proteção (0-100)
         const hasProxy = !!dbInst.proxy;
         const isWarming = activeWarmupType !== 'NONE';
-        const protectionScore = (
+        const isBlockedByUnreplied = dbInst.unrepliedBlockEnabled && dbInst.unrepliedMsgCount >= dbInst.maxUnrepliedLimit;
+
+        let protectionScore = (
           (hasProxy ? 30 : 0) +
           (healthScore >= 70 ? 30 : healthScore >= 40 ? 15 : 0) +
           (isWarming ? 20 : 0) +
           (dailyMsgCount < 160 ? 20 : dailyMsgCount < 200 ? 10 : 0)
         );
 
+        // Se o chip foi pausado por falta de resposta, seu score de proteção vai para 0% (Em Risco máximo)
+        if (isBlockedByUnreplied) {
+          protectionScore = 0;
+        }
+
         // 9. Gerar alertas proativos
         const alerts: { message: string; severity: 'HIGH' | 'MEDIUM' | 'LOW' }[] = [];
         if (status === 'CONNECTED') {
+          if (isBlockedByUnreplied) {
+            alerts.push({
+              message: `Pausado por segurança: enviou ${dbInst.unrepliedMsgCount} mensagens consecutivas sem nenhuma resposta de clientes.`,
+              severity: 'HIGH'
+            });
+          }
           if (!hasProxy) {
             alerts.push({ message: 'Sem proxy — risco de ban por IP compartilhado', severity: 'HIGH' });
           }
@@ -195,7 +208,12 @@ export async function GET() {
           isInCooldown,
           protectionScore,
           alerts,
+          // Campos de controle de mensagens sem resposta
+          unrepliedMsgCount: dbInst.unrepliedMsgCount,
+          maxUnrepliedLimit: dbInst.maxUnrepliedLimit,
+          unrepliedBlockEnabled: dbInst.unrepliedBlockEnabled,
         };
+
       })
     );
 

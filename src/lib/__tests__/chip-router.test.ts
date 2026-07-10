@@ -28,6 +28,9 @@ const makeInstance = (overrides: Partial<any> = {}) => ({
   proxy: null,       // campo adicionado no schema (fase 1)
   dailyMsgCount: 0,
   healthScore: 100,
+  unrepliedMsgCount: 0,
+  maxUnrepliedLimit: 20,
+  unrepliedBlockEnabled: true,
   updatedAt: new Date(),
   ...overrides,
 });
@@ -62,6 +65,24 @@ describe('Chip Router Unit Tests', () => {
       const result = await getNextWhatsAppInstance();
       expect(result).toBe('chip-3');
     });
+
+    it('deve ignorar chip se ele atingir o limite de mensagens sem resposta com protecao ativada', async () => {
+      const mockInstances = [
+        // Chip-1 atingiu o limite (20/20) com proteção ativada -> deve ser ignorado
+        makeInstance({ name: 'chip-1', dailyMsgCount: 2, healthScore: 90, unrepliedMsgCount: 20, maxUnrepliedLimit: 20, unrepliedBlockEnabled: true }),
+        // Chip-2 tem envios sem resposta mas proteção está desativada -> deve ser aceito
+        makeInstance({ name: 'chip-2', dailyMsgCount: 5, healthScore: 80, unrepliedMsgCount: 25, maxUnrepliedLimit: 20, unrepliedBlockEnabled: false }),
+      ];
+
+      vi.mocked(prisma.whatsAppInstance.findMany).mockResolvedValueOnce([
+        mockInstances[0],
+        mockInstances[1],
+      ]);
+
+      const result = await getNextWhatsAppInstance();
+      // Deve pular o chip-1 e selecionar o chip-2
+      expect(result).toBe('chip-2');
+    });
   });
 
   describe('reportChipSuccess', () => {
@@ -75,9 +96,14 @@ describe('Chip Router Unit Tests', () => {
 
       expect(prisma.whatsAppInstance.updateMany).toHaveBeenCalledWith({
         where: { name: 'chip-1' },
-        data: { dailyMsgCount: { increment: 1 }, healthScore: { increment: 1 } },
+        data: { 
+          dailyMsgCount: { increment: 1 }, 
+          healthScore: { increment: 1 },
+          unrepliedMsgCount: { increment: 1 },
+        },
       });
     });
+
 
     it('deve limitar o healthScore a no máximo 100', async () => {
       vi.mocked(prisma.whatsAppInstance.updateMany).mockResolvedValueOnce({ count: 1 } as any);
