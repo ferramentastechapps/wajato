@@ -44,8 +44,20 @@ export async function GET() {
         },
       });
     } else {
-      // Se a instância principal foi excluída pelo usuário, não recriamos ela
-      status = 'DISCONNECTED';
+      // Se a instância principal padrão foi excluída pelo usuário,
+      // verificamos se há algum outro chip cadastrado conectado ou inicializando no banco local
+      const activeConnected = await prisma.whatsAppInstance.findFirst({
+        where: { status: 'CONNECTED' },
+      });
+
+      if (activeConnected) {
+        status = 'CONNECTED';
+      } else {
+        const activeInitializing = await prisma.whatsAppInstance.findFirst({
+          where: { status: 'INITIALIZING' },
+        });
+        status = activeInitializing ? 'INITIALIZING' : 'DISCONNECTED';
+      }
     }
 
     return NextResponse.json({

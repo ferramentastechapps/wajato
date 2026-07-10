@@ -146,6 +146,28 @@ button, input, select, textarea {
   margin: 0 auto;
 }
 
+/* Cabeçalhos de Página */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 2rem;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.page-title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 0.35rem;
+}
+
+.page-description {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
 /* Sidebar */
 .sidebar {
   width: var(--sidebar-width);
