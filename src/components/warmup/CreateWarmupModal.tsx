@@ -467,7 +467,7 @@ export default function CreateWarmupModal({ onClose, onCreated }: Props) {
                       style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', color: '#fff', outline: 'none', fontFamily: 'monospace', resize: 'vertical', fontSize: '0.85rem' }}
                     />
                     <small style={{ color: 'rgba(255,255,255,0.4)', display: 'block', marginTop: 4 }}>
-                      💡 O robô rotacionará os envios automaticamente entre estes números, evitando falar com apenas um chip.
+                      💡 As mensagens do dia serão <strong style={{color: '#f59e0b'}}>distribuídas aleatoriamente</strong> entre os contatos — o total diário configurado é o total do chip, não por contato.
                     </small>
                   </>
                 )}

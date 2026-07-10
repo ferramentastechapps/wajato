@@ -104,7 +104,6 @@ export async function POST(req: Request) {
     if (phonesList.length === 0) {
       return NextResponse.json({ error: 'Nenhum telefone de destino válido fornecido' }, { status: 400 });
     }
-    const firstPhone = phonesList[0];
 
     // Validações
     if (startHour < 0 || startHour > 23 || endHour < 1 || endHour > 23 || startHour >= endHour) {
@@ -116,38 +115,77 @@ export async function POST(req: Request) {
     }
 
     const firstDayTarget = getRampUpTarget(1, initialMsgsPerDay, maxMsgsPerDay);
+    const campaignsCreated = [];
 
-    const campaign = await prisma.warmupCampaign.create({
-      data: {
-        name: name || `Aquecimento ${sourceInstance}`,
-        sourceInstance,
-        targetInstance: targetInstance || null,
-        targetPhone: firstPhone,
-        targetPhones: phonesList.join(','),
-        customContext: customContext || null,
-        isGroup,
-        totalDays,
-        targetMsgsToday: firstDayTarget,
-        initialMsgsPerDay,
-        maxMsgsPerDay,
-        startHour,
-        endHour,
-      },
-    });
+    // ── Distribuição aleatória do total de mensagens entre contatos ──────────
+    // Se houver múltiplos contatos, o total de mensagens por dia é dividido
+    // de forma aleatória/desproporcional entre as campanhas (soma = firstDayTarget).
+    // Se houver apenas 1 contato, ele recebe o total inteiro.
+    function randomDistribute(total: number, count: number): number[] {
+      if (count === 1) return [total];
+      // Gera pesos aleatórios
+      const weights = Array.from({ length: count }, () => Math.random() + 0.1);
+      const sumWeights = weights.reduce((a, b) => a + b, 0);
+      const shares = weights.map(w => Math.max(1, Math.round((w / sumWeights) * total)));
+      // Ajusta para garantir que a soma bate exatamente com total
+      let diff = total - shares.reduce((a, b) => a + b, 0);
+      let i = 0;
+      while (diff !== 0) {
+        const delta = diff > 0 ? 1 : -1;
+        if (shares[i % count] + delta >= 1) {
+          shares[i % count] += delta;
+          diff -= delta;
+        }
+        i++;
+      }
+      return shares;
+    }
 
-    // Agenda a primeira mensagem com jitter curto de 10s-60s
-    await queueWarmupMessage(
-      {
-        campaignId: campaign.id,
-        sourceInstance,
-        targetPhone: firstPhone,
-        isFirstMessageOfDay: true,
-      },
-      30000,
-      20000
-    );
+    const perContactTargets = randomDistribute(firstDayTarget, phonesList.length);
+    const perContactInitial = randomDistribute(initialMsgsPerDay, phonesList.length);
+    const perContactMax = randomDistribute(maxMsgsPerDay, phonesList.length);
 
-    return NextResponse.json(campaign, { status: 201 });
+    // Cria uma campanha independente para cada número para paralelizar e isolar o histórico.
+    for (let idx = 0; idx < phonesList.length; idx++) {
+      const phone = phonesList[idx];
+      const campaignName = phonesList.length > 1
+        ? `${name || `Aquecimento ${sourceInstance}`} (${phone})`
+        : (name || `Aquecimento ${sourceInstance}`);
+
+      const campaign = await prisma.warmupCampaign.create({
+        data: {
+          name: campaignName,
+          sourceInstance,
+          targetInstance: targetInstance || null,
+          targetPhone: phone,
+          targetPhones: phone, // Apenas este telefone para esta campanha
+          customContext: customContext || null,
+          isGroup,
+          totalDays,
+          targetMsgsToday: perContactTargets[idx],
+          initialMsgsPerDay: perContactInitial[idx],
+          maxMsgsPerDay: perContactMax[idx],
+          startHour,
+          endHour,
+        },
+      });
+
+      // Agenda a primeira mensagem com jitter curto de 10s-60s
+      await queueWarmupMessage(
+        {
+          campaignId: campaign.id,
+          sourceInstance,
+          targetPhone: phone,
+          isFirstMessageOfDay: true,
+        },
+        30000,
+        20000
+      );
+
+      campaignsCreated.push(campaign);
+    }
+
+    return NextResponse.json(campaignsCreated[0], { status: 201 });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

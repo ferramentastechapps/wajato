@@ -318,16 +318,16 @@ export const evolutionApi = {
   /**
    * Posta um Story/Status de texto ou imagem
    */
-  async sendStatusUpdate(instanceName: string, text: string, statusType: 'text' | 'image' = 'text', mediaUrl?: string): Promise<any> {
+   async sendStatusUpdate(instanceName: string, text: string, statusType: 'text' | 'image' = 'text', targetPhone?: string, mediaUrl?: string): Promise<any> {
     try {
-      const response = await evolutionClient.post(`/message/sendStory/${instanceName}`, {
-        storyMessage: {
-          type: statusType,
-          text: text,
-          media: mediaUrl || '',
-          backgroundColor: '#0f172a',
-          font: 3
-        }
+      const cleanPhone = targetPhone ? targetPhone.replace(/\D/g, '') : '';
+      const response = await evolutionClient.post(`/message/sendStatus/${instanceName}`, {
+        type: statusType,
+        content: text,
+        media: mediaUrl || '',
+        backgroundColor: '#0f172a',
+        font: 1,
+        statusJidList: cleanPhone ? [cleanPhone] : []
       });
       return response.data;
     } catch (error: any) {

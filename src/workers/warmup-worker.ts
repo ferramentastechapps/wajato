@@ -239,9 +239,15 @@ export const warmupWorker = new Worker(
         return;
       }
 
-      // ── 8. Buscar histórico de mensagens para contexto da IA ───────────────
+      // ── 8. Buscar histórico de mensagens para contexto da IA (filtrado por contato) ───
       const logs = await prisma.warmupLog.findMany({
-        where: { campaignId },
+        where: {
+          campaignId,
+          OR: [
+            { toPhone: targetPhone },
+            { fromInstance: targetPhone }
+          ]
+        },
         orderBy: { createdAt: 'desc' },
         take: 12, // Um pouco mais de contexto
       });
@@ -429,7 +435,7 @@ export const warmupWorker = new Worker(
         await new Promise(r => setTimeout(r, typingDelay));
         
         try {
-          await evolutionApi.sendStatusUpdate(sourceInstance, statusText, 'text');
+          await evolutionApi.sendStatusUpdate(sourceInstance, statusText, 'text', targetPhone);
         } catch (err) {
           console.error('[Warmup Worker] Erro ao postar status:', err);
           status = 'FAILED';
@@ -467,7 +473,7 @@ export const warmupWorker = new Worker(
         data: {
           campaignId,
           fromInstance: sourceInstance,
-          toPhone: targetPhone,
+          toPhone: action === 'STATUS' ? 'STATUS' : targetPhone,
           message: messageText,
           messageType: messageType as any,
           status,

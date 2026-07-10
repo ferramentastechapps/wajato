@@ -120,17 +120,55 @@ ${historyPrompt}
 Cliente diz: "${text}"
 Gere uma resposta curta, educada, prestativa e muito natural para o WhatsApp do cliente. Responda como "Você". Não adicione prefixos como "Você:" na resposta final.`;
 
-      const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({
-        model: 'gemini-2.0-flash',
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 150,
-        },
-      });
+      let aiResponse = '';
+      const isGroq = apiKey.startsWith('gsk_');
+      const isOpenRouter = apiKey.startsWith('sk-or-');
 
-      const result = await model.generateContent(prompt);
-      const aiResponse = result.response.text().trim();
+      if (isGroq || isOpenRouter) {
+        const url = isGroq ? 'https://api.groq.com/openai/v1/chat/completions' : 'https://openrouter.ai/api/v1/chat/completions';
+        const modelName = isGroq ? 'llama-3.1-8b-instant' : 'tencent/hy3:free';
+
+        const headers: Record<string, string> = {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        };
+
+        if (isOpenRouter) {
+          headers['HTTP-Referer'] = 'https://wajato.ftech-apps.com.br';
+          headers['X-Title'] = 'WaJato';
+        }
+
+        const response = await fetch(url, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            model: modelName,
+            messages: [
+              { role: 'user', content: prompt }
+            ],
+            temperature: 0.7,
+            max_tokens: isOpenRouter ? 1000 : 150,
+          }),
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error?.message || `Erro na chamada da API (${response.status})`);
+        }
+        aiResponse = data.choices[0].message.content.trim();
+      } else {
+        const genAI = new GoogleGenerativeAI(apiKey);
+        const model = genAI.getGenerativeModel({
+          model: 'gemini-2.0-flash',
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 150,
+          },
+        });
+
+        const result = await model.generateContent(prompt);
+        aiResponse = result.response.text().trim();
+      }
 
       if (aiResponse) {
         await evolutionApi.sendTextMessage(instanceName, phone, aiResponse);

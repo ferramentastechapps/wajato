@@ -136,10 +136,19 @@ export async function generateNextWarmupMessage(
   topic?: string
 ): Promise<string> {
   try {
-    const ai = await getGenAIInstance();
-    const model = ai.getGenerativeModel({
-      model: 'gemini-2.0-flash',
-      systemInstruction: `Você está simulando uma conversa de WhatsApp casual e autêntica entre dois amigos brasileiros.
+    let apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      const config = await prisma.chatbotConfig.findUnique({
+        where: { id: 'global' },
+      });
+      apiKey = config?.geminiApiKey || '';
+    }
+
+    if (!apiKey) {
+      throw new Error('Nenhuma chave de API configurada.');
+    }
+
+    const systemInstruction = `Você está simulando uma conversa de WhatsApp casual e autêntica entre dois amigos brasileiros.
 Seu objetivo é fazer o algoritmo do WhatsApp acreditar que isso é uma conversa REAL entre pessoas.
 
 REGRAS ABSOLUTAS:
@@ -153,60 +162,127 @@ REGRAS ABSOLUTAS:
 8. Contexto da sua persona: ${context}
 ${topic ? `9. O assunto atual da conversa é: ${topic}` : ''}
 
-EXEMPLOS DE BOAS MENSAGENS:
-- "kkk verdade"
-- "oxe que isso mano"  
-- "que foi"
-- "ja vi esse ai"
-- "tava pensando a mesma coisa"
-- "pior que é verdade rsrs"
-- "vai la"
-- "hm deixa eu pensar..."
-- "nem lembrava disso kk"
+RETORNE APENAS A MENSAGEM, sem aspas, sem prefixos, sem explicações.`;
 
-RETORNE APENAS A MENSAGEM, sem aspas, sem prefixos, sem explicações.`,
-    });
+    const isGroq = apiKey.startsWith('gsk_');
+    const isOpenRouter = apiKey.startsWith('sk-or-');
 
-    const chat = model.startChat({
-      history,
-      generationConfig: {
-        temperature: 0.95, // Alta temperatura para máxima variedade
-        maxOutputTokens: 80, // Mensagens curtas
-        topP: 0.9,
-        topK: 40,
-      },
-    });
+    const lastMessage = history[history.length - 1];
+    const isModelLast = lastMessage?.role === 'model';
 
-    let prompt: string;
-    if (history.length === 0) {
-      prompt = topic
-        ? `Inicie uma conversa casual sobre ${topic}. Uma saudação curta e informal.`
-        : 'Inicie a conversa com uma saudação muito casual, como se fossem amigos.';
+    if (isGroq || isOpenRouter) {
+      const prompt = history.length === 0
+        ? (topic ? `Inicie uma conversa casual sobre ${topic}. Uma saudação curta e informal.` : 'Inicie a conversa com uma saudação muito casual.')
+        : (isModelLast
+            ? 'Continue a conversa de forma casual como você mesmo (sem simular o outro e sem responder a si mesmo). Diga algo novo ou mude o assunto naturalmente.'
+            : 'Responda de forma casual e curta à última mensagem, ou mude o assunto naturalmente.');
+
+      const url = isGroq ? 'https://api.groq.com/openai/v1/chat/completions' : 'https://openrouter.ai/api/v1/chat/completions';
+      const modelName = isGroq ? 'llama-3.1-8b-instant' : 'tencent/hy3:free';
+
+      const headers: Record<string, string> = {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      };
+
+      if (isOpenRouter) {
+        headers['HTTP-Referer'] = 'https://wajato.ftech-apps.com.br';
+        headers['X-Title'] = 'WaJato';
+      }
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model: modelName,
+          messages: [
+            { role: 'system', content: systemInstruction },
+            ...history.map(h => ({
+              role: h.role === 'model' ? 'assistant' : 'user',
+              content: h.parts[0].text,
+            })),
+            { role: 'user', content: prompt }
+          ],
+          temperature: 0.95,
+          max_tokens: isOpenRouter ? 1000 : 80,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error?.message || `Erro na chamada da API (${response.status})`);
+      }
+      return data.choices[0].message.content.trim();
     } else {
-      prompt = 'Responda de forma casual e curta à última mensagem, ou mude o assunto naturalmente.';
-    }
+      // Fluxo original Gemini
+      const ai = new GoogleGenerativeAI(apiKey);
+      const model = ai.getGenerativeModel({
+        model: 'gemini-2.0-flash',
+        systemInstruction,
+      });
 
-    const result = await chat.sendMessage(prompt);
-    const response = await result.response;
-    return response.text().trim();
+      const chat = model.startChat({
+        history,
+        generationConfig: {
+          temperature: 0.95,
+          maxOutputTokens: 80,
+          topP: 0.9,
+          topK: 40,
+        },
+      });
+
+      const prompt = history.length === 0
+        ? (topic ? `Inicie uma conversa casual sobre ${topic}. Uma saudação curta e informal.` : 'Inicie a conversa com uma saudação muito casual, como se fossem amigos.')
+        : (isModelLast
+            ? 'Continue a conversa de forma casual como você mesmo (sem simular o outro e sem responder a si mesmo). Diga algo novo ou mude o assunto naturalmente.'
+            : 'Responda de forma casual e curta à última mensagem, ou mude o assunto naturalmente.');
+
+      const result = await chat.sendMessage(prompt);
+      const response = await result.response;
+      return response.text().trim();
+    }
   } catch (error) {
     console.error('Erro ao gerar mensagem de warmup via Gemini:', error);
-    // Fallback com Spintax para máxima variedade mesmo sem IA
-    const fallbacks = [
-      '{E aí|Oi|Salve} {mano|cara|véi}, {tudo certo?|tudo bem?|como vai?}',
-      '{Tranquilo|Tá ótimo|Aqui tá bom} por aqui. {E vc?|E aí?|E tu?}',
-      '{Pode crer|Com certeza|Exato}, {mano|cara}.',
-      '{Show|Boa|Top} de {bola|mais}',
-      '{Kkkk|Rsrs|Haha} {concordo|demais|é isso}',
-      '{Depois|Logo mais} a gente {se fala|conversa} então, {abs|beijo|valeu}',
-      '{Verdade|Exato|É mesmo}...',
-      '{Como|Como tá|E} o {dia|trampo|fds}?',
-      '{Ei|Opa|Oi}, sumido! {Tudo bem?|Tudo certo?|Como vai?}',
-      'kkk que isso',
-      'vai la mano',
-      'ta bom',
-    ];
-    const template = fallbacks[Math.floor(Math.random() * fallbacks.length)];
+    // Fallback inteligente com Spintax para máxima variedade de acordo com o estado do chat
+    const isModelLast = history[history.length - 1]?.role === 'model';
+    let templates: string[];
+    if (history.length === 0) {
+      templates = [
+        '{E aí|Oi|Olá|Salve} {mano|cara|véi|amigo}, {tudo bem?|tudo certo?|como você tá?}',
+        '{Bom dia|Boa tarde|Boa noite}! {Tudo bem por aí?|Como estão as coisas?|Tudo tranquilo?}',
+        '{Ei|Opa|Oi}, {como você está?|tudo bem?|tá por aí?}',
+        '{Fala|Diz aí|E aí} {mano|cara|véi}, {tranquilo?|na paz?|beleza?}',
+        '{E aí|Opa}! {Como tá o dia?|Tudo na paz?|Como vão as coisas?}',
+        '{Oi|Olá}! {Faz tempo que não nos falamos.|Como você tem passado?|Tudo bem por aí?}',
+        '{Fala|Opa} {mano|cara}, {tranquilo?|tá ocupado?|beleza?}',
+      ];
+    } else if (isModelLast) {
+      templates = [
+        'E por aí, como {tão as coisas?|tá o dia?|tá o tempo?}',
+        'Correria por aqui hoje kkk',
+        'Depois me fala se {conseguiu ver aquilo|deu certo lá|vai dar certo o esquema}.',
+        'Mas enfim, {depois nos falamos|mais tarde a gente conversa|qualquer coisa me avisa}.',
+        'E o {trabalho|trampo|dia|fds} por aí, como {tá?|estão as coisas?}',
+        'Bora trabalhar né kkk',
+        'Qualquer coisa {dá um grito|me avisa|me chama por aqui}.',
+      ];
+    } else {
+      templates = [
+        '{Tranquilo|Tá ótimo|Aqui tá bom|Tudo certo} por aqui. {E com você?|E por aí?|E tu?}',
+        '{Pode crer|Com certeza|Com certeza mano|Exato}, {concordo plenamente|faz sentido|é isso mesmo}.',
+        '{Show|Boa|Top|Massa} {de bola|demais|hein}! {Que bom|Excelente}.',
+        '{Kkkk|Rsrs|Haha|Kkkkk} {verdade|demais|engraçado|é bem isso}.',
+        '{Depois|Logo mais|Mais tarde} a gente {se fala|conversa|dá uma conversada} então, {um abraço|valeu|té mais}.',
+        '{Verdade|Exato|Pois é|É mesmo}... {complicado isso|correria demais}.',
+        '{Como|Como tá|E} o {trabalho|trampo|dia|fds|tempo} por aí?',
+        '{Que legal|Muito bom|Interessante}! {Não sabia disso.|Bom saber.}',
+        '{Kkkk|Rsrs} {complicado|acontece|fazer o que né}',
+        'Ah sim, {entendi|entendi perfeitamente|faz sentido}.',
+        'Pode deixar, {aviso sim|combinado|qualquer coisa te falo}.',
+        '{Beleza|Combinado|Fechado}! {Abraço|Valeu|Até}.',
+      ];
+    }
+    const template = templates[Math.floor(Math.random() * templates.length)];
     return processSpintax(template);
   }
 }

@@ -39,7 +39,10 @@ export async function queuePoolMessage(
   meanDelay: number = 120000,
   stdDevDelay: number = 45000
 ) {
-  const delayMs = gaussianDelay(meanDelay, stdDevDelay, 30000, 900000); // 30s min, 15m max
+  // Se o meanDelay for muito grande (esperar amanhã ou próxima janela),
+  // não devemos limitar a 15 min. O teto dinâmico garante isso.
+  const maxLimit = Math.max(900000, meanDelay + stdDevDelay * 3);
+  const delayMs = gaussianDelay(meanDelay, stdDevDelay, 30000, maxLimit); // 30s min
 
   console.log(`[WarmupPoolQueue] Job agendado com delay gaussiano de ${Math.round(delayMs / 1000)}s para o pool ${data.poolId}`);
 

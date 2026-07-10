@@ -77,7 +77,10 @@ export async function queueWarmupMessage(
   meanDelay: number = 90000,   // 90 segundos de média
   stdDevDelay: number = 45000  // 45 segundos de desvio padrão
 ) {
-  const delayMs = gaussianDelay(meanDelay, stdDevDelay, 20000, 600000);
+  // Se o meanDelay for muito grande (esperar amanhã ou próxima janela),
+  // não devemos limitar a 10 min. O teto dinâmico garante isso.
+  const maxLimit = Math.max(600000, meanDelay + stdDevDelay * 3);
+  const delayMs = gaussianDelay(meanDelay, stdDevDelay, 20000, maxLimit);
 
   console.log(`[WarmupQueue] Job agendado com delay gaussiano de ${Math.round(delayMs / 1000)}s para campanha ${data.campaignId}`);
 

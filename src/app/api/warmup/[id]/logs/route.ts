@@ -6,7 +6,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     const { id } = await params;
     
     const logs = await prisma.warmupLog.findMany({
-      where: { campaignId: id },
+      where: {
+        campaignId: id,
+        NOT: { toPhone: 'STATUS' }
+      },
       orderBy: { createdAt: 'asc' }, // Ordem cronológica para chat
     });
     

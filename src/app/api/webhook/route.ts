@@ -10,8 +10,10 @@ export async function POST(request: Request) {
 
     console.log(`[Webhook] Evento recebido: ${event}`);
 
+    const eventUpper = String(event).toUpperCase().replace('.', '_');
+
     // Processa novas mensagens recebidas (Chatbot Auto-responder)
-    if (event === 'MESSAGES_UPSERT') {
+    if (eventUpper === 'MESSAGES_UPSERT') {
       const messageData = data?.message || data;
       
       // Ignora mensagens enviadas por nós mesmos para evitar loops infinitos
@@ -96,7 +98,7 @@ export async function POST(request: Request) {
     }
 
     // Processa atualizações de status de mensagem
-    if (event === 'MESSAGES_UPDATE') {
+    if (eventUpper === 'MESSAGES_UPDATE') {
       const messageData = data?.message || data;
       const status = data?.status || messageData?.status;
       const remoteJid = data?.key?.remoteJid || messageData?.key?.remoteJid;
@@ -151,7 +153,7 @@ export async function POST(request: Request) {
     }
 
     // Processa atualização do estado da conexão
-    if (event === 'CONNECTION_UPDATE') {
+    if (eventUpper === 'CONNECTION_UPDATE') {
       const state = data?.state;
       const instanceName = data?.instance;
       
