@@ -31,15 +31,32 @@ export async function GET(_req: Request, { params }: Params) {
       try {
         const connectData = await evolutionApi.getQRCode(name);
         qrCodeBase64 = connectData?.base64 || null;
+        if (!qrCodeBase64) {
+          throw new Error('QR Code indisponível ou limite de tentativas atingido');
+        }
       } catch (error) {
-        // Se der erro ao pegar o QR, a instância pode não existir no gateway.
-        // Vamos recriar no gateway para obter o QR Code
+        // Se der erro ou vier sem QR Code (limite atingido), força recriação no gateway
         try {
+          console.log(`[GET Instance] Forçando recriação da instância ${name} no gateway para obter novo QR Code...`);
+          try {
+            await evolutionApi.deleteInstance(name);
+          } catch (delErr) {
+            // Ignora se não existir ou falhar ao deletar
+          }
           const createData = await evolutionApi.createInstance(name);
           qrCodeBase64 = createData?.qrcode?.base64 || null;
           
           const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
           await evolutionApi.setWebhook(name, `${appUrl}/api/webhook`);
+
+          if (dbInst.proxy) {
+            try {
+              await evolutionApi.setInstanceProxy(name, dbInst.proxy);
+              console.log(`[GET Instance] Proxy reconfigurado com sucesso para ${name}`);
+            } catch (proxyErr) {
+              console.error(`Erro ao reconfigurar proxy para ${name}:`, proxyErr);
+            }
+          }
         } catch (err) {
           console.error(`Erro ao recriar instância ${name}:`, err);
         }
