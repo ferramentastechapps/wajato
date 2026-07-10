@@ -204,18 +204,21 @@ export const evolutionApi = {
   async setWebhook(instanceName: string, webhookUrl: string): Promise<void> {
     try {
       await evolutionClient.post(`/webhook/set/${instanceName}`, {
-        enabled: true,
-        url: webhookUrl,
-        headers: {
-          'apikey': EVOLUTION_API_KEY
-        },
-        events: [
-          'SEND_MESSAGE',
-          'MESSAGES_SET',
-          'MESSAGES_UPSERT', // Mensagens recebidas (chatbot auto-responder)
-          'MESSAGES_UPDATE', // Contém o status (delivered, read)
-          'CONNECTION_UPDATE'
-        ]
+        webhook: {
+          enabled: true,
+          url: webhookUrl,
+          by: 'default',
+          headers: {
+            'apikey': EVOLUTION_API_KEY
+          },
+          events: [
+            'SEND_MESSAGE',
+            'MESSAGES_SET',
+            'MESSAGES_UPSERT', // Mensagens recebidas (chatbot auto-responder)
+            'MESSAGES_UPDATE', // Contém o status (delivered, read)
+            'CONNECTION_UPDATE'
+          ]
+        }
       });
     } catch (error: any) {
       console.error(`Erro ao configurar webhook para ${instanceName}:`, error?.response?.data || error.message);
