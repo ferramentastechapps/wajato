@@ -27,6 +27,8 @@ export interface CreateInstanceResponse {
 export interface GroupParticipant {
   id: string;        // JID ex: "5511999998888@s.whatsapp.net"
   admin: 'admin' | 'superadmin' | null;
+  phoneNumber?: string;
+  name?: string;
 }
 
 export interface WhatsAppGroup {

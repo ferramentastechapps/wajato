@@ -15,6 +15,6 @@ Write-Host "=== 📤 Enviando deploy-warmup.zip para a VPS ($VpsIp) ===" -Foregr
 scp deploy-warmup.zip "$($VpsUser)@$($VpsIp):$VpsPath/"
 
 Write-Host "=== ⚙️  Executando upgrade na VPS ===" -ForegroundColor Cyan
-ssh "$($VpsUser)@$($VpsIp)" "cd $VpsPath && unzip -o deploy-warmup.zip && rm deploy-warmup.zip && chmod +x upgrade-warmup.sh && ./upgrade-warmup.sh"
+ssh "$($VpsUser)@$($VpsIp)" "cd $VpsPath && unzip -o deploy-warmup.zip; rm -f deploy-warmup.zip; chmod +x upgrade-warmup.sh && ./upgrade-warmup.sh"
 
 Write-Host "=== ✅ Deploy do Warmup v3.0 Concluído! ===" -ForegroundColor Green

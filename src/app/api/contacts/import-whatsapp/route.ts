@@ -67,18 +67,29 @@ export async function POST(request: Request) {
 
     // --- Coleta participantes de cada grupo ---
     const phoneSet = new Set<string>();
+    const contactMap = new Map<string, { name: string | null }>();
 
     for (const groupJid of groupJids) {
       const participants = await evolutionApi.fetchGroupParticipants(instanceName, groupJid);
 
       for (const p of participants) {
-        // JID format: "5511999998888@s.whatsapp.net"
-        // Remove o sufixo do JID e normaliza pelo formatPhone
-        const rawPhone = p.id.split('@')[0];
+        // JID real fica em p.phoneNumber se o JID principal p.id for uma LID (ex: community announcement)
+        const finalJid = p.phoneNumber || p.id;
+        if (!finalJid) continue;
+
+        const rawPhone = finalJid.split('@')[0];
         if (!rawPhone) continue;
 
         const formatted = evolutionApi.formatPhone(rawPhone);
-        if (formatted) phoneSet.add(formatted);
+        if (!formatted) continue;
+
+        const name = p.name || null;
+        phoneSet.add(formatted);
+
+        const existingInfo = contactMap.get(formatted);
+        if (!existingInfo || (!existingInfo.name && name)) {
+          contactMap.set(formatted, { name });
+        }
       }
     }
 
@@ -106,14 +117,14 @@ export async function POST(request: Request) {
       .filter((p) => !existingPhones.has(p))
       .map((phone) => ({
         phone,
-        name: null as string | null,
+        name: contactMap.get(phone)?.name || null,
         groupId: finalGroupId,
         tags: [] as string[],
       }));
 
     const toUpdate = phonesArray.filter((p) => existingPhones.has(p));
 
-    // Cria novos contatos
+    // Cria novos contatos com seus respectivos nomes
     let created = 0;
     if (toCreate.length > 0) {
       const result = await prisma.contact.createMany({
@@ -123,9 +134,37 @@ export async function POST(request: Request) {
       created = result.count;
     }
 
-    // Atualiza o groupId dos contatos já existentes (move para o grupo destino)
+    // Atualiza contatos existentes
     let updated = 0;
     if (toUpdate.length > 0) {
+      // 1. Atualiza o nome dos contatos que estão sem nome atualmente no banco
+      const emptyNameContacts = await prisma.contact.findMany({
+        where: {
+          phone: { in: toUpdate },
+          OR: [
+            { name: null },
+            { name: "" }
+          ]
+        },
+        select: { id: true, phone: true }
+      });
+
+      const updateNamePromises = emptyNameContacts.map((c) => {
+        const info = contactMap.get(c.phone);
+        if (info && info.name) {
+          return prisma.contact.update({
+            where: { id: c.id },
+            data: { name: info.name }
+          });
+        }
+        return null;
+      }).filter(Boolean);
+
+      if (updateNamePromises.length > 0) {
+        await Promise.all(updateNamePromises);
+      }
+
+      // 2. Atualiza o groupId para todos os contatos existentes de uma só vez
       const result = await prisma.contact.updateMany({
         where: { phone: { in: toUpdate } },
         data: { groupId: finalGroupId },
