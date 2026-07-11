@@ -11,7 +11,12 @@ import {
   Tag, 
   AlertCircle, 
   X, 
-  Check 
+  Check,
+  Smartphone,
+  RefreshCw,
+  CheckSquare,
+  Square,
+  Download
 } from 'lucide-react';
 import AppLayout from '@/components/layout/AppLayout';
 
@@ -36,6 +41,18 @@ interface Group {
   };
 }
 
+interface WAInstance {
+  name: string;
+  status: string;
+}
+
+interface WAGroup {
+  id: string;
+  subject: string;
+  desc: string | null;
+  size: number | null;
+}
+
 export default function ContactsPage() {
   // State
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -49,6 +66,19 @@ export default function ContactsPage() {
   const [showAddContact, setShowAddContact] = useState(false);
   const [showAddGroup, setShowAddGroup] = useState(false);
   const [showImportCSV, setShowImportCSV] = useState(false);
+  const [showImportWA, setShowImportWA] = useState(false);
+
+  // --- Estado do modal Importar do WhatsApp ---
+  const [waStep, setWaStep] = useState<1 | 2 | 3>(1);
+  const [waInstances, setWaInstances] = useState<WAInstance[]>([]);
+  const [waSelectedInstance, setWaSelectedInstance] = useState('');
+  const [waGroups, setWaGroups] = useState<WAGroup[]>([]);
+  const [waSelectedGroupJids, setWaSelectedGroupJids] = useState<string[]>([]);
+  const [waTargetGroupId, setWaTargetGroupId] = useState('');
+  const [waNewGroupName, setWaNewGroupName] = useState('');
+  const [waLoading, setWaLoading] = useState(false);
+  const [waError, setWaError] = useState('');
+  const [waResult, setWaResult] = useState<{ imported: number; updated: number; total: number } | null>(null);
 
   // Form inputs
   const [newContact, setNewContact] = useState({ name: '', phone: '', tags: '', groupId: '' });
@@ -460,6 +490,114 @@ export default function ContactsPage() {
     }
   };
 
+  // ── Importar do WhatsApp ────────────────────────────────────────────────────
+
+  /** Abre o modal e carrega as instâncias disponíveis */
+  const openImportWA = async () => {
+    setWaStep(1);
+    setWaError('');
+    setWaSelectedInstance('');
+    setWaGroups([]);
+    setWaSelectedGroupJids([]);
+    setWaTargetGroupId('');
+    setWaNewGroupName('');
+    setWaResult(null);
+    setShowImportWA(true);
+    setWaLoading(true);
+    try {
+      const res = await fetch('/api/whatsapp/instances');
+      const data = await res.json();
+      // A rota retorna um array direto (não encapsulado em { instances: [] })
+      const allInstances: WAInstance[] = Array.isArray(data) ? data : (data.instances || []);
+      const connected = allInstances.filter((i) => i.status === 'CONNECTED');
+      setWaInstances(connected);
+      if (connected.length === 0) {
+        setWaError('Nenhuma instância conectada encontrada. Conecte um número primeiro.');
+      }
+    } catch {
+      setWaError('Erro ao carregar instâncias. Tente novamente.');
+    } finally {
+      setWaLoading(false);
+    }
+  };
+
+  /** Busca grupos da instância selecionada */
+  const fetchWAGroups = async () => {
+    if (!waSelectedInstance) return;
+    setWaLoading(true);
+    setWaError('');
+    setWaGroups([]);
+    setWaSelectedGroupJids([]);
+    try {
+      const res = await fetch(`/api/contacts/whatsapp-groups?instanceName=${encodeURIComponent(waSelectedInstance)}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Erro ao buscar grupos');
+      setWaGroups(data.groups || []);
+      if ((data.groups || []).length === 0) {
+        setWaError('Nenhum grupo encontrado para esta instância.');
+      } else {
+        setWaStep(2);
+      }
+    } catch (e: any) {
+      setWaError(e.message || 'Erro ao buscar grupos.');
+    } finally {
+      setWaLoading(false);
+    }
+  };
+
+  /** Executa a importação */
+  const handleImportWASubmit = async () => {
+    if (waSelectedGroupJids.length === 0) {
+      setWaError('Selecione ao menos um grupo.');
+      return;
+    }
+    if (!waTargetGroupId && !waNewGroupName.trim()) {
+      setWaError('Selecione um grupo de contatos ou informe um nome para criar um novo.');
+      return;
+    }
+    setWaLoading(true);
+    setWaError('');
+    setWaStep(3);
+    try {
+      const res = await fetch('/api/contacts/import-whatsapp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          instanceName: waSelectedInstance,
+          groupJids: waSelectedGroupJids,
+          targetGroupId: waTargetGroupId || undefined,
+          createGroupName: !waTargetGroupId ? waNewGroupName.trim() : undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Erro ao importar');
+      setWaResult({ imported: data.imported, updated: data.updated, total: data.total });
+      fetchData();
+    } catch (e: any) {
+      setWaError(e.message || 'Erro ao importar contatos.');
+    } finally {
+      setWaLoading(false);
+    }
+  };
+
+  const toggleWAGroup = (jid: string) => {
+    setWaSelectedGroupJids((prev) =>
+      prev.includes(jid) ? prev.filter((j) => j !== jid) : [...prev, jid]
+    );
+  };
+
+  const toggleAllWAGroups = () => {
+    if (waSelectedGroupJids.length === waGroups.length) {
+      setWaSelectedGroupJids([]);
+    } else {
+      setWaSelectedGroupJids(waGroups.map((g) => g.id));
+    }
+  };
+
+  const waEstimatedContacts = waGroups
+    .filter((g) => waSelectedGroupJids.includes(g.id))
+    .reduce((acc, g) => acc + (g.size || 0), 0);
+
   return (
     <AppLayout title="Contatos">
       {/* Barra de Ferramentas / Ações */}
@@ -484,6 +622,15 @@ export default function ContactsPage() {
             <button onClick={() => setShowImportCSV(true)} className="btn btn-secondary">
               <Upload size={16} />
               Importar CSV
+            </button>
+            <button
+              id="btn-import-whatsapp"
+              onClick={openImportWA}
+              className="btn btn-secondary"
+              style={{ color: '#25d366', borderColor: 'rgba(37,211,102,0.3)', background: 'rgba(37,211,102,0.06)' }}
+            >
+              <Smartphone size={16} />
+              Importar do WhatsApp
             </button>
             <button onClick={() => setShowBulkDelete(true)} className="btn btn-secondary" style={{ color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.2)' }}>
               <Trash2 size={16} />
@@ -1062,6 +1209,336 @@ export default function ContactsPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Modal: Importar do WhatsApp ─────────────────────────────────────── */}
+      {showImportWA && (
+        <div className="modal-overlay" onClick={() => !waLoading && setShowImportWA(false)}>
+          <div
+            className="modal-content"
+            style={{ maxWidth: '580px', width: '95%' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="modal-header" style={{ borderBottom: '1px solid rgba(37,211,102,0.2)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{
+                  width: 36, height: 36, borderRadius: '50%',
+                  background: 'rgba(37,211,102,0.12)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}>
+                  <Smartphone size={18} color="#25d366" />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 600 }}>
+                    Importar do WhatsApp
+                  </h3>
+                  <p style={{ margin: 0, fontSize: '0.78rem', color: '#6b7280' }}>
+                    {waStep === 1 && 'Passo 1 de 3 — Selecionar instância'}
+                    {waStep === 2 && 'Passo 2 de 3 — Selecionar grupos'}
+                    {waStep === 3 && 'Passo 3 de 3 — Importação'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowImportWA(false)}
+                className="btn btn-secondary"
+                style={{ padding: '0.25rem', minWidth: 0 }}
+                disabled={waLoading}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Step indicator */}
+            <div style={{ display: 'flex', gap: 0, marginBottom: '1.5rem', marginTop: '0.25rem' }}>
+              {[1, 2, 3].map((s) => (
+                <div key={s} style={{
+                  flex: 1, height: 3,
+                  background: waStep >= s ? '#25d366' : 'rgba(255,255,255,0.1)',
+                  marginRight: s < 3 ? 3 : 0,
+                  borderRadius: 2,
+                  transition: 'background 0.3s ease'
+                }} />
+              ))}
+            </div>
+
+            <div style={{ padding: '0 1.5rem' }}>
+              {/* Erro global */}
+              {waError && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: '0.5rem',
+                  padding: '0.75rem 1rem',
+                  background: 'rgba(239,68,68,0.08)',
+                  border: '1px solid rgba(239,68,68,0.2)',
+                  borderRadius: 8, marginBottom: '1rem',
+                  color: '#fca5a5', fontSize: '0.85rem'
+                }}>
+                  <AlertCircle size={16} style={{ flexShrink: 0 }} />
+                  {waError}
+                </div>
+              )}
+
+              {/* ── STEP 1: Selecionar instância ── */}
+              {waStep === 1 && (
+                <div>
+                  {waLoading ? (
+                    <div style={{ textAlign: 'center', padding: '2.5rem 0', color: '#6b7280' }}>
+                      <div style={{
+                        width: 32, height: 32, border: '3px solid rgba(37,211,102,0.15)',
+                        borderTopColor: '#25d366', borderRadius: '50%',
+                        animation: 'spin 1s linear infinite', margin: '0 auto 1rem'
+                      }} />
+                      <p style={{ margin: 0, fontSize: '0.9rem' }}>Buscando instâncias conectadas...</p>
+                    </div>
+                  ) : waInstances.length === 0 && !waError ? (
+                    <p style={{ color: '#6b7280', textAlign: 'center', padding: '1.5rem 0' }}>
+                      Nenhuma instância conectada.
+                    </p>
+                  ) : (
+                    <div>
+                      <label className="form-label">Instância conectada</label>
+                      <select
+                        id="wa-instance-select"
+                        className="input-control"
+                        value={waSelectedInstance}
+                        onChange={(e) => { setWaSelectedInstance(e.target.value); setWaError(''); }}
+                      >
+                        <option value="">Selecione uma instância...</option>
+                        {waInstances.map((i) => (
+                          <option key={i.name} value={i.name}>{i.name}</option>
+                        ))}
+                      </select>
+                      <p style={{ fontSize: '0.78rem', color: '#6b7280', marginTop: '0.5rem' }}>
+                        Apenas instâncias com status <strong style={{ color: '#25d366' }}>CONECTADO</strong> são exibidas.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── STEP 2: Selecionar grupos ── */}
+              {waStep === 2 && (
+                <div>
+                  {waLoading ? (
+                    <div style={{ textAlign: 'center', padding: '2.5rem 0', color: '#6b7280' }}>
+                      <div style={{
+                        width: 32, height: 32, border: '3px solid rgba(37,211,102,0.15)',
+                        borderTopColor: '#25d366', borderRadius: '50%',
+                        animation: 'spin 1s linear infinite', margin: '0 auto 1rem'
+                      }} />
+                      <p style={{ margin: 0, fontSize: '0.9rem' }}>Carregando grupos...</p>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Lista de grupos */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                        <label className="form-label" style={{ margin: 0 }}>
+                          Grupos ({waGroups.length})
+                        </label>
+                        <button
+                          type="button"
+                          onClick={toggleAllWAGroups}
+                          className="btn btn-secondary"
+                          style={{ fontSize: '0.75rem', padding: '0.25rem 0.6rem' }}
+                        >
+                          {waSelectedGroupJids.length === waGroups.length ? 'Desmarcar todos' : 'Selecionar todos'}
+                        </button>
+                      </div>
+
+                      <div style={{
+                        maxHeight: '260px', overflowY: 'auto',
+                        border: '1px solid var(--border)',
+                        borderRadius: 8, marginBottom: '1rem'
+                      }}>
+                        {waGroups.map((g) => {
+                          const selected = waSelectedGroupJids.includes(g.id);
+                          return (
+                            <div
+                              key={g.id}
+                              onClick={() => toggleWAGroup(g.id)}
+                              style={{
+                                display: 'flex', alignItems: 'center', gap: '0.75rem',
+                                padding: '0.65rem 1rem',
+                                borderBottom: '1px solid rgba(255,255,255,0.04)',
+                                cursor: 'pointer',
+                                background: selected ? 'rgba(37,211,102,0.06)' : 'transparent',
+                                transition: 'background 0.15s',
+                              }}
+                            >
+                              {selected
+                                ? <CheckSquare size={16} color="#25d366" style={{ flexShrink: 0 }} />
+                                : <Square size={16} color="#4b5563" style={{ flexShrink: 0 }} />
+                              }
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <p style={{ margin: 0, fontSize: '0.875rem', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                  {g.subject}
+                                </p>
+                                {g.desc && (
+                                  <p style={{ margin: 0, fontSize: '0.75rem', color: '#6b7280', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                    {g.desc}
+                                  </p>
+                                )}
+                              </div>
+                              {g.size !== null && (
+                                <span style={{ fontSize: '0.75rem', color: '#6b7280', flexShrink: 0 }}>
+                                  {g.size} membros
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Destino dos contatos */}
+                      <div style={{ borderTop: '1px solid var(--border)', paddingTop: '1rem' }}>
+                        <label className="form-label">Grupo de contatos destino</label>
+                        <select
+                          id="wa-target-group-select"
+                          className="input-control"
+                          value={waTargetGroupId}
+                          onChange={(e) => { setWaTargetGroupId(e.target.value); setWaNewGroupName(''); setWaError(''); }}
+                          style={{ marginBottom: '0.5rem' }}
+                        >
+                          <option value="">— Criar novo grupo —</option>
+                          {groups.map((g) => (
+                            <option key={g.id} value={g.id}>{g.name}</option>
+                          ))}
+                        </select>
+
+                        {!waTargetGroupId && (
+                          <input
+                            id="wa-new-group-name"
+                            type="text"
+                            className="input-control"
+                            placeholder="Nome do novo grupo de contatos..."
+                            value={waNewGroupName}
+                            onChange={(e) => { setWaNewGroupName(e.target.value); setWaError(''); }}
+                          />
+                        )}
+                      </div>
+
+                      {/* Resumo */}
+                      {waSelectedGroupJids.length > 0 && (
+                        <div style={{
+                          marginTop: '0.75rem', padding: '0.6rem 0.9rem',
+                          background: 'rgba(37,211,102,0.07)',
+                          borderRadius: 8, fontSize: '0.82rem', color: '#9ca3af'
+                        }}>
+                          <strong style={{ color: '#25d366' }}>{waSelectedGroupJids.length}</strong> grupo(s) selecionado(s)
+                          {waEstimatedContacts > 0 && (
+                            <> · ~<strong style={{ color: '#25d366' }}>{waEstimatedContacts}</strong> membros estimados</>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* ── STEP 3: Resultado / Progresso ── */}
+              {waStep === 3 && (
+                <div style={{ textAlign: 'center', padding: '1.5rem 0' }}>
+                  {waLoading ? (
+                    <>
+                      <div style={{
+                        width: 48, height: 48, border: '4px solid rgba(37,211,102,0.15)',
+                        borderTopColor: '#25d366', borderRadius: '50%',
+                        animation: 'spin 1s linear infinite', margin: '0 auto 1.5rem'
+                      }} />
+                      <p style={{ fontWeight: 600, marginBottom: '0.25rem' }}>Importando contatos...</p>
+                      <p style={{ fontSize: '0.82rem', color: '#6b7280' }}>
+                        Isso pode levar alguns segundos para grupos grandes.
+                      </p>
+                    </>
+                  ) : waResult ? (
+                    <>
+                      <div style={{
+                        width: 56, height: 56, borderRadius: '50%',
+                        background: 'rgba(37,211,102,0.15)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        margin: '0 auto 1.25rem'
+                      }}>
+                        <Check size={28} color="#25d366" />
+                      </div>
+                      <p style={{ fontWeight: 700, fontSize: '1.1rem', marginBottom: '0.5rem' }}>
+                        Importação concluída!
+                      </p>
+                      <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', marginTop: '1rem', flexWrap: 'wrap' }}>
+                        <div style={{ textAlign: 'center', padding: '0.75rem 1.25rem', background: 'rgba(37,211,102,0.08)', borderRadius: 10 }}>
+                          <p style={{ fontSize: '1.5rem', fontWeight: 700, color: '#25d366', margin: 0 }}>{waResult.imported}</p>
+                          <p style={{ fontSize: '0.75rem', color: '#9ca3af', margin: 0 }}>Novos contatos</p>
+                        </div>
+                        <div style={{ textAlign: 'center', padding: '0.75rem 1.25rem', background: 'rgba(59,130,246,0.08)', borderRadius: 10 }}>
+                          <p style={{ fontSize: '1.5rem', fontWeight: 700, color: '#60a5fa', margin: 0 }}>{waResult.updated}</p>
+                          <p style={{ fontSize: '0.75rem', color: '#9ca3af', margin: 0 }}>Atualizados</p>
+                        </div>
+                        <div style={{ textAlign: 'center', padding: '0.75rem 1.25rem', background: 'rgba(255,255,255,0.04)', borderRadius: 10 }}>
+                          <p style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0 }}>{waResult.total}</p>
+                          <p style={{ fontSize: '0.75rem', color: '#9ca3af', margin: 0 }}>Total processado</p>
+                        </div>
+                      </div>
+                    </>
+                  ) : waError ? (
+                    <>
+                      <AlertCircle size={40} color="#ef4444" style={{ marginBottom: '1rem' }} />
+                      <p style={{ fontWeight: 600, color: '#ef4444' }}>Erro na importação</p>
+                      <p style={{ fontSize: '0.85rem', color: '#9ca3af' }}>{waError}</p>
+                    </>
+                  ) : null}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="modal-footer" style={{ marginTop: '1.5rem' }}>
+              {waStep === 1 && (
+                <>
+                  <button className="btn btn-secondary" onClick={() => setShowImportWA(false)} disabled={waLoading}>
+                    Cancelar
+                  </button>
+                  <button
+                    id="wa-btn-next-step1"
+                    className="btn btn-primary"
+                    onClick={fetchWAGroups}
+                    disabled={!waSelectedInstance || waLoading}
+                    style={{ background: '#25d366', borderColor: '#25d366' }}
+                  >
+                    {waLoading ? <RefreshCw size={15} style={{ animation: 'spin 1s linear infinite' }} /> : <Download size={15} />}
+                    Buscar Grupos
+                  </button>
+                </>
+              )}
+              {waStep === 2 && !waLoading && (
+                <>
+                  <button className="btn btn-secondary" onClick={() => setWaStep(1)} disabled={waLoading}>
+                    ← Voltar
+                  </button>
+                  <button
+                    id="wa-btn-import"
+                    className="btn btn-primary"
+                    onClick={handleImportWASubmit}
+                    disabled={waSelectedGroupJids.length === 0 || waLoading || (!waTargetGroupId && !waNewGroupName.trim())}
+                    style={{ background: '#25d366', borderColor: '#25d366' }}
+                  >
+                    <Smartphone size={15} />
+                    Importar {waSelectedGroupJids.length > 0 ? `(${waSelectedGroupJids.length} grupo${waSelectedGroupJids.length > 1 ? 's' : ''})` : ''}
+                  </button>
+                </>
+              )}
+              {waStep === 3 && !waLoading && (
+                <button
+                  className="btn btn-primary"
+                  onClick={() => setShowImportWA(false)}
+                  style={{ background: '#25d366', borderColor: '#25d366', width: '100%' }}
+                >
+                  <Check size={15} />
+                  {waResult ? 'Ver Contatos' : 'Fechar'}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}

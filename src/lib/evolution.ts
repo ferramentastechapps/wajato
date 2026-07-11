@@ -24,6 +24,21 @@ export interface CreateInstanceResponse {
   };
 }
 
+export interface GroupParticipant {
+  id: string;        // JID ex: "5511999998888@s.whatsapp.net"
+  admin: 'admin' | 'superadmin' | null;
+}
+
+export interface WhatsAppGroup {
+  id: string;          // JID ex: "120363...@g.us"
+  subject: string;     // Nome do grupo
+  subjectOwner?: string;
+  creation?: number;
+  desc?: string;
+  participants: GroupParticipant[];
+  size?: number;
+}
+
 export interface ConnectionStateResponse {
   instance: {
     instanceName: string;
@@ -383,7 +398,7 @@ export const evolutionApi = {
   },
 
   /**
-   * Busca todos os grupos em que a instância está participando
+   * Busca todos os grupos em que a instância está participando (sem participantes — listagem rápida)
    */
   async fetchGroups(instanceName: string): Promise<any[]> {
     try {
@@ -391,6 +406,43 @@ export const evolutionApi = {
       return Array.isArray(response.data) ? response.data : [];
     } catch (error: any) {
       console.error(`Erro ao buscar grupos da instância ${instanceName}:`, error?.response?.data || error.message);
+      return [];
+    }
+  },
+
+  /**
+   * Busca todos os grupos com a lista de participantes incluída.
+   * Pode ser lento para instâncias em muitos grupos grandes.
+   */
+  async fetchGroupsWithParticipants(instanceName: string): Promise<WhatsAppGroup[]> {
+    try {
+      const response = await evolutionClient.get<WhatsAppGroup[]>(
+        `/group/fetchAllGroups/${instanceName}?getParticipants=true`
+      );
+      return Array.isArray(response.data) ? response.data : [];
+    } catch (error: any) {
+      console.error(`Erro ao buscar grupos com participantes para ${instanceName}:`, error?.response?.data || error.message);
+      return [];
+    }
+  },
+
+  /**
+   * Busca os participantes de um grupo específico pelo JID.
+   * Preferir este método quando quiser membros de grupos individuais.
+   */
+  async fetchGroupParticipants(instanceName: string, groupJid: string): Promise<GroupParticipant[]> {
+    try {
+      const response = await evolutionClient.get<{ participants: GroupParticipant[] }>(
+        `/group/participants/${instanceName}`,
+        { params: { groupJid } }
+      );
+      // A Evolution API pode retornar o array diretamente ou dentro de { participants: [] }
+      const data = response.data as any;
+      if (Array.isArray(data)) return data;
+      if (Array.isArray(data?.participants)) return data.participants;
+      return [];
+    } catch (error: any) {
+      console.error(`Erro ao buscar participantes do grupo ${groupJid}:`, error?.response?.data || error.message);
       return [];
     }
   },
