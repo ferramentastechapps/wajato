@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import AppLayout from '@/components/layout/AppLayout';
-import { Flame, Plus, MessageSquare, Pause, Play, TrendingUp, Clock, Activity, Users, HeartPulse } from 'lucide-react';
+import { Flame, Plus, MessageSquare, Pause, Play, TrendingUp, Clock, Activity, Users, HeartPulse, ChevronDown, ChevronRight, Smartphone } from 'lucide-react';
 import CreateWarmupModal from '@/components/warmup/CreateWarmupModal';
 import CreateWarmupPoolModal from '@/components/warmup/CreateWarmupPoolModal';
 import WarmupChatViewer from '@/components/warmup/WarmupChatViewer';
@@ -94,6 +94,34 @@ export default function WarmupPage() {
 
   // Loading states
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  // Collapsed chips state (set of instance names that are collapsed)
+  const [collapsedChips, setCollapsedChips] = useState<Set<string>>(new Set());
+
+  const toggleChip = (instanceName: string) => {
+    setCollapsedChips(prev => {
+      const next = new Set(prev);
+      if (next.has(instanceName)) next.delete(instanceName);
+      else next.add(instanceName);
+      return next;
+    });
+  };
+
+  // Group campaigns by sourceInstance
+  const campaignsByChip = useMemo(() => {
+    const map = new Map<string, Campaign[]>();
+    campaigns.forEach(c => {
+      const key = c.sourceInstance;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(c);
+    });
+    // Sort chips: chips with RUNNING campaigns first
+    return Array.from(map.entries()).sort(([, a], [, b]) => {
+      const aRunning = a.some(c => c.status === 'RUNNING') ? 0 : 1;
+      const bRunning = b.some(c => c.status === 'RUNNING') ? 0 : 1;
+      return aRunning - bRunning;
+    });
+  }, [campaigns]);
 
   // API Key Status state
   const [apiKeyConfigured, setApiKeyConfigured] = useState<boolean>(true);
@@ -352,7 +380,7 @@ export default function WarmupPage() {
           <div style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.5)' }}>Carregando dados...</div>
         </div>
       ) : activeTab === 'single' ? (
-        /* --- CHIPS INDIVIDUAIS --- */
+        /* --- CHIPS INDIVIDUAIS — agrupado por chip --- */
         campaigns.length === 0 ? (
           <div className="card" style={{ textAlign: 'center', padding: '4rem 2rem' }}>
             <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🔥</div>
@@ -366,174 +394,199 @@ export default function WarmupPage() {
             </button>
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '1rem' }}>
-            {campaigns.map(camp => {
-              const statusCfg = STATUS_CONFIG[camp.status] || STATUS_CONFIG.STOPPED;
-              const progressPct = Math.min(100, (camp.msgsSentToday / Math.max(1, camp.targetMsgsToday)) * 100);
-              const dayProgressPct = Math.min(100, (camp.currentDay / Math.max(1, camp.totalDays)) * 100);
-              const typeBreakdown = camp.stats?.messageTypeBreakdown || {};
-              const isLoading = actionLoading === camp.id;
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {campaignsByChip.map(([instanceName, chipCampaigns]) => {
+              const isCollapsed = collapsedChips.has(instanceName);
+              const runningCount = chipCampaigns.filter(c => c.status === 'RUNNING').length;
+              const pausedCount = chipCampaigns.filter(c => c.status === 'PAUSED').length;
+              const chipMsgsToday = chipCampaigns.reduce((acc, c) => acc + (c.msgsSentToday || 0), 0);
+              const chipMsgsTarget = chipCampaigns.reduce((acc, c) => acc + (c.targetMsgsToday || 0), 0);
+              const chipAvgHeat = chipCampaigns.length > 0
+                ? Math.round(chipCampaigns.reduce((acc, c) => acc + c.heatScore, 0) / chipCampaigns.length)
+                : 0;
+              const chipHasActive = runningCount > 0;
 
               return (
                 <div
-                  key={camp.id}
+                  key={instanceName}
                   className="card"
                   style={{
                     padding: 0,
                     overflow: 'hidden',
-                    border: camp.status === 'RUNNING' ? '1px solid rgba(16,185,129,0.2)' : '1px solid rgba(255,255,255,0.06)',
-                    transition: 'transform 0.2s',
-                    cursor: 'default',
+                    border: chipHasActive ? '1px solid rgba(16,185,129,0.25)' : '1px solid rgba(255,255,255,0.07)',
                   }}
                 >
-                  <div style={{
-                    padding: '1rem 1rem 0.75rem',
-                    borderBottom: '1px solid rgba(255,255,255,0.06)',
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    justifyContent: 'space-between',
-                    gap: '0.75rem',
-                  }}>
+                  {/* ── Chip Header ── */}
+                  <div
+                    onClick={() => toggleChip(instanceName)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.75rem',
+                      padding: '0.9rem 1.1rem',
+                      cursor: 'pointer',
+                      background: chipHasActive ? 'rgba(16,185,129,0.06)' : 'rgba(255,255,255,0.02)',
+                      borderBottom: isCollapsed ? 'none' : '1px solid rgba(255,255,255,0.07)',
+                      transition: 'background 0.2s',
+                    }}
+                  >
+                    {/* Collapse arrow */}
+                    <div style={{ color: 'rgba(255,255,255,0.4)', flexShrink: 0 }}>
+                      {isCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
+                    </div>
+
+                    {/* Chip icon + name */}
+                    <div style={{
+                      width: 34, height: 34, borderRadius: '50%',
+                      background: chipHasActive ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.07)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      flexShrink: 0,
+                    }}>
+                      <Smartphone size={16} color={chipHasActive ? '#10b981' : '#6b7280'} />
+                    </div>
+
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
-                        <span style={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: '50%',
-                          background: statusCfg.dot,
-                          flexShrink: 0,
-                        }} />
-                        <span style={{ fontSize: '0.7rem', fontWeight: 700, color: statusCfg.color, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                          {statusCfg.label}
-                        </span>
+                      <div style={{ fontWeight: 700, fontSize: '0.97rem', color: 'white', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {instanceName}
                       </div>
-                      <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'white', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {camp.name || camp.sourceInstance}
-                      </div>
-                      <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.4)', marginTop: '2px' }}>
-                        📱 {camp.sourceInstance}
-                        {camp.targetInstance && ` ⇄ ${camp.targetInstance}`}
-                        {' → '}📞 {camp.targetPhone}
+                      <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>
+                        {chipCampaigns.length} conversa{chipCampaigns.length !== 1 ? 's' : ''}
+                        {runningCount > 0 && <span style={{ color: '#10b981', marginLeft: 6 }}>● {runningCount} ativa{runningCount !== 1 ? 's' : ''}</span>}
+                        {pausedCount > 0 && <span style={{ color: '#f59e0b', marginLeft: 6 }}>⏸ {pausedCount} pausada{pausedCount !== 1 ? 's' : ''}</span>}
                       </div>
                     </div>
 
-                    <WarmupHeatGauge score={camp.heatScore} size={70} />
-                  </div>
-
-                  <div style={{ padding: '0.75rem 1rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.3rem' }}>
-                      <span style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.5)' }}>Progresso geral</span>
-                      <span style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.7)', fontWeight: 600 }}>
-                        Dia {camp.currentDay} / {camp.totalDays}
-                      </span>
-                    </div>
-                    <div style={{ height: 5, background: 'rgba(255,255,255,0.08)', borderRadius: 3, marginBottom: '0.75rem' }}>
-                      <div style={{
-                        height: '100%',
-                        width: `${dayProgressPct}%`,
-                        background: 'linear-gradient(90deg, #f59e0b, #ef4444)',
-                        borderRadius: 3,
-                      }} />
-                    </div>
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.3rem' }}>
-                      <span style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.5)' }}>Mensagens hoje</span>
-                      <span style={{ fontSize: '0.72rem', fontWeight: 700, color: camp.msgsSentToday >= camp.targetMsgsToday ? '#10b981' : 'white' }}>
-                        {camp.msgsSentToday} / {camp.targetMsgsToday}
-                      </span>
-                    </div>
-                    <div style={{ height: 5, background: 'rgba(255,255,255,0.08)', borderRadius: 3, marginBottom: '0.75rem' }}>
-                      <div style={{
-                        height: '100%',
-                        width: `${progressPct}%`,
-                        background: progressPct >= 100 ? '#10b981' : 'linear-gradient(90deg, #10b981, #34d399)',
-                        borderRadius: 3,
-                      }} />
-                    </div>
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.7rem', color: 'rgba(255,255,255,0.4)' }}>
-                        <Clock size={12} />
-                        <span>{camp.startHour}h – {camp.endHour}h</span>
-                      </div>
-                      <div style={{ display: 'flex', gap: '0.25rem', fontSize: '0.75rem' }}>
-                        {Object.entries(typeBreakdown).map(([type, count]) => (
-                          <span key={type} title={`${type}: ${count}`} style={{ cursor: 'default' }}>
-                            {TYPE_ICONS[type] || '💬'}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-
-                    <WarmupDayChart campaignId={camp.id} />
-
-                    {camp.stats?.lastMessage && (
-                      <div style={{
-                        marginTop: '0.6rem',
-                        padding: '0.5rem 0.75rem',
-                        background: 'rgba(255,255,255,0.04)',
-                        borderRadius: '8px',
-                        borderLeft: '3px solid rgba(16,185,129,0.4)',
-                      }}>
-                        <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.3)', marginBottom: '2px' }}>
-                          Última mensagem • {new Date(camp.stats.lastMessage.at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                    {/* Chip aggregate stats */}
+                    <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center', flexShrink: 0 }}>
+                      <div style={{ textAlign: 'center' }}>
+                        <div style={{ fontSize: '1rem', fontWeight: 800, color: chipAvgHeat >= 60 ? '#ef4444' : chipAvgHeat >= 30 ? '#f59e0b' : '#6b7280' }}>
+                          {chipAvgHeat}
                         </div>
-                        <div style={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.7)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {TYPE_ICONS[camp.stats.lastMessage.type] || ''} {camp.stats.lastMessage.text}
-                        </div>
+                        <div style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.35)', whiteSpace: 'nowrap' }}>🔥 Heat</div>
                       </div>
-                    )}
+                      <div style={{ textAlign: 'center' }}>
+                        <div style={{ fontSize: '1rem', fontWeight: 800, color: chipMsgsToday >= chipMsgsTarget ? '#10b981' : 'white' }}>
+                          {chipMsgsToday}<span style={{ fontSize: '0.7rem', fontWeight: 400, color: 'rgba(255,255,255,0.35)' }}>/{chipMsgsTarget}</span>
+                        </div>
+                        <div style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.35)', whiteSpace: 'nowrap' }}>📨 Msgs hoje</div>
+                      </div>
+                    </div>
                   </div>
 
-                  <div style={{
-                    padding: '0.6rem 1rem',
-                    borderTop: '1px solid rgba(255,255,255,0.06)',
-                    display: 'flex',
-                    gap: '0.5rem',
-                    background: 'rgba(0,0,0,0.15)',
-                  }}>
-                    <button
-                      className="btn btn-secondary"
-                      style={{ flex: 1, padding: '0.4rem', fontSize: '0.78rem', justifyContent: 'center' }}
-                      onClick={() => setSelectedCampaign(camp.id)}
-                    >
-                      <MessageSquare size={14} />
-                      Ver Conversa
-                    </button>
+                  {/* ── Conversation Rows ── */}
+                  {!isCollapsed && (
+                    <div>
+                      {chipCampaigns.map((camp, idx) => {
+                        const statusCfg = STATUS_CONFIG[camp.status] || STATUS_CONFIG.STOPPED;
+                        const progressPct = Math.min(100, (camp.msgsSentToday / Math.max(1, camp.targetMsgsToday)) * 100);
+                        const dayPct = Math.min(100, (camp.currentDay / Math.max(1, camp.totalDays)) * 100);
+                        const isLoading = actionLoading === camp.id;
 
-                    {camp.status === 'RUNNING' && (
-                      <button
-                        className="btn btn-secondary"
-                        style={{ padding: '0.4rem 0.75rem', fontSize: '0.78rem' }}
-                        onClick={() => handleQuickAction(camp.id, 'pause')}
-                        disabled={isLoading}
-                      >
-                        {isLoading ? '...' : <Pause size={14} />}
-                      </button>
-                    )}
+                        return (
+                          <div
+                            key={camp.id}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.75rem',
+                              padding: '0.65rem 1.1rem',
+                              borderBottom: idx < chipCampaigns.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none',
+                              background: camp.status === 'RUNNING' ? 'rgba(16,185,129,0.03)' : 'transparent',
+                              transition: 'background 0.15s',
+                            }}
+                          >
+                            {/* Status dot */}
+                            <span style={{
+                              width: 7, height: 7, borderRadius: '50%',
+                              background: statusCfg.dot, flexShrink: 0,
+                            }} />
 
-                    {camp.status === 'PAUSED' && (
-                      <button
-                        className="btn btn-primary"
-                        style={{ padding: '0.4rem 0.75rem', fontSize: '0.78rem' }}
-                        onClick={() => handleQuickAction(camp.id, 'resume')}
-                        disabled={isLoading}
-                      >
-                        {isLoading ? '...' : <Play size={14} />}
-                      </button>
-                    )}
+                            {/* Name + target */}
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'rgba(255,255,255,0.9)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {camp.name || camp.targetPhone}
+                              </div>
+                              {camp.stats?.lastMessage && (
+                                <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.35)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {TYPE_ICONS[camp.stats.lastMessage.type] || ''} {camp.stats.lastMessage.text}
+                                </div>
+                              )}
+                            </div>
 
-                    {(camp.status === 'RUNNING' || camp.status === 'PAUSED') && (
-                      <button
-                        className="btn btn-secondary"
-                        style={{ padding: '0.4rem 0.75rem', fontSize: '0.78rem', color: '#fca5a5' }}
-                        onClick={() => { if (confirm('Encerrar aquecimento individual?')) handleQuickAction(camp.id, 'stop'); }}
-                        disabled={isLoading}
-                      >
-                        ✗
-                      </button>
-                    )}
-                  </div>
+                            {/* Progress bars column */}
+                            <div style={{ width: 120, flexShrink: 0 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: 'rgba(255,255,255,0.4)', marginBottom: 2 }}>
+                                <span>Dia {camp.currentDay}/{camp.totalDays}</span>
+                                <span style={{ color: camp.msgsSentToday >= camp.targetMsgsToday ? '#10b981' : 'rgba(255,255,255,0.6)', fontWeight: 600 }}>
+                                  {camp.msgsSentToday}/{camp.targetMsgsToday} msgs
+                                </span>
+                              </div>
+                              <div style={{ height: 3, background: 'rgba(255,255,255,0.08)', borderRadius: 2, marginBottom: 3 }}>
+                                <div style={{ height: '100%', width: `${dayPct}%`, background: 'linear-gradient(90deg,#f59e0b,#ef4444)', borderRadius: 2 }} />
+                              </div>
+                              <div style={{ height: 3, background: 'rgba(255,255,255,0.08)', borderRadius: 2 }}>
+                                <div style={{ height: '100%', width: `${progressPct}%`, background: progressPct >= 100 ? '#10b981' : 'linear-gradient(90deg,#10b981,#34d399)', borderRadius: 2 }} />
+                              </div>
+                            </div>
+
+                            {/* Hour range */}
+                            <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.35)', flexShrink: 0, minWidth: 52, textAlign: 'center' }}>
+                              <Clock size={10} style={{ marginBottom: 1 }} /><br/>
+                              {camp.startHour}h–{camp.endHour}h
+                            </div>
+
+                            {/* Action buttons */}
+                            <div style={{ display: 'flex', gap: '0.35rem', flexShrink: 0 }}>
+                              <button
+                                className="btn btn-secondary"
+                                style={{ padding: '0.3rem 0.55rem', fontSize: '0.72rem' }}
+                                onClick={() => setSelectedCampaign(camp.id)}
+                                title="Ver conversa"
+                              >
+                                <MessageSquare size={13} />
+                              </button>
+
+                              {camp.status === 'RUNNING' && (
+                                <button
+                                  className="btn btn-secondary"
+                                  style={{ padding: '0.3rem 0.55rem', fontSize: '0.72rem' }}
+                                  onClick={() => handleQuickAction(camp.id, 'pause')}
+                                  disabled={isLoading}
+                                  title="Pausar"
+                                >
+                                  {isLoading ? '…' : <Pause size={13} />}
+                                </button>
+                              )}
+
+                              {camp.status === 'PAUSED' && (
+                                <button
+                                  className="btn btn-primary"
+                                  style={{ padding: '0.3rem 0.55rem', fontSize: '0.72rem' }}
+                                  onClick={() => handleQuickAction(camp.id, 'resume')}
+                                  disabled={isLoading}
+                                  title="Retomar"
+                                >
+                                  {isLoading ? '…' : <Play size={13} />}
+                                </button>
+                              )}
+
+                              {(camp.status === 'RUNNING' || camp.status === 'PAUSED') && (
+                                <button
+                                  className="btn btn-secondary"
+                                  style={{ padding: '0.3rem 0.55rem', fontSize: '0.72rem', color: '#fca5a5' }}
+                                  onClick={() => { if (confirm('Encerrar este aquecimento?')) handleQuickAction(camp.id, 'stop'); }}
+                                  disabled={isLoading}
+                                  title="Encerrar"
+                                >
+                                  ✗
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               );
             })}
