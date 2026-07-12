@@ -27,7 +27,7 @@ export async function GET(_req: Request, { params }: Params) {
     const connectionState = await evolutionApi.getConnectionState(name);
     let qrCodeBase64 = null;
 
-    if (connectionState === 'DISCONNECTED') {
+    if (connectionState === 'DISCONNECTED' || connectionState === 'INITIALIZING') {
       try {
         const connectData = await evolutionApi.getQRCode(name);
         qrCodeBase64 = connectData?.base64 || null;

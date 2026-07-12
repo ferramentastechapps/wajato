@@ -172,6 +172,9 @@ model WarmupCampaign {
   lastMessageAt    DateTime?                  // Última mensagem enviada
   restPeriodUntil  DateTime?                  // Período de descanso ativo até
   nextRunAt        DateTime?
+  enableStatus     Boolean      @default(false)
+  statusFrequency  Int          @default(2)
+  statusType       String       @default("text") // "text", "image", "random"
   logs             WarmupLog[]
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt

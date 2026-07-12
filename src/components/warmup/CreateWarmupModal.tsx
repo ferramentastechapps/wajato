@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Flame, Clock, TrendingUp, Zap, MessageSquare, Briefcase, HelpCircle, Settings } from 'lucide-react';
 
 interface Props {
+  initialSourceInstance?: string;
   onClose: () => void;
   onCreated: () => void;
 }
@@ -65,22 +66,32 @@ const CONTEXT_PRESETS: Record<ContextPreset, { label: string; description: strin
   },
 };
 
-export default function CreateWarmupModal({ onClose, onCreated }: Props) {
+export default function CreateWarmupModal({ initialSourceInstance, onClose, onCreated }: Props) {
   const [step, setStep] = useState<1 | 2>(1);
   const [loading, setLoading] = useState(false);
   const [instances, setInstances] = useState<{ name: string; status: string }[]>([]);
 
   // Form fields
   const [name, setName] = useState('');
-  const [sourceInstance, setSourceInstance] = useState('');
+  const [sourceInstance, setSourceInstance] = useState(initialSourceInstance || '');
   const [targetInstance, setTargetInstance] = useState('');
+  
+  // Modes toggles
+  const [enableChat, setEnableChat] = useState(true);
+  const [enableStatus, setEnableStatus] = useState(false);
+  const [enableGroup, setEnableGroup] = useState(false);
+
+  // Modos configs
   const [targetPhonesInput, setTargetPhonesInput] = useState('');
+  const [statusFrequency, setStatusFrequency] = useState(2);
+  const [statusType, setStatusType] = useState<'text' | 'image' | 'random'>('random');
+  const [targetGroupInput, setTargetGroupInput] = useState('');
+
   const [contextPreset, setContextPreset] = useState<ContextPreset>('friend');
   const [customContextInput, setCustomContextInput] = useState('');
   const [intensity, setIntensity] = useState<Intensity>('soft');
   const [startHour, setStartHour] = useState(8);
   const [endHour, setEndHour] = useState(22);
-  const [isGroup, setIsGroup] = useState(false);
   const [error, setError] = useState('');
   const [groups, setGroups] = useState<{ id: string; subject: string }[]>([]);
   const [loadingGroups, setLoadingGroups] = useState(false);
@@ -98,10 +109,10 @@ export default function CreateWarmupModal({ onClose, onCreated }: Props) {
   }, []);
 
   useEffect(() => {
-    if (isGroup && sourceInstance) {
+    if (enableGroup && sourceInstance) {
       setLoadingGroups(true);
       setError('');
-      setTargetPhonesInput('');
+      setTargetGroupInput('');
       setGroups([]);
       setShowManualJid(false);
       fetch(`/api/whatsapp/instances/${sourceInstance}/groups`)
@@ -128,7 +139,7 @@ export default function CreateWarmupModal({ onClose, onCreated }: Props) {
     } else {
       setGroups([]);
     }
-  }, [isGroup, sourceInstance]);
+  }, [enableGroup, sourceInstance]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -139,26 +150,39 @@ export default function CreateWarmupModal({ onClose, onCreated }: Props) {
       return;
     }
 
+    if (!enableChat && !enableGroup && !enableStatus) {
+      setError('Selecione pelo menos um modo de aquecimento.');
+      return;
+    }
+
     let phonesList: string[] = [];
 
-    if (isGroup) {
-      const gJid = targetPhonesInput.trim();
-      if (!gJid || !gJid.endsWith('@g.us')) {
-        setError('Por favor, informe um JID de grupo válido (deve terminar com @g.us).');
-        return;
-      }
-      phonesList = [gJid];
-    } else {
+    if (enableChat) {
       // Processa e limpa os telefones de destino (aceita quebras de linha, espaços, vírgulas ou ponto e vírgula como separadores)
-      phonesList = targetPhonesInput
+      const chatPhones = targetPhonesInput
         .split(/[\s,;]+/)
         .map(p => p.replace(/\D/g, ''))
         .filter(Boolean);
 
-      if (phonesList.length === 0) {
+      if (chatPhones.length === 0) {
         setError('Insira pelo menos um telefone de destino válido.');
         return;
       }
+      phonesList.push(...chatPhones);
+    }
+
+    if (enableGroup) {
+      const gJid = targetGroupInput.trim();
+      if (!gJid || !gJid.endsWith('@g.us')) {
+        setError('Por favor, informe um JID de grupo válido (deve terminar com @g.us).');
+        return;
+      }
+      phonesList.push(gJid);
+    }
+
+    if (enableStatus && phonesList.length === 0) {
+      // Se apenas o modo status estiver ativado, criamos uma campanha com identificador dummy
+      phonesList.push('STATUS');
     }
 
     if (startHour >= endHour) {
@@ -188,12 +212,15 @@ export default function CreateWarmupModal({ onClose, onCreated }: Props) {
           targetPhone: phonesList[0],
           targetPhones: phonesList.join(','),
           customContext: finalContext,
-          isGroup,
+          isGroup: false, // Backend resolverá o isGroup de cada campanha
           totalDays: config.days,
           initialMsgsPerDay: config.initial,
           maxMsgsPerDay: config.max,
           startHour,
           endHour,
+          enableStatus,
+          statusFrequency,
+          statusType,
         }),
       });
 
@@ -239,7 +266,7 @@ export default function CreateWarmupModal({ onClose, onCreated }: Props) {
               </p>
             </div>
           </div>
-          <button className="btn-close" onClick={onClose} style={{ background: 'rgba(255,255,255,0.05)', border: 'none', borderRadius: '50%', padding: '6px', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'} onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}><X size={20} /></button>
+          <button type="button" className="btn-close" onClick={onClose} style={{ background: 'rgba(255,255,255,0.05)', border: 'none', borderRadius: '50%', padding: '6px', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'} onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}><X size={20} /></button>
         </div>
 
         {/* Steps Progress bar */}
@@ -268,7 +295,7 @@ export default function CreateWarmupModal({ onClose, onCreated }: Props) {
                   value={name}
                   onChange={e => setName(e.target.value)}
                   placeholder="Ex: Maturação Chip Principal"
-                  style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', color: '#fff', outline: 'none' }}
+                  style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', color: '#fff', outline: 'none' }}
                 />
               </div>
 
@@ -285,7 +312,7 @@ export default function CreateWarmupModal({ onClose, onCreated }: Props) {
                       value={sourceInstance}
                       onChange={e => setSourceInstance(e.target.value)}
                       required
-                      style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', color: '#fff', outline: 'none' }}
+                      style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', color: '#fff', outline: 'none' }}
                     >
                       <option value="" style={{ background: '#0b0f19' }}>Selecione...</option>
                       {instances.map(inst => (
@@ -302,7 +329,7 @@ export default function CreateWarmupModal({ onClose, onCreated }: Props) {
                       value={sourceInstance}
                       onChange={e => setSourceInstance(e.target.value)}
                       placeholder="Ex: wajato-session-1"
-                      style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', color: '#fff', outline: 'none' }}
+                      style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', color: '#fff', outline: 'none' }}
                     />
                   )}
                 </div>
@@ -317,7 +344,7 @@ export default function CreateWarmupModal({ onClose, onCreated }: Props) {
                       className="form-input"
                       value={targetInstance}
                       onChange={e => setTargetInstance(e.target.value)}
-                      style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', color: '#fff', outline: 'none' }}
+                      style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', color: '#fff', outline: 'none' }}
                     >
                       <option value="" style={{ background: '#0b0f19' }}>Sem resposta (Unidirecional)</option>
                       {instances.filter(i => i.name !== sourceInstance).map(inst => (
@@ -333,144 +360,177 @@ export default function CreateWarmupModal({ onClose, onCreated }: Props) {
                       value={targetInstance}
                       onChange={e => setTargetInstance(e.target.value)}
                       placeholder="Ex: wajato-session-2 (opcional)"
-                      style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', color: '#fff', outline: 'none' }}
+                      style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', color: '#fff', outline: 'none' }}
                     />
                   )}
                 </div>
               </div>
 
-              {/* Tipo de Destino (Individual vs Grupo) */}
+              {/* Modos de Aquecimento (Checkboxes) */}
               <div>
-                <label style={{ fontSize: '0.82rem', fontWeight: 700, color: 'rgba(255,255,255,0.85)', marginBottom: '0.4rem', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Tipo de Destino
+                <label style={{ fontSize: '0.82rem', fontWeight: 700, color: 'rgba(255,255,255,0.85)', marginBottom: '0.5rem', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Modos de Aquecimento
                 </label>
-                <div style={{ display: 'flex', gap: '0.75rem' }}>
-                  <button
-                    type="button"
-                    onClick={() => { setIsGroup(false); setTargetPhonesInput(''); }}
-                    style={{
-                      flex: 1,
-                      padding: '0.55rem',
-                      borderRadius: '8px',
-                      border: `1px solid ${!isGroup ? '#f59e0b' : 'rgba(255,255,255,0.08)'}`,
-                      background: !isGroup ? 'rgba(245, 158, 11, 0.08)' : 'rgba(255,255,255,0.02)',
-                      color: '#fff',
-                      cursor: 'pointer',
-                      fontSize: '0.8rem',
-                      fontWeight: 700
-                    }}
-                  >
-                    👤 Contatos Individuais
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setIsGroup(true); setTargetPhonesInput(''); }}
-                    style={{
-                      flex: 1,
-                      padding: '0.55rem',
-                      borderRadius: '8px',
-                      border: `1px solid ${isGroup ? '#f59e0b' : 'rgba(255,255,255,0.08)'}`,
-                      background: isGroup ? 'rgba(245, 158, 11, 0.08)' : 'rgba(255,255,255,0.02)',
-                      color: '#fff',
-                      cursor: 'pointer',
-                      fontSize: '0.8rem',
-                      fontWeight: 700
-                    }}
-                  >
-                    👥 Grupo de WhatsApp
-                  </button>
-                </div>
-              </div>
-
-              {/* Múltiplos Telefones ou Grupo */}
-              <div>
-                {isGroup ? (
-                  <>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
-                      <label style={{ fontSize: '0.82rem', fontWeight: 700, color: 'rgba(255,255,255,0.85)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                        Grupo de Destino *
-                      </label>
-                      {sourceInstance && (
-                        <button
-                          type="button"
-                          onClick={() => setShowManualJid(!showManualJid)}
-                          style={{ background: 'none', border: 'none', color: '#f59e0b', fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
-                        >
-                          {showManualJid ? 'Selecionar da Lista' : 'Digitar JID Manual'}
-                        </button>
-                      )}
-                    </div>
-
-                    {!sourceInstance ? (
-                      <div style={{ padding: '0.75rem', background: 'rgba(255,255,255,0.02)', border: '1px dashed rgba(255,255,255,0.1)', borderRadius: '10px', color: 'rgba(255,255,255,0.4)', fontSize: '0.78rem', textAlign: 'center' }}>
-                        ⚠️ Selecione uma Instância de Origem conectada primeiro.
-                      </div>
-                    ) : loadingGroups ? (
-                      <div style={{ padding: '0.75rem', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', color: 'rgba(255,255,255,0.6)', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '0.5rem', justifyContent: 'center' }}>
-                        <span className="spinner" style={{ width: '12px', height: '12px', border: '2px solid rgba(255,255,255,0.2)', borderTopColor: '#f59e0b', borderRadius: '50%', display: 'inline-block', animation: 'spin 1s linear infinite' }} />
-                        Buscando grupos da instância no WhatsApp...
-                      </div>
-                    ) : showManualJid ? (
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  {/* Conversar com Contatos */}
+                  <div style={{ padding: '0.75rem', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontWeight: 700, color: '#fff', fontSize: '0.85rem' }}>
                       <input
-                        type="text"
-                        className="form-input"
-                        required
-                        value={targetPhonesInput}
-                        onChange={e => setTargetPhonesInput(e.target.value)}
-                        placeholder="Ex: 12036302839201@g.us"
-                        style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', color: '#fff', outline: 'none' }}
+                        type="checkbox"
+                        checked={enableChat}
+                        onChange={e => setEnableChat(e.target.checked)}
+                        style={{ accentColor: '#f59e0b', width: '16px', height: '16px' }}
                       />
-                    ) : groups.length === 0 ? (
-                      <div style={{ padding: '0.75rem', background: 'rgba(255,255,255,0.02)', border: '1px dashed rgba(239,68,68,0.2)', borderRadius: '10px', color: 'rgba(255,255,255,0.5)', fontSize: '0.78rem', textAlign: 'center' }}>
-                        Nenhum grupo encontrado nesta instância.
-                        <button
-                          type="button"
-                          onClick={() => setShowManualJid(true)}
-                          style={{ display: 'block', margin: '4px auto 0', background: '#f59e0b22', border: '1px solid #f59e0b44', color: '#f59e0b', fontSize: '0.7rem', padding: '3px 8px', borderRadius: '4px', cursor: 'pointer' }}
-                        >
-                          Digitar JID Manualmente
-                        </button>
-                      </div>
-                    ) : (
-                      <select
-                        className="form-input"
-                        value={targetPhonesInput}
-                        onChange={e => setTargetPhonesInput(e.target.value)}
-                        required
-                        style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', color: '#fff', outline: 'none' }}
-                      >
-                        <option value="" style={{ background: '#0b0f19' }}>Selecione um grupo...</option>
-                        {groups.map(g => (
-                          <option key={g.id} value={g.id} style={{ background: '#0b0f19' }}>
-                            👥 {g.subject}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-
-                    <small style={{ color: 'rgba(255,255,255,0.4)', display: 'block', marginTop: 4 }}>
-                      💡 A instância enviará mensagens neste grupo a cada ~45 minutos.
-                    </small>
-                  </>
-                ) : (
-                  <>
-                    <label style={{ fontSize: '0.82rem', fontWeight: 700, color: 'rgba(255,255,255,0.85)', marginBottom: '0.4rem', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                      Lista de Telefones de Destino * <span style={{ fontWeight: 400, textTransform: 'none', color: 'rgba(255,255,255,0.4)', letterSpacing: 0 }}>(Um número por linha com DDI)</span>
+                      💬 Conversar com Contatos Externos (1 a 10 números)
                     </label>
-                    <textarea
-                      className="form-input"
-                      required
-                      rows={4}
-                      value={targetPhonesInput}
-                      onChange={e => setTargetPhonesInput(e.target.value)}
-                      placeholder="5511999999999&#10;5511888888888&#10;5511777777777"
-                      style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', color: '#fff', outline: 'none', fontFamily: 'monospace', resize: 'vertical', fontSize: '0.85rem' }}
-                    />
-                    <small style={{ color: 'rgba(255,255,255,0.4)', display: 'block', marginTop: 4 }}>
-                      💡 As mensagens do dia serão <strong style={{color: '#f59e0b'}}>distribuídas aleatoriamente</strong> entre os contatos — o total diário configurado é o total do chip, não por contato.
-                    </small>
-                  </>
-                )}
+                    
+                    {enableChat && (
+                      <div style={{ marginTop: '0.75rem' }}>
+                        <label style={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.6)', marginBottom: '0.3rem', display: 'block' }}>
+                          Lista de números de destino (um por linha com DDI, ex: 5511999999999)
+                        </label>
+                        <textarea
+                          className="form-input"
+                          required={enableChat}
+                          rows={3}
+                          value={targetPhonesInput}
+                          onChange={e => setTargetPhonesInput(e.target.value)}
+                          placeholder="5511999999999&#10;5511888888888&#10;5511777777777"
+                          style={{ width: '100%', padding: '0.65rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '8px', color: '#fff', outline: 'none', fontFamily: 'monospace', resize: 'vertical', fontSize: '0.82rem' }}
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Postar Status/Stories */}
+                  <div style={{ padding: '0.75rem', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontWeight: 700, color: '#fff', fontSize: '0.85rem' }}>
+                      <input
+                        type="checkbox"
+                        checked={enableStatus}
+                        onChange={e => setEnableStatus(e.target.checked)}
+                        style={{ accentColor: '#f59e0b', width: '16px', height: '16px' }}
+                      />
+                      📖 Postar Status / Stories (com Imagens e Texto)
+                    </label>
+                    
+                    {enableStatus && (
+                      <div style={{ marginTop: '0.75rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                        <div>
+                          <label style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)', marginBottom: '0.3rem', display: 'block' }}>
+                            Frequência (Postagens / Dia)
+                          </label>
+                          <select
+                            className="form-input"
+                            value={statusFrequency}
+                            onChange={e => setStatusFrequency(Number(e.target.value))}
+                            style={{ width: '100%', padding: '0.55rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '8px', color: '#fff', outline: 'none', fontSize: '0.8rem' }}
+                          >
+                            <option value={1} style={{ background: '#0b0f19' }}>1 vez por dia</option>
+                            <option value={2} style={{ background: '#0b0f19' }}>2 vezes por dia</option>
+                            <option value={3} style={{ background: '#0b0f19' }}>3 vezes por dia</option>
+                            <option value={5} style={{ background: '#0b0f19' }}>5 vezes por dia</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)', marginBottom: '0.3rem', display: 'block' }}>
+                            Tipo de Conteúdo
+                          </label>
+                          <select
+                            className="form-input"
+                            value={statusType}
+                            onChange={e => setStatusType(e.target.value as any)}
+                            style={{ width: '100%', padding: '0.55rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '8px', color: '#fff', outline: 'none', fontSize: '0.8rem' }}
+                          >
+                            <option value="text" style={{ background: '#0b0f19' }}>Apenas texto</option>
+                            <option value="image" style={{ background: '#0b0f19' }}>Texto + Imagens</option>
+                            <option value="random" style={{ background: '#0b0f19' }}>Aleatório (Texto e Mídia)</option>
+                          </select>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Participar de Grupo */}
+                  <div style={{ padding: '0.75rem', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontWeight: 700, color: '#fff', fontSize: '0.85rem' }}>
+                      <input
+                        type="checkbox"
+                        checked={enableGroup}
+                        onChange={e => setEnableGroup(e.target.checked)}
+                        style={{ accentColor: '#f59e0b', width: '16px', height: '16px' }}
+                      />
+                      👥 Participar de Grupo de WhatsApp
+                    </label>
+                    
+                    {enableGroup && (
+                      <div style={{ marginTop: '0.75rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.3rem' }}>
+                          <label style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)', margin: 0 }}>
+                            Grupo de Destino
+                          </label>
+                          {sourceInstance && (
+                            <button
+                              type="button"
+                              onClick={() => setShowManualJid(!showManualJid)}
+                              style={{ background: 'none', border: 'none', color: '#f59e0b', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+                            >
+                              {showManualJid ? 'Selecionar da Lista' : 'Digitar JID Manual'}
+                            </button>
+                          )}
+                        </div>
+
+                        {!sourceInstance ? (
+                          <div style={{ padding: '0.5rem', background: 'rgba(255,255,255,0.02)', border: '1px dashed rgba(255,255,255,0.1)', borderRadius: '8px', color: 'rgba(255,255,255,0.4)', fontSize: '0.78rem', textAlign: 'center' }}>
+                            ⚠️ Selecione uma Instância de Origem conectada primeiro.
+                          </div>
+                        ) : loadingGroups ? (
+                          <div style={{ padding: '0.5rem', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', color: 'rgba(255,255,255,0.6)', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '0.5rem', justifyContent: 'center' }}>
+                            <span className="spinner" style={{ width: '10px', height: '10px', border: '2px solid rgba(255,255,255,0.2)', borderTopColor: '#f59e0b', borderRadius: '50%', display: 'inline-block', animation: 'spin 1s linear infinite' }} />
+                            Buscando grupos no WhatsApp...
+                          </div>
+                        ) : showManualJid ? (
+                          <input
+                            type="text"
+                            className="form-input"
+                            required={enableGroup}
+                            value={targetGroupInput}
+                            onChange={e => setTargetGroupInput(e.target.value)}
+                            placeholder="Ex: 12036302839201@g.us"
+                            style={{ width: '100%', padding: '0.65rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '8px', color: '#fff', outline: 'none', fontSize: '0.82rem' }}
+                          />
+                        ) : groups.length === 0 ? (
+                          <div style={{ padding: '0.5rem', background: 'rgba(255,255,255,0.02)', border: '1px dashed rgba(239,68,68,0.2)', borderRadius: '8px', color: 'rgba(255,255,255,0.5)', fontSize: '0.78rem', textAlign: 'center' }}>
+                            Nenhum grupo encontrado nesta instância.
+                            <button
+                              type="button"
+                              onClick={() => setShowManualJid(true)}
+                              style={{ display: 'block', margin: '4px auto 0', background: '#f59e0b22', border: '1px solid #f59e0b44', color: '#f59e0b', fontSize: '0.7rem', padding: '3px 8px', borderRadius: '4px', cursor: 'pointer' }}
+                            >
+                              Digitar JID Manualmente
+                            </button>
+                          </div>
+                        ) : (
+                          <select
+                            className="form-input"
+                            value={targetGroupInput}
+                            onChange={e => setTargetGroupInput(e.target.value)}
+                            required={enableGroup}
+                            style={{ width: '100%', padding: '0.65rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '8px', color: '#fff', outline: 'none', fontSize: '0.82rem' }}
+                          >
+                            <option value="" style={{ background: '#0b0f19' }}>Selecione um grupo...</option>
+                            {groups.map(g => (
+                              <option key={g.id} value={g.id} style={{ background: '#0b0f19' }}>
+                                👥 {g.subject}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
 
               {error && (
@@ -488,11 +548,19 @@ export default function CreateWarmupModal({ onClose, onCreated }: Props) {
                     setError('Selecione a instância de origem.');
                     return;
                   }
-                  if (!targetPhonesInput.trim()) {
-                    setError(isGroup ? 'Informe o JID do Grupo.' : 'Informe os telefones de destino.');
+                  if (!enableChat && !enableGroup && !enableStatus) {
+                    setError('Selecione pelo menos um modo de aquecimento.');
                     return;
                   }
-                  if (isGroup && !targetPhonesInput.trim().endsWith('@g.us')) {
+                  if (enableChat && !targetPhonesInput.trim()) {
+                    setError('Informe os telefones de destino.');
+                    return;
+                  }
+                  if (enableGroup && !targetGroupInput.trim()) {
+                    setError('Informe o JID do Grupo.');
+                    return;
+                  }
+                  if (enableGroup && !targetGroupInput.trim().endsWith('@g.us')) {
                     setError('O JID do grupo deve terminar com @g.us');
                     return;
                   }

@@ -92,6 +92,9 @@ export async function POST(req: Request) {
       endHour = 22,
       initialMsgsPerDay = 5,
       maxMsgsPerDay = 150,
+      enableStatus = false,
+      statusFrequency = 2,
+      statusType = 'text',
     } = body;
 
     const resolvedTargetPhones = targetPhones || targetPhone;
@@ -148,8 +151,10 @@ export async function POST(req: Request) {
     // Cria uma campanha independente para cada número para paralelizar e isolar o histórico.
     for (let idx = 0; idx < phonesList.length; idx++) {
       const phone = phonesList[idx];
+      const campaignIsGroup = phone.endsWith('@g.us');
+      const cleanPhoneLabel = phone.endsWith('@g.us') ? phone.split('@')[0] : phone;
       const campaignName = phonesList.length > 1
-        ? `${name || `Aquecimento ${sourceInstance}`} (${phone})`
+        ? `${name || `Aquecimento ${sourceInstance}`} (${cleanPhoneLabel})`
         : (name || `Aquecimento ${sourceInstance}`);
 
       const campaign = await prisma.warmupCampaign.create({
@@ -160,13 +165,16 @@ export async function POST(req: Request) {
           targetPhone: phone,
           targetPhones: phone, // Apenas este telefone para esta campanha
           customContext: customContext || null,
-          isGroup,
+          isGroup: campaignIsGroup,
           totalDays,
           targetMsgsToday: perContactTargets[idx],
           initialMsgsPerDay: perContactInitial[idx],
           maxMsgsPerDay: perContactMax[idx],
           startHour,
           endHour,
+          enableStatus,
+          statusFrequency,
+          statusType,
         },
       });
 

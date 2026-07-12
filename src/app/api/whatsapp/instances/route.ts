@@ -34,7 +34,7 @@ export async function GET() {
 
         if (apiInst) {
           // Se encontrou no gateway, atualiza os dados
-          status = apiInst.connectionStatus === 'open' ? 'CONNECTED' : (apiInst.connectionStatus === 'connecting' ? 'INITIALIZING' : 'DISCONNECTED');
+          status = apiInst.connectionStatus === 'open' ? 'CONNECTED' : (qrCode ? 'DISCONNECTED' : 'INITIALIZING');
           
           if (apiInst.ownerJid) {
             phone = apiInst.ownerJid.split(':')[0].split('@')[0];

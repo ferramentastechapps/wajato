@@ -426,19 +426,49 @@ export const warmupWorker = new Worker(
         }
 
       } else if (action === 'STATUS') {
-        // Postagem no Status/Stories
-        messageType = 'TEXT';
-        const statusText = WARMUP_STATUS_TEXTS[Math.floor(Math.random() * WARMUP_STATUS_TEXTS.length)];
-        messageText = `[Status] ${statusText}`;
-        
-        typingDelay = 1000 + Math.random() * 1000;
-        await new Promise(r => setTimeout(r, typingDelay));
-        
-        try {
-          await evolutionApi.sendStatusUpdate(sourceInstance, statusText, 'text', targetPhone);
-        } catch (err) {
-          console.error('[Warmup Worker] Erro ao postar status:', err);
-          status = 'FAILED';
+        if (!campaign.enableStatus) {
+          // Fallback to text message
+          messageType = 'TEXT';
+          // Marcar mensagens como lidas antes de responder (comportamento natural)
+          if (history.length > 0) {
+            await evolutionApi.markAsRead(sourceInstance, targetPhone);
+            await new Promise(r => setTimeout(r, 300 + Math.random() * 700));
+          }
+          try {
+            messageText = await generateNextWarmupMessage(personaContext, history, topic);
+            typingDelay = calculateTypingDelay(messageText);
+            await new Promise(r => setTimeout(r, typingDelay));
+            const res = await evolutionApi.sendTextMessage(sourceInstance, targetPhone, messageText);
+            sentMessageId = res?.key?.id || res?.id || null;
+          } catch (err) {
+            console.error('[Warmup Worker] Erro ao enviar texto fallback do status:', err);
+            status = 'FAILED';
+          }
+        } else {
+          // Postagem no Status/Stories
+          messageType = 'TEXT';
+          
+          // Determine status type: text or image based on campaign config
+          const sType = (campaign.statusType as string) === 'random' 
+            ? (Math.random() > 0.5 ? 'image' : 'text')
+            : ((campaign.statusType as string) === 'image' ? 'image' : 'text');
+            
+          const statusText = WARMUP_STATUS_TEXTS[Math.floor(Math.random() * WARMUP_STATUS_TEXTS.length)];
+          const imageUrl = sType === 'image' 
+            ? WARMUP_IMAGE_URLS[Math.floor(Math.random() * WARMUP_IMAGE_URLS.length)] 
+            : undefined;
+            
+          messageText = `[Status - ${sType.toUpperCase()}] ${statusText}`;
+          
+          typingDelay = 1000 + Math.random() * 1000;
+          await new Promise(r => setTimeout(r, typingDelay));
+          
+          try {
+            await evolutionApi.sendStatusUpdate(sourceInstance, statusText, sType, targetPhone, imageUrl);
+          } catch (err) {
+            console.error('[Warmup Worker] Erro ao postar status:', err);
+            status = 'FAILED';
+          }
         }
 
       } else {

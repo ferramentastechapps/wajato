@@ -84,6 +84,14 @@ export default function WarmupPage() {
   const [pools, setPools] = useState<Pool[]>([]);
   const [loading, setLoading] = useState(true);
 
+  interface WhatsAppInst {
+    name: string;
+    status: string;
+    phone: string | null;
+  }
+  const [instances, setInstances] = useState<WhatsAppInst[]>([]);
+  const [selectedInstanceForNewCampaign, setSelectedInstanceForNewCampaign] = useState<string | null>(null);
+
   // Modal open states
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isPoolModalOpen, setIsPoolModalOpen] = useState(false);
@@ -107,21 +115,35 @@ export default function WarmupPage() {
     });
   };
 
-  // Group campaigns by sourceInstance
+  // Group campaigns by sourceInstance (using all known instances as starting point)
   const campaignsByChip = useMemo(() => {
     const map = new Map<string, Campaign[]>();
+    
+    // Inicializa cada instância conhecida no mapa
+    instances.forEach(inst => {
+      map.set(inst.name, []);
+    });
+
     campaigns.forEach(c => {
       const key = c.sourceInstance;
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(c);
     });
-    // Sort chips: chips with RUNNING campaigns first
-    return Array.from(map.entries()).sort(([, a], [, b]) => {
-      const aRunning = a.some(c => c.status === 'RUNNING') ? 0 : 1;
-      const bRunning = b.some(c => c.status === 'RUNNING') ? 0 : 1;
-      return aRunning - bRunning;
+
+    // Ordena chips: chips com campanhas ATIVAS (RUNNING) primeiro, depois outros conectados, depois o resto
+    return Array.from(map.entries()).sort(([nameA, campaignsA], [nameB, campaignsB]) => {
+      const instA = instances.find(i => i.name === nameA);
+      const instB = instances.find(i => i.name === nameB);
+
+      const aRunning = campaignsA.some(c => c.status === 'RUNNING') ? 0 : 1;
+      const bRunning = campaignsB.some(c => c.status === 'RUNNING') ? 0 : 1;
+      if (aRunning !== bRunning) return aRunning - bRunning;
+
+      const aConnected = instA?.status === 'CONNECTED' ? 0 : 1;
+      const bConnected = instB?.status === 'CONNECTED' ? 0 : 1;
+      return aConnected - bConnected;
     });
-  }, [campaigns]);
+  }, [campaigns, instances]);
 
   // API Key Status state
   const [apiKeyConfigured, setApiKeyConfigured] = useState<boolean>(true);
@@ -130,6 +152,15 @@ export default function WarmupPage() {
     try {
       const res = await fetch('/api/warmup');
       if (res.ok) setCampaigns(await res.json());
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const fetchInstancesList = async () => {
+    try {
+      const res = await fetch('/api/whatsapp/connect');
+      if (res.ok) setInstances(await res.json());
     } catch (err) {
       console.error(err);
     }
@@ -160,7 +191,7 @@ export default function WarmupPage() {
 
   const loadAll = async () => {
     setLoading(true);
-    await Promise.all([fetchCampaigns(), fetchPools(), checkApiKeyStatus()]);
+    await Promise.all([fetchCampaigns(), fetchPools(), fetchInstancesList(), checkApiKeyStatus()]);
     setLoading(false);
   };
 
@@ -169,6 +200,7 @@ export default function WarmupPage() {
     const interval = setInterval(() => {
       fetchCampaigns();
       fetchPools();
+      fetchInstancesList();
     }, 10000); // refresh 10s
     return () => clearInterval(interval);
   }, []);
@@ -381,17 +413,16 @@ export default function WarmupPage() {
         </div>
       ) : activeTab === 'single' ? (
         /* --- CHIPS INDIVIDUAIS — agrupado por chip --- */
-        campaigns.length === 0 ? (
+        instances.length === 0 ? (
           <div className="card" style={{ textAlign: 'center', padding: '4rem 2rem' }}>
-            <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🔥</div>
-            <h3 style={{ margin: '0 0 0.5rem', color: 'rgba(255,255,255,0.8)' }}>Nenhum ciclo de aquecimento individual</h3>
+            <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📱</div>
+            <h3 style={{ margin: '0 0 0.5rem', color: 'rgba(255,255,255,0.8)' }}>Nenhuma instância conectada</h3>
             <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.9rem', margin: '0 0 1.5rem' }}>
-              Crie o primeiro ciclo individual para começar.
+              Conecte uma instância de WhatsApp primeiro na aba Conexões para começar.
             </p>
-            <button className="btn btn-primary" onClick={() => setIsModalOpen(true)}>
-              <Plus size={16} />
-              Iniciar Aquecimento
-            </button>
+            <a href="/connections" className="btn btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              Ir para Conexões
+            </a>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -405,6 +436,7 @@ export default function WarmupPage() {
                 ? Math.round(chipCampaigns.reduce((acc, c) => acc + c.heatScore, 0) / chipCampaigns.length)
                 : 0;
               const chipHasActive = runningCount > 0;
+              const inst = instances.find(i => i.name === instanceName);
 
               return (
                 <div
@@ -446,8 +478,13 @@ export default function WarmupPage() {
                     </div>
 
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 700, fontSize: '0.97rem', color: 'white', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <div style={{ fontWeight: 700, fontSize: '0.97rem', color: 'white', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '8px' }}>
                         {instanceName}
+                        <span style={{
+                          width: 8, height: 8, borderRadius: '50%',
+                          background: inst?.status === 'CONNECTED' ? '#10b981' : (inst?.status === 'INITIALIZING' ? '#f59e0b' : '#ef4444'),
+                          display: 'inline-block'
+                        }} title={inst?.status || 'OFFLINE'} />
                       </div>
                       <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>
                         {chipCampaigns.length} conversa{chipCampaigns.length !== 1 ? 's' : ''}
@@ -456,26 +493,42 @@ export default function WarmupPage() {
                       </div>
                     </div>
 
-                    {/* Chip aggregate stats */}
-                    <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center', flexShrink: 0 }}>
+                    {/* Chip aggregate stats & action */}
+                    <div style={{ display: 'flex', gap: '1.25rem', alignItems: 'center', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
                       <div style={{ textAlign: 'center' }}>
-                        <div style={{ fontSize: '1rem', fontWeight: 800, color: chipAvgHeat >= 60 ? '#ef4444' : chipAvgHeat >= 30 ? '#f59e0b' : '#6b7280' }}>
+                        <div style={{ fontSize: '1.05rem', fontWeight: 800, color: chipAvgHeat >= 60 ? '#ef4444' : chipAvgHeat >= 30 ? '#f59e0b' : '#6b7280' }}>
                           {chipAvgHeat}
                         </div>
                         <div style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.35)', whiteSpace: 'nowrap' }}>🔥 Heat</div>
                       </div>
                       <div style={{ textAlign: 'center' }}>
-                        <div style={{ fontSize: '1rem', fontWeight: 800, color: chipMsgsToday >= chipMsgsTarget ? '#10b981' : 'white' }}>
-                          {chipMsgsToday}<span style={{ fontSize: '0.7rem', fontWeight: 400, color: 'rgba(255,255,255,0.35)' }}>/{chipMsgsTarget}</span>
+                        <div style={{ fontSize: '1.05rem', fontWeight: 800, color: chipMsgsToday >= chipMsgsTarget ? '#10b981' : 'white' }}>
+                          {chipMsgsToday}<span style={{ fontSize: '0.7rem', fontWeight: 400, color: 'rgba(255,255,255,0.35)' }}>/{chipMsgsTarget || 0}</span>
                         </div>
-                        <div style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.35)', whiteSpace: 'nowrap' }}>📨 Msgs hoje</div>
+                        <div style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.35)', whiteSpace: 'nowrap' }}>📨 Hoje</div>
                       </div>
+                      <button
+                        className="btn btn-primary"
+                        style={{ padding: '0.4rem 0.75rem', fontSize: '0.78rem', background: 'linear-gradient(135deg, #f59e0b, #ef4444)', border: 'none', borderRadius: '8px', color: '#fff', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
+                        onClick={() => {
+                          setSelectedInstanceForNewCampaign(instanceName);
+                          setIsModalOpen(true);
+                        }}
+                      >
+                        <Plus size={12} />
+                        <span>Configurar</span>
+                      </button>
                     </div>
                   </div>
 
                   {/* ── Conversation Rows ── */}
                   {!isCollapsed && (
                     <div>
+                      {chipCampaigns.length === 0 && (
+                        <div style={{ padding: '2rem 1.5rem', textAlign: 'center', color: 'rgba(255,255,255,0.4)', fontSize: '0.85rem' }}>
+                          Nenhum aquecimento configurado para este chip. Clique em "Configurar" para iniciar.
+                        </div>
+                      )}
                       {chipCampaigns.map((camp, idx) => {
                         const statusCfg = STATUS_CONFIG[camp.status] || STATUS_CONFIG.STOPPED;
                         const progressPct = Math.min(100, (camp.msgsSentToday / Math.max(1, camp.targetMsgsToday)) * 100);
@@ -783,10 +836,11 @@ export default function WarmupPage() {
       )}
 
       {/* Modals */}
-      {isModalOpen && (
+       {isModalOpen && (
         <CreateWarmupModal
-          onClose={() => setIsModalOpen(false)}
-          onCreated={() => { setIsModalOpen(false); fetchCampaigns(); }}
+          initialSourceInstance={selectedInstanceForNewCampaign || undefined}
+          onClose={() => { setIsModalOpen(false); setSelectedInstanceForNewCampaign(null); }}
+          onCreated={() => { setIsModalOpen(false); setSelectedInstanceForNewCampaign(null); fetchCampaigns(); }}
         />
       )}
 

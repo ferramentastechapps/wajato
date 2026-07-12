@@ -27,7 +27,9 @@ else
   psql "$DATABASE_URL" -f prisma/migrations/warmup_v2_2_upgrade.sql 2>/dev/null || true
   psql "$DATABASE_URL" -f prisma/migrations/warmup_v2_4_upgrade.sql 2>/dev/null || true
   # v3.0 — novo campo messageId para reações reais
-  psql "$DATABASE_URL" -f prisma/migrations/warmup_v3_messageid.sql
+  psql "$DATABASE_URL" -f prisma/migrations/warmup_v3_messageid.sql 2>/dev/null || true
+  # v3.1 — campos enableStatus, statusFrequency, statusType para Status/Stories + imagem
+  psql "$DATABASE_URL" -f prisma/migrations/warmup_status_config.sql 2>/dev/null || true
   echo "  ✅ SQLs manuais aplicados."
 fi
 

@@ -29,7 +29,7 @@ export async function POST() {
     let connectionState = await evolutionApi.getConnectionState(INSTANCE_NAME);
     let qrCodeBase64 = null;
 
-    if (connectionState === 'DISCONNECTED') {
+    if (connectionState === 'DISCONNECTED' || connectionState === 'INITIALIZING') {
       try {
         // Tenta obter QR Code. Se a instância não existir, dará erro e nós a criamos.
         const connectData = await evolutionApi.getQRCode(INSTANCE_NAME);
