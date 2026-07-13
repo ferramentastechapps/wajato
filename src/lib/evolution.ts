@@ -450,6 +450,54 @@ export const evolutionApi = {
   },
 
   /**
+   * Busca informações de um contato (nome, foto de perfil) via Evolution API.
+   * Funciona para contatos individuais (@s.whatsapp.net) e grupos (@g.us).
+   */
+  async fetchContactInfo(instanceName: string, phone: string): Promise<{
+    name: string | null;
+    pushName: string | null;
+    profilePicUrl: string | null;
+    isGroup: boolean;
+    groupSubject: string | null;
+  }> {
+    const isGroup = phone.includes('@g.us');
+    try {
+      if (isGroup) {
+        // Para grupos, busca via endpoint de grupo
+        const groupJid = phone.includes('@') ? phone : `${phone}@g.us`;
+        const response = await evolutionClient.get(`/group/findGroupInfos/${instanceName}`, {
+          params: { groupJid },
+        });
+        const data = response.data as any;
+        return {
+          name: data?.subject || null,
+          pushName: data?.subject || null,
+          profilePicUrl: data?.profilePicUrl || null,
+          isGroup: true,
+          groupSubject: data?.subject || null,
+        };
+      } else {
+        // Para contatos individuais
+        const formattedPhone = this.formatPhone(phone);
+        const response = await evolutionClient.post(`/chat/fetchProfile/${instanceName}`, {
+          number: formattedPhone,
+        });
+        const data = response.data as any;
+        return {
+          name: data?.name || data?.pushName || null,
+          pushName: data?.pushName || data?.name || null,
+          profilePicUrl: data?.picture || data?.profilePicUrl || null,
+          isGroup: false,
+          groupSubject: null,
+        };
+      }
+    } catch (error: any) {
+      // Retorna nulo silenciosamente se não conseguir buscar o perfil
+      return { name: null, pushName: null, profilePicUrl: null, isGroup, groupSubject: null };
+    }
+  },
+
+  /**
    * Formata o número do telefone para o padrão do WhatsApp (sem caracteres especiais)
    * Garante o DDI (55 para Brasil). Retorna intacto se contiver '@'.
    */
