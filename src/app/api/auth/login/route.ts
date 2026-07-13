@@ -56,7 +56,15 @@ export async function POST(request: Request) {
       );
     }
 
-    // 5. Comparar senhas
+    // 5. Verificar se o usuário tem senha (usuários Google podem não ter senha)
+    if (!user.password) {
+      return NextResponse.json(
+        { message: 'Esta conta usa login com Google. Clique em "Continuar com Google".' },
+        { status: 401 }
+      );
+    }
+
+    // 6. Comparar senhas
     const passwordMatch = await comparePassword(password, user.password);
 
     if (!passwordMatch) {
