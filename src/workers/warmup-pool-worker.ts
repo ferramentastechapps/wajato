@@ -21,6 +21,8 @@ import {
   WARMUP_REACTIONS,
   ChatMessage,
   WARMUP_AUDIO_URLS,
+  WARMUP_POLLS,
+  WARMUP_VCARDS,
 } from '../lib/warmup-ai';
 import {
   queuePoolMessage,
@@ -50,21 +52,33 @@ import {
 } from '../lib/chip-router';
 
 const WARMUP_POOL_QUEUE_NAME = 'warmup-pool-queue';
-type MessageAction = 'TEXT' | 'EMOJI' | 'REACTION' | 'STICKER' | 'AUDIO';
+type MessageAction = 'TEXT' | 'EMOJI' | 'REACTION' | 'STICKER' | 'AUDIO' | 'LOCATION' | 'POLL' | 'CONTACT';
 
 function chooseMessageAction(): MessageAction {
   const rand = Math.random() * 100;
-  if (rand < 60) return 'TEXT';
-  if (rand < 75) return 'EMOJI';
-  if (rand < 85) return 'REACTION';
-  if (rand < 90) return 'STICKER';
-  return 'AUDIO';
+  if (rand < 48) return 'TEXT';
+  if (rand < 61) return 'EMOJI';
+  if (rand < 71) return 'REACTION';
+  if (rand < 76) return 'STICKER';
+  if (rand < 86) return 'AUDIO';
+  if (rand < 90) return 'LOCATION';
+  if (rand < 98) return 'POLL';
+  return 'CONTACT';
 }
 
 const STICKERS = [
   'https://www.gstatic.com/webp/gallery3/1.webp',
   'https://www.gstatic.com/webp/gallery3/2.webp',
   'https://www.gstatic.com/webp/gallery3/3.webp',
+];
+
+const WARMUP_LOCATIONS = [
+  { lat: -23.5505, lng: -46.6333, name: 'Praça da Sé', addr: 'Centro, São Paulo - SP, Brasil' },
+  { lat: -23.5617, lng: -46.6560, name: 'Avenida Paulista', addr: 'Bela Vista, São Paulo - SP, Brasil' },
+  { lat: -22.9068, lng: -43.1729, name: 'Centro do Rio', addr: 'Rio de Janeiro - RJ, Brasil' },
+  { lat: -15.7942, lng: -47.8822, name: 'Esplanada dos Ministérios', addr: 'Brasília - DF, Brasil' },
+  { lat: -19.9167, lng: -43.9345, name: 'Praça da Liberdade', addr: 'Funcionários, Belo Horizonte - MG, Brasil' },
+  { lat: -25.4284, lng: -49.2733, name: 'Jardim Botânico', addr: 'Curitiba - PR, Brasil' },
 ];
 
 export const warmupPoolWorker = new Worker(
@@ -317,6 +331,61 @@ export const warmupPoolWorker = new Worker(
           } catch {
             status = 'FAILED';
           }
+        }
+
+      } else if (action === 'LOCATION') {
+        messageType = 'TEXT';
+        const loc = WARMUP_LOCATIONS[Math.floor(Math.random() * WARMUP_LOCATIONS.length)];
+
+        try {
+          const introText = "Vou te mandar a localização de onde estou agora 📍";
+          await evolutionApi.sendTextMessage(finalSender, targetPhone, introText);
+        } catch {}
+
+        messageText = `[Localização] ${loc.name} - ${loc.addr}`;
+        typingDelay = 1500 + Math.random() * 2000;
+        await new Promise(r => setTimeout(r, typingDelay));
+
+        try {
+          await evolutionApi.sendLocationMessage(finalSender, targetPhone, loc.lat, loc.lng, loc.name, loc.addr);
+        } catch (err) {
+          console.error(`[Warmup Pool] Erro ao enviar localização:`, err);
+          status = 'FAILED';
+        }
+
+      } else if (action === 'POLL') {
+        messageType = 'TEXT';
+        const poll = WARMUP_POLLS[Math.floor(Math.random() * WARMUP_POLLS.length)];
+        messageText = `[Enquete] ${poll.name}`;
+
+        typingDelay = 2000 + Math.random() * 2000;
+        await new Promise(r => setTimeout(r, typingDelay));
+
+        try {
+          await evolutionApi.sendPollMessage(finalSender, targetPhone, poll.name, poll.options);
+        } catch (err) {
+          console.error(`[Warmup Pool] Erro ao enviar enquete:`, err);
+          status = 'FAILED';
+        }
+
+      } else if (action === 'CONTACT') {
+        messageType = 'TEXT';
+        const contact = WARMUP_VCARDS[Math.floor(Math.random() * WARMUP_VCARDS.length)];
+        messageText = `[Contato] ${contact.displayName}`;
+
+        try {
+          const introText = `Anote aí o contato que te falei: 📇`;
+          await evolutionApi.sendTextMessage(finalSender, targetPhone, introText);
+        } catch {}
+
+        typingDelay = 1500 + Math.random() * 1500;
+        await new Promise(r => setTimeout(r, typingDelay));
+
+        try {
+          await evolutionApi.sendContactCard(finalSender, targetPhone, contact.displayName, contact.vcard);
+        } catch (err) {
+          console.error(`[Warmup Pool] Erro ao enviar contato:`, err);
+          status = 'FAILED';
         }
 
       } else {

@@ -286,32 +286,53 @@ export const evolutionApi = {
   },
 
   /**
-   * Envia um áudio via URL (formato .ogg PTT - Push to Talk)
-   * Simula nota de voz para máxima humanização
+   * Envia um áudio via URL como PTT (Push to Talk — Nota de Voz nativa)
+   * Usa o endpoint dedicado sendWhatsAppAudio da Evolution API com ptt: true.
+   * Presença "recording" é enviada antes para máxima humanização.
    */
   async sendAudioUrl(instanceName: string, phone: string, audioUrl: string): Promise<any> {
     try {
       const formattedPhone = this.formatPhone(phone);
-      const response = await evolutionClient.post(`/message/sendMedia/${instanceName}`, {
+      // Primeiro: sinaliza que está "gravando" (aumenta humanização)
+      try {
+        await evolutionClient.post(`/chat/presence/${instanceName}`, {
+          number: `${formattedPhone}@s.whatsapp.net`,
+          options: { presence: 'recording', delay: 1500 },
+        });
+      } catch { /* não crítico */ }
+
+      // Endpoint dedicado de áudio PTT da Evolution API
+      const response = await evolutionClient.post(`/message/sendWhatsAppAudio/${instanceName}`, {
         number: formattedPhone,
-        mediaMessage: {
-          mediatype: 'audio',
-          media: audioUrl,
-          mimetype: 'audio/ogg; codecs=opus',
-        },
+        audio: audioUrl,
         options: {
-          presence: 'recording', // Simula "gravando áudio"
-          delay: 2000,
+          encoding: true, // force re-encode para garantir OPUS
+          delay: 1000,
         },
       });
       return response.data;
     } catch (error: any) {
-      console.error(`Erro ao enviar áudio para ${phone}:`, error?.response?.data || error.message);
-      throw new Error(error?.response?.data?.message || 'Falha ao enviar áudio');
+      // Fallback: sendMedia com mimetype opus (método antigo)
+      try {
+        const formattedPhone = this.formatPhone(phone);
+        const response = await evolutionClient.post(`/message/sendMedia/${instanceName}`, {
+          number: formattedPhone,
+          mediaMessage: {
+            mediatype: 'audio',
+            media: audioUrl,
+            mimetype: 'audio/ogg; codecs=opus',
+            ptt: true,
+          },
+          options: { presence: 'recording', delay: 1500 },
+        });
+        return response.data;
+      } catch (fallbackError: any) {
+        console.error(`Erro ao enviar áudio PTT para ${phone}:`, fallbackError?.response?.data || fallbackError.message);
+        throw new Error(fallbackError?.response?.data?.message || 'Falha ao enviar áudio PTT');
+      }
     }
   },
 
-  /**
   /**
    * Envia um sticker via URL (.webp)
    */
@@ -333,18 +354,22 @@ export const evolutionApi = {
   },
 
   /**
-   * Posta um Story/Status de texto ou imagem
+   * Posta um Story/Status de texto ou imagem.
+   * CORREÇÃO: statusJidList deve conter JIDs completos com @s.whatsapp.net.
    */
-   async sendStatusUpdate(instanceName: string, text: string, statusType: 'text' | 'image' = 'text', targetPhone?: string, mediaUrl?: string): Promise<any> {
+  async sendStatusUpdate(instanceName: string, text: string, statusType: 'text' | 'image' = 'text', targetPhone?: string, mediaUrl?: string): Promise<any> {
     try {
       const cleanPhone = targetPhone ? targetPhone.replace(/\D/g, '') : '';
+      // JID completo obrigatório: número + @s.whatsapp.net
+      const statusJidList = cleanPhone ? [`${cleanPhone}@s.whatsapp.net`] : [];
       const response = await evolutionClient.post(`/message/sendStatus/${instanceName}`, {
         type: statusType,
         content: text,
         media: mediaUrl || '',
-        backgroundColor: '#0f172a',
-        font: 1,
-        statusJidList: cleanPhone ? [cleanPhone] : []
+        backgroundColor: '#128C7E',
+        font: 2,
+        statusJidList,
+        allContacts: !cleanPhone, // se não houver telefone específico, envia para todos
       });
       return response.data;
     } catch (error: any) {
@@ -354,19 +379,66 @@ export const evolutionApi = {
   },
 
   /**
-   * Envia uma localização geográfica
+   * Envia uma enquete nativa do WhatsApp.
+   * Altíssimo engajamento — usuário consegue votar de forma fácil e natural.
+   */
+  async sendPollMessage(instanceName: string, phone: string, question: string, options: string[], selectableCount: number = 1): Promise<any> {
+    try {
+      const formattedPhone = this.formatPhone(phone);
+      const response = await evolutionClient.post(`/message/sendPoll/${instanceName}`, {
+        number: formattedPhone,
+        name: question,
+        selectableCount,
+        values: options,
+        options: {
+          delay: 1200,
+          presence: 'composing',
+        },
+      });
+      return response.data;
+    } catch (error: any) {
+      console.error(`Erro ao enviar enquete para ${phone}:`, error?.response?.data || error.message);
+      return null;
+    }
+  },
+
+  /**
+   * Compartilha um contato (vCard) — comportamento humano de indicar pessoas.
+   */
+  async sendContactCard(instanceName: string, phone: string, displayName: string, vcard: string): Promise<any> {
+    try {
+      const formattedPhone = this.formatPhone(phone);
+      const response = await evolutionClient.post(`/message/sendContact/${instanceName}`, {
+        number: formattedPhone,
+        contact: [
+          {
+            fullName: displayName,
+            wuid: '',
+            phoneNumber: vcard,
+          },
+        ],
+        options: { delay: 800 },
+      });
+      return response.data;
+    } catch (error: any) {
+      console.error(`Erro ao enviar contato para ${phone}:`, error?.response?.data || error.message);
+      return null;
+    }
+  },
+
+  /**
+   * Envia uma localização geográfica com texto introdutório natural.
    */
   async sendLocationMessage(instanceName: string, phone: string, latitude: number, longitude: number, name: string, address: string): Promise<any> {
     try {
       const formattedPhone = this.formatPhone(phone);
       const response = await evolutionClient.post(`/message/sendLocation/${instanceName}`, {
         number: formattedPhone,
-        locationMessage: {
-          latitude,
-          longitude,
-          name,
-          address
-        }
+        latitude,
+        longitude,
+        name,
+        address,
+        options: { delay: 1200 },
       });
       return response.data;
     } catch (error: any) {

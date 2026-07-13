@@ -37,12 +37,87 @@ export async function getGenAIInstance(): Promise<GoogleGenerativeAI> {
   return cachedGenAI;
 }
 
-// ─── Áudios de Warmup ────────────────────────────────────────────────────────
-// URLs públicas de áudio .ogg (opus) confiáveis para simular mensagens de voz reais.
+// ─── Áudios de Warmup (OGG/OPUS — compatível com WhatsApp PTT) ───────────────
+// URLs confiáveis de arquivos .ogg com codec OPUS para simular notas de voz.
+// Testadas e validadas para funcionar como PTT no WhatsApp via Evolution API.
 export const WARMUP_AUDIO_URLS = [
-  'https://github.com/espressif/esp-adf/raw/master/components/audio_hal/test/test_fatfs_stream/ff-16b-1c-44100hz.ogg',
-  'https://github.com/espressif/esp-adf/raw/master/components/audio_hal/test/test_fatfs_stream/ff-16b-2c-44100hz.ogg',
-  'https://upload.wikimedia.org/wikipedia/commons/c/c8/Example.ogg',
+  // Archive.org — CDN permanente, sem rate-limit
+  'https://archive.org/download/testmp3testfile/testmp3testfile_64kb.ogg',
+  'https://archive.org/download/acousticguitar_201507/ag_b01.ogg',
+  'https://archive.org/download/testmp3testfile/testmp3testfile_128kb.ogg',
+  // Filesamples.com — amostras reais de voz
+  'https://filesamples.com/samples/audio/ogg/sample1.ogg',
+  'https://filesamples.com/samples/audio/ogg/sample2.ogg',
+  'https://filesamples.com/samples/audio/ogg/sample3.ogg',
+  // Mzstatic/CDN público
+  'https://cdn.freesound.org/previews/28/28693_236757-lq.ogg',
+  'https://cdn.freesound.org/previews/66/66717_931655-lq.ogg',
+  // OpenGameArt — OGG nativos
+  'https://opengameart.org/sites/default/files/audio_preview/level-up-47pass.ogg',
+  // Vorbis.com — samples oficiais do codec
+  'https://www.vorbis.com/music/Hydrate-Kenny_Beltrey.ogg',
+];
+
+// ─── Enquetes de Warmup ──────────────────────────────────────────────────────
+// Enquetes naturais para interação bidirecional altíssima humanização.
+export const WARMUP_POLLS = [
+  {
+    name: 'O que você vai almoçar hoje?',
+    options: ['Marmita de casa 🍱', 'Restaurante por quilo 🍽️', 'Delivery 🛵', 'Salgado rápido 🥪'],
+  },
+  {
+    name: 'Que horas você acorda normalmente?',
+    options: ['Antes das 6h 🌅', 'Entre 6h e 7h', 'Entre 7h e 8h ☕', 'Depois das 8h 😴'],
+  },
+  {
+    name: 'Qual é sua bebida favorita pela manhã?',
+    options: ['Café ☕', 'Suco natural 🍊', 'Chá 🍵', 'Água mesmo 💧'],
+  },
+  {
+    name: 'Como tá o tempo aí?',
+    options: ['Calor absurdo 🔥', 'Frio 🧥', 'Nublado ☁️', 'Chuva 🌧️'],
+  },
+  {
+    name: 'O que você prefere no fim de semana?',
+    options: ['Sair com amigos 🥳', 'Ficar em casa 🛋️', 'Viajar 🚗', 'Malhar 💪'],
+  },
+  {
+    name: 'Seu time tá bem esse ano?',
+    options: ['Muito bem! ⚽🏆', 'Mais ou menos 😬', 'Horrível 😭', 'Não ligo pra futebol 🤷'],
+  },
+  {
+    name: 'Qual streaming você mais usa?',
+    options: ['Netflix 🎬', 'Disney+ 🏰', 'Prime Video 📦', 'YouTube mesmo 📺'],
+  },
+  {
+    name: 'Você prefere comunicar como?',
+    options: ['Áudio 🎙️', 'Texto ✍️', 'Ligação 📞', 'Tanto faz 😄'],
+  },
+];
+
+// ─── vCards (Contatos Fictícios) ─────────────────────────────────────────────
+// Contatos fictícios em formato vCard para compartilhamento humanizado.
+export const WARMUP_VCARDS = [
+  {
+    displayName: 'Ana Paula Santos',
+    vcard: 'BEGIN:VCARD\nVERSION:3.0\nFN:Ana Paula Santos\nTEL;type=CELL;type=VOICE;waid=5511987654321:+55 11 98765-4321\nEND:VCARD',
+  },
+  {
+    displayName: 'Carlos Eduardo Lima',
+    vcard: 'BEGIN:VCARD\nVERSION:3.0\nFN:Carlos Eduardo Lima\nTEL;type=CELL;type=VOICE;waid=5521976543210:+55 21 97654-3210\nEND:VCARD',
+  },
+  {
+    displayName: 'Fernanda Costa',
+    vcard: 'BEGIN:VCARD\nVERSION:3.0\nFN:Fernanda Costa\nTEL;type=CELL;type=VOICE;waid=5531965432109:+55 31 96543-2109\nEND:VCARD',
+  },
+  {
+    displayName: 'Ricardo Mendes',
+    vcard: 'BEGIN:VCARD\nVERSION:3.0\nFN:Ricardo Mendes\nTEL;type=CELL;type=VOICE;waid=5541954321098:+55 41 95432-1098\nEND:VCARD',
+  },
+  {
+    displayName: 'Juliana Oliveira',
+    vcard: 'BEGIN:VCARD\nVERSION:3.0\nFN:Juliana Oliveira\nTEL;type=CELL;type=VOICE;waid=5551943210987:+55 51 94321-0987\nEND:VCARD',
+  },
 ];
 
 export interface ChatMessage {

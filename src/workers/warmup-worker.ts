@@ -25,6 +25,8 @@ import {
   WARMUP_REACTIONS,
   ChatMessage,
   WARMUP_AUDIO_URLS,
+  WARMUP_POLLS,
+  WARMUP_VCARDS,
 } from '../lib/warmup-ai';
 import {
   queueWarmupMessage,
@@ -56,29 +58,33 @@ import {
 const WARMUP_QUEUE_NAME = 'warmup-queue';
 
 // Tipos de mensagem disponíveis com seus pesos de probabilidade
-type MessageAction = 'TEXT' | 'EMOJI' | 'REACTION' | 'STICKER' | 'AUDIO' | 'STATUS' | 'LOCATION' | 'IMAGE';
+type MessageAction = 'TEXT' | 'EMOJI' | 'REACTION' | 'STICKER' | 'AUDIO' | 'STATUS' | 'LOCATION' | 'IMAGE' | 'POLL' | 'CONTACT';
 
 /**
  * Escolhe aleatoriamente o tipo de ação para essa mensagem.
  * Pesos ajustados para simular comportamento humano realista:
- * - Texto: 55% (maioria das interações)
- * - Emoji: 15% (respostas rápidas comuns)
+ * - Texto: 48% (maioria das interações)
+ * - Emoji: 13% (respostas rápidas comuns)
  * - Reação: 10% (recurso mais recente, menos frequente)
  * - Sticker: 5% (ocasional)
- * - Áudio: 5% (notas de voz humanas altamente confiáveis)
+ * - Áudio: 8% (notas de voz humanas altamente confiáveis)
  * - Imagem: 5% (mídia)
- * - Localização: 3% (geolocalização humana)
- * - Status/Stories: 2% (postagem social)
+ * - Localização: 4% (geolocalização humana)
+ * - Poll: 5% (enquetes interativas)
+ * - Contact Card: 1% (enviar contato)
+ * - Status/Stories: 1% (postagem social)
  */
 function chooseMessageAction(): MessageAction {
   const rand = Math.random() * 100;
-  if (rand < 55) return 'TEXT';
-  if (rand < 70) return 'EMOJI';
-  if (rand < 80) return 'REACTION';
-  if (rand < 85) return 'STICKER';
-  if (rand < 90) return 'AUDIO';
-  if (rand < 95) return 'IMAGE';
-  if (rand < 98) return 'LOCATION';
+  if (rand < 48) return 'TEXT';
+  if (rand < 61) return 'EMOJI';
+  if (rand < 71) return 'REACTION';
+  if (rand < 76) return 'STICKER';
+  if (rand < 84) return 'AUDIO';
+  if (rand < 89) return 'IMAGE';
+  if (rand < 93) return 'LOCATION';
+  if (rand < 98) return 'POLL';
+  if (rand < 99) return 'CONTACT';
   return 'STATUS';
 }
 
@@ -417,11 +423,16 @@ export const warmupWorker = new Worker(
         }
 
       } else if (action === 'LOCATION') {
-        // Envio de localização
+        // Envio de localização com prelúdio
         messageType = 'TEXT';
         const loc = WARMUP_LOCATIONS[Math.floor(Math.random() * WARMUP_LOCATIONS.length)];
-        messageText = `[Localização] ${loc.name} - ${loc.addr}`;
         
+        try {
+          const introText = "Tô passando por aqui ó, te mando a localização no mapa 📍";
+          await evolutionApi.sendTextMessage(sourceInstance, targetPhone, introText);
+        } catch {}
+
+        messageText = `[Localização] ${loc.name} - ${loc.addr}`;
         typingDelay = 1500 + Math.random() * 2000;
         await new Promise(r => setTimeout(r, typingDelay));
         
@@ -430,6 +441,45 @@ export const warmupWorker = new Worker(
           sentMessageId = res?.key?.id || res?.id || null;
         } catch (err) {
           console.error('[Warmup Worker] Erro ao enviar localização:', err);
+          status = 'FAILED';
+        }
+
+      } else if (action === 'POLL') {
+        // Envio de enquete interativa
+        messageType = 'TEXT';
+        const poll = WARMUP_POLLS[Math.floor(Math.random() * WARMUP_POLLS.length)];
+        messageText = `[Enquete] ${poll.name}`;
+
+        typingDelay = 2000 + Math.random() * 2000;
+        await new Promise(r => setTimeout(r, typingDelay));
+
+        try {
+          const res = await evolutionApi.sendPollMessage(sourceInstance, targetPhone, poll.name, poll.options);
+          sentMessageId = res?.key?.id || res?.id || null;
+        } catch (err) {
+          console.error('[Warmup Worker] Erro ao enviar enquete:', err);
+          status = 'FAILED';
+        }
+
+      } else if (action === 'CONTACT') {
+        // Envio de cartão de contato
+        messageType = 'TEXT';
+        const contact = WARMUP_VCARDS[Math.floor(Math.random() * WARMUP_VCARDS.length)];
+        messageText = `[Contato] ${contact.displayName}`;
+
+        try {
+          const introText = `Vou te passar o contato da ${contact.displayName}, anota aí! 📇`;
+          await evolutionApi.sendTextMessage(sourceInstance, targetPhone, introText);
+        } catch {}
+
+        typingDelay = 1500 + Math.random() * 1500;
+        await new Promise(r => setTimeout(r, typingDelay));
+
+        try {
+          const res = await evolutionApi.sendContactCard(sourceInstance, targetPhone, contact.displayName, contact.vcard);
+          sentMessageId = res?.key?.id || res?.id || null;
+        } catch (err) {
+          console.error('[Warmup Worker] Erro ao enviar contato:', err);
           status = 'FAILED';
         }
 
