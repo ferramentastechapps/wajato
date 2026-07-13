@@ -18,6 +18,13 @@ async function main() {
   console.log('--- WARMUP CAMPAIGNS ---');
   console.log(JSON.stringify(campaigns, null, 2));
 
+  const logs = await prisma.warmupLog.findMany({
+    take: 15,
+    orderBy: { createdAt: 'desc' }
+  });
+  console.log('--- WARMUP LOGS ---');
+  console.log(JSON.stringify(logs, null, 2));
+
   const queue = new Queue('warmup-queue', { connection: redisConnection as any });
   try {
     const jobs = await queue.getJobs(['waiting', 'delayed', 'active', 'failed', 'completed']);
