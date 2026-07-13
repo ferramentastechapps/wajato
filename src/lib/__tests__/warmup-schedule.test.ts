@@ -49,17 +49,28 @@ describe('getMsUntilNextBusinessWindow', () => {
   it('deve retornar 0 se já estiver dentro do horário comercial', () => {
     // 14h BRT = 17h UTC
     vi.setSystemTime(new Date('2024-06-15T17:00:00.000Z'));
-    expect(getMsUntilNextBusinessWindow(8)).toBe(0);
+    expect(getMsUntilNextBusinessWindow(8, 22)).toBe(0);
     vi.useRealTimers();
   });
 
   it('deve retornar ms positivo se estiver fora do horário', () => {
     // 23h BRT = 02h UTC do dia seguinte
     vi.setSystemTime(new Date('2024-06-16T02:00:00.000Z'));
-    const ms = getMsUntilNextBusinessWindow(8);
+    const ms = getMsUntilNextBusinessWindow(8, 22);
     expect(ms).toBeGreaterThan(0);
     // 23h BRT → próximo 8h BRT = 9 horas = 32400000 ms (com possível diferença de minutos)
     expect(ms).toBeLessThanOrEqual(9 * 60 * 60 * 1000 + 60000);
+    vi.useRealTimers();
+  });
+
+  it('deve respeitar endHour customizado no cálculo', () => {
+    // 22:30 BRT = 01:30 UTC do dia seguinte
+    vi.setSystemTime(new Date('2024-06-16T01:30:00.000Z'));
+    // Se endHour for 23, 22:30 ainda está dentro!
+    expect(getMsUntilNextBusinessWindow(8, 23)).toBe(0);
+    
+    // Se endHour for 22, 22:30 está fora!
+    expect(getMsUntilNextBusinessWindow(8, 22)).toBeGreaterThan(0);
     vi.useRealTimers();
   });
 });

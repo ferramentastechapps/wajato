@@ -63,9 +63,9 @@ export async function POST(request: Request) {
       const isDirectMessage = remoteJid.endsWith('@s.whatsapp.net');
 
       if (!fromMe && remoteJid && (isDirectMessage || isGroupMessage) && instanceName) {
-        // Normaliza o número do remetente
-        const rawPhone = isGroupMessage ? remoteJid : remoteJid.split('@')[0];
-        const phone = normalizePhone(rawPhone);
+        // Para grupo, o JID do grupo identifica o chat. Mas o remetente real é o participant.
+        const senderJid = isGroupMessage ? (messageData?.key?.participant || remoteJid) : remoteJid;
+        const phone = normalizePhone(senderJid.split('@')[0]);
 
         // Zera o contador de mensagens consecutivas sem resposta da instância
         try {
@@ -87,10 +87,12 @@ export async function POST(request: Request) {
         const pushName =
           messageData?.pushName ||
           messageData?.notifyName ||
+          data?.pushName ||
+          payload?.pushName ||
           null;
 
         if (messageText || isGroupMessage) {
-          // Verifica se o remetente é uma de nossas instâncias locais (para evitar loop bidirecional)
+          // Verifica se o remetente é uma de nossas instâncias locais (para evitar loop biirecional)
           const isLocalInstance = await prisma.whatsAppInstance.findFirst({
             where: {
               OR: [
@@ -123,30 +125,20 @@ export async function POST(request: Request) {
           if (warmupCampaign && messageText) {
             console.log(`[Webhook] ✅ Resposta de aquecimento de ${phone} (grupo: ${isGroupMessage}) mapeada para campanha ${warmupCampaign.id} (${warmupCampaign.targetPhone})`);
 
-            // Salva no WarmupLog como mensagem recebida usando o targetPhone cadastrado na campanha
+            // Salva no WarmupLog como mensagem recebida usando o targetPhone cadastrado na campanha ou o telefone de quem enviou (grupo)
             await prisma.warmupLog.create({
               data: {
                 campaignId: warmupCampaign.id,
-                fromInstance: warmupCampaign.targetPhone, // Usa o número oficial da campanha para consistência
+                fromInstance: isGroupMessage ? phone : warmupCampaign.targetPhone,
                 toPhone: instanceName,
                 message: messageText,
                 messageType: 'TEXT',
                 status: 'READ',
                 delayUsed: 0,
                 messageId: incomingMessageId || null,
+                senderName: pushName,
               },
             });
-
-            // Persiste o pushName do contato se disponível (para exibir no chat viewer)
-            if (pushName && !isGroupMessage) {
-              try {
-                await prisma.whatsAppInstance.updateMany({
-                  where: { name: instanceName },
-                  data: {},
-                });
-                // Salva o pushName no warmupLog (campo de comentário futuro)
-              } catch {}
-            }
 
             // Cancela jobs agendados para esta campanha e agenda resposta rápida
             await cancelCampaignWarmupJobs(warmupCampaign.id);

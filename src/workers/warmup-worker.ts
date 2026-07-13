@@ -34,6 +34,7 @@ import {
 import {
   isWithinBusinessHours,
   getMsUntilNextBusinessWindow,
+  getMsUntilTomorrowStart,
   isWeekend,
   getRampUpTarget,
   calculateHeatScore,
@@ -144,7 +145,7 @@ export const warmupWorker = new Worker(
 
     // ── 3. Verificar janela de horário comercial ─────────────────────────────
     if (!isWithinBusinessHours(campaign.startHour, campaign.endHour)) {
-      const msUntilWindow = getMsUntilNextBusinessWindow(campaign.startHour);
+      const msUntilWindow = getMsUntilNextBusinessWindow(campaign.startHour, campaign.endHour);
       console.log(`[Warmup Worker] Fora do horário comercial. Agendando para ${Math.round(msUntilWindow / 3600000)}h.`);
       
       // Agenda para o próximo início de expediente com jitter de 5-30 min
@@ -163,13 +164,7 @@ export const warmupWorker = new Worker(
     if (campaign.msgsSentToday >= campaign.targetMsgsToday && !isFirstMessageOfDay) {
       console.log(`[Warmup Worker] Cota diária atingida (${campaign.msgsSentToday}/${campaign.targetMsgsToday}). Agendando para amanhã.`);
 
-      const tomorrow = new Date();
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      // Horário aleatório entre startHour e startHour+2 para variar
-      const startOffset = Math.floor(Math.random() * 120); // 0-120 min após início
-      tomorrow.setHours(campaign.startHour, startOffset % 60, 0, 0);
-
-      const delayMs = Math.max(0, tomorrow.getTime() - Date.now());
+      const delayMs = getMsUntilTomorrowStart(campaign.startHour);
       const nextDay = campaign.currentDay + 1;
       const nextTarget = getRampUpTarget(nextDay, campaign.initialMsgsPerDay, campaign.maxMsgsPerDay, isWeekend());
 

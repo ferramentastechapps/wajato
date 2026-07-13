@@ -24,7 +24,7 @@ export function isWithinBusinessHours(startHour: number = 8, endHour: number = 2
  * Calcula o delay em ms até o próximo horário permitido de início do dia.
  * Se já está dentro do horário, retorna 0.
  */
-export function getMsUntilNextBusinessWindow(startHour: number = 8): number {
+export function getMsUntilNextBusinessWindow(startHour: number = 8, endHour: number = 22): number {
   const now = new Date();
   const brazilOffset = -3 * 60;
   const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
@@ -32,11 +32,11 @@ export function getMsUntilNextBusinessWindow(startHour: number = 8): number {
   const brazilHour = Math.floor(brazilMinutes / 60);
   const brazilMin = brazilMinutes % 60;
 
-  if (brazilHour >= startHour && brazilHour < 22) return 0;
+  if (brazilHour >= startHour && brazilHour < endHour) return 0;
 
   // Calcula quando começa o próximo dia útil
   let hoursUntilStart: number;
-  if (brazilHour >= 22) {
+  if (brazilHour >= endHour) {
     // Após o expediente: espera até amanhã no startHour
     hoursUntilStart = 24 - brazilHour + startHour;
   } else {
@@ -46,6 +46,30 @@ export function getMsUntilNextBusinessWindow(startHour: number = 8): number {
 
   const minsUntilStart = hoursUntilStart * 60 - brazilMin;
   return minsUntilStart * 60 * 1000;
+}
+
+/**
+ * Calcula o delay em ms até o startHour de amanhã no fuso horário de Brasília (UTC-3).
+ */
+export function getMsUntilTomorrowStart(startHour: number = 8): number {
+  const now = new Date();
+  
+  // Data/Hora atual em Brasília (UTC-3)
+  const currentBrazilTime = new Date(now.getTime() - 3 * 60 * 60 * 1000);
+  
+  // Cria data de amanhã em Brasília
+  const tomorrowBrazil = new Date(currentBrazilTime);
+  tomorrowBrazil.setDate(tomorrowBrazil.getDate() + 1);
+  
+  // Horário aleatório entre startHour e startHour + 2 horas (para variação humana)
+  const startOffsetMin = Math.floor(Math.random() * 120); // 0 a 120 min
+  tomorrowBrazil.setHours(startHour, startOffsetMin % 60, 0, 0);
+  
+  // Converte a data de amanhã de Brasília de volta para UTC
+  const tomorrowUTC = new Date(tomorrowBrazil.getTime() + 3 * 60 * 60 * 1000);
+  
+  // Retorna a diferença de tempo
+  return Math.max(0, tomorrowUTC.getTime() - now.getTime());
 }
 
 /**

@@ -30,6 +30,7 @@ import {
 import {
   isWithinBusinessHours,
   getMsUntilNextBusinessWindow,
+  getMsUntilTomorrowStart,
   isWeekend,
   getRampUpTarget,
   calculateHeatScore,
@@ -93,7 +94,7 @@ export const warmupPoolWorker = new Worker(
 
     // ── 3. Verificar janela de horário comercial ─────────────────────────────
     if (!isWithinBusinessHours(pool.startHour, pool.endHour)) {
-      const msUntilWindow = getMsUntilNextBusinessWindow(pool.startHour);
+      const msUntilWindow = getMsUntilNextBusinessWindow(pool.startHour, pool.endHour);
       console.log(`[Warmup Pool Worker] Fora do horário comercial. Agendando para daqui ${Math.round(msUntilWindow / 3600000)}h.`);
       const jitter = Math.floor(Math.random() * 20 + 5) * 60 * 1000;
       await queuePoolMessage(
@@ -108,12 +109,7 @@ export const warmupPoolWorker = new Worker(
     if (pool.msgsSentToday >= pool.targetMsgsToday && !isFirstMessageOfDay) {
       console.log(`[Warmup Pool Worker] Limite diário atingido (${pool.msgsSentToday}/${pool.targetMsgsToday}) para o pool ${poolId}.`);
 
-      const tomorrow = new Date();
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      const startOffset = Math.floor(Math.random() * 90);
-      tomorrow.setHours(pool.startHour, startOffset % 60, 0, 0);
-
-      const delayMs = Math.max(0, tomorrow.getTime() - Date.now());
+      const delayMs = getMsUntilTomorrowStart(pool.startHour);
       const nextDay = pool.currentDay + 1;
       const nextTarget = getRampUpTarget(nextDay, pool.initialMsgsPerDay, pool.maxMsgsPerDay, isWeekend());
 

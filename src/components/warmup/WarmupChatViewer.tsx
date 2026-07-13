@@ -18,6 +18,7 @@ interface Log {
   status: string;
   createdAt: string;
   messageId?: string | null;
+  senderName?: string | null;
 }
 
 interface Campaign {
@@ -389,7 +390,7 @@ export default function WarmupChatViewer({ campaignId, onClose, onStatusChange }
                   // Nome a exibir na bolha recebida
                   const senderName = isSent
                     ? (contactInfo?.name || sourceInstance)
-                    : (contactInfo?.name || contactInfo?.pushName || log.fromInstance);
+                    : (log.senderName || contactInfo?.name || contactInfo?.pushName || log.fromInstance);
 
                   return (
                     <div key={log.id} style={{

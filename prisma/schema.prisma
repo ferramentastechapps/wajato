@@ -199,6 +199,7 @@ model WarmupLog {
   status       String            @default("SENT") // SENT, DELIVERED, READ, FAILED
   messageId    String?           // ID real da mensagem no WhatsApp (usado para reações)
   delayUsed    Int               @default(0)
+  senderName   String?
   createdAt    DateTime          @default(now())
 }
 
