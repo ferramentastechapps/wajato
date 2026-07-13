@@ -166,6 +166,56 @@ scheduleDailyChipReset().catch(err =>
   logger.error('[Scheduler] Erro ao iniciar cron de reset de chips:', err)
 );
 
+// ─── Cron de Auto-Healing de Campanhas de Aquecimento (Verificação a cada 3 minutos) ───
+/**
+ * Recupera de forma automática qualquer campanha de aquecimento (WarmupCampaign)
+ * que esteja no estado RUNNING mas não tenha nenhum job ativo ou agendado na fila.
+ * Isso resolve travamentos causados por reinicializações de servidor ou indisponibilidade de Redis.
+ */
+async function healStuckWarmupCampaigns() {
+  const { warmupQueue, queueWarmupMessage } = await import('../lib/warmup-queue');
+  try {
+    const runningCampaigns = await prisma.warmupCampaign.findMany({
+      where: { status: 'RUNNING' }
+    });
+
+    if (runningCampaigns.length === 0) return;
+
+    // Obtém todos os jobs ativos, agendados e aguardando da fila
+    const delayedJobs = await warmupQueue.getJobs(['delayed', 'waiting', 'active']);
+    const activeCampaignIds = new Set(delayedJobs.map(j => j.data?.campaignId).filter(Boolean));
+
+    for (const campaign of runningCampaigns) {
+      if (!activeCampaignIds.has(campaign.id)) {
+        logger.info(`[Scheduler] 🩹 Detectada campanha de aquecimento travada: ${campaign.name || campaign.id}. Recuperando...`);
+        
+        await queueWarmupMessage(
+          {
+            campaignId: campaign.id,
+            sourceInstance: campaign.sourceInstance,
+            targetPhone: campaign.targetPhone,
+            isFirstMessageOfDay: false,
+          },
+          45000, // 45s de média para iniciar rápido
+          15000
+        );
+      }
+    }
+  } catch (err: any) {
+    logger.error('[Scheduler] Erro no auto-healing de campanhas de aquecimento:', err.message);
+  }
+}
+
+// Inicia o auto-healing de campanhas na inicialização e roda a cada 3 minutos
+healStuckWarmupCampaigns().catch(err =>
+  logger.error('[Scheduler] Erro na verificação inicial de auto-healing do warmup:', err)
+);
+setInterval(() => {
+  healStuckWarmupCampaigns().catch(err =>
+    logger.error('[Scheduler] Erro na execução periódica do auto-healing do warmup:', err)
+  );
+}, 180_000);
+
 // ─── Cron de Auto-Healing de Proxies (Verificação a cada 5 minutos) ──────────
 const PROXY_CHECK_INTERVAL_MS = 300_000;
 runProxySelfHealer().catch(err =>
