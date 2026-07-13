@@ -11,6 +11,36 @@ function normalizePhone(raw: string): string {
   return raw.replace(/\D/g, '');
 }
 
+/**
+ * Compara dois números de telefone de forma flexível, tolerando a presença
+ * ou ausência do 9º dígito (Brasil) e prefixos/DDI.
+ */
+function matchBrazilianPhone(phone1: string, phone2: string): boolean {
+  const p1 = phone1.replace(/\D/g, '');
+  const p2 = phone2.replace(/\D/g, '');
+  
+  if (p1 === p2) return true;
+  
+  // Extrai o DDD + número (remove o prefixo 55 se houver)
+  const clean1 = p1.startsWith('55') ? p1.slice(2) : p1;
+  const clean2 = p2.startsWith('55') ? p2.slice(2) : p2;
+  
+  if (clean1.length >= 10 && clean2.length >= 10) {
+    const ddd1 = clean1.slice(0, 2);
+    const num1 = clean1.slice(2);
+    const ddd2 = clean2.slice(0, 2);
+    const num2 = clean2.slice(2);
+    
+    if (ddd1 === ddd2) {
+      // Normaliza removendo o '9' se o número tiver 9 dígitos e começar com '9'
+      const norm1 = num1.length === 9 && num1.startsWith('9') ? num1.slice(1) : num1;
+      const norm2 = num2.length === 9 && num2.startsWith('9') ? num2.slice(1) : num2;
+      return norm1 === norm2;
+    }
+  }
+  return false;
+}
+
 export async function POST(request: Request) {
   try {
     const payload = await request.json();
@@ -70,35 +100,33 @@ export async function POST(request: Request) {
             },
           });
 
-          // Busca campanha de aquecimento correspondente de forma flexível:
-          // 1. targetPhone exato
-          // 2. targetPhones contém o número
-          // 3. targetPhone normalizado (sem 55) bate com o número normalizado
-          const warmupCampaign = !isLocalInstance
-            ? await prisma.warmupCampaign.findFirst({
+          // Busca todas as campanhas ativas para esta instância no banco
+          const runningCampaigns = !isLocalInstance
+            ? await prisma.warmupCampaign.findMany({
                 where: {
                   sourceInstance: instanceName,
-                  status: 'RUNNING',
-                  OR: [
-                    { targetPhone: phone },
-                    { targetPhone: phone.replace(/^55/, '') },
-                    { targetPhones: { contains: phone } },
-                    { targetPhones: { contains: phone.replace(/^55/, '') } },
-                    // Para grupos: remoteJid completo
-                    ...(isGroupMessage ? [{ targetPhone: remoteJid }, { targetPhones: { contains: remoteJid } }] : []),
-                  ],
-                },
+                  status: 'RUNNING'
+                }
               })
-            : null;
+            : [];
+
+          // Encontra a campanha correspondente usando comparação flexível
+          const warmupCampaign = runningCampaigns.find(camp => {
+            const target = camp.targetPhone;
+            if (isGroupMessage) {
+              return target === remoteJid || camp.targetPhones.includes(remoteJid);
+            }
+            return matchBrazilianPhone(phone, target) || camp.targetPhones.split(',').some(p => matchBrazilianPhone(phone, p));
+          }) || null;
 
           if (warmupCampaign && messageText) {
-            console.log(`[Webhook] ✅ Resposta de aquecimento de ${phone} (grupo: ${isGroupMessage}) para instância ${instanceName}`);
+            console.log(`[Webhook] ✅ Resposta de aquecimento de ${phone} (grupo: ${isGroupMessage}) mapeada para campanha ${warmupCampaign.id} (${warmupCampaign.targetPhone})`);
 
-            // Salva no WarmupLog como mensagem recebida com messageId real
+            // Salva no WarmupLog como mensagem recebida usando o targetPhone cadastrado na campanha
             await prisma.warmupLog.create({
               data: {
                 campaignId: warmupCampaign.id,
-                fromInstance: phone,
+                fromInstance: warmupCampaign.targetPhone, // Usa o número oficial da campanha para consistência
                 toPhone: instanceName,
                 message: messageText,
                 messageType: 'TEXT',

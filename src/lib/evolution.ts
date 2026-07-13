@@ -508,6 +508,11 @@ export const evolutionApi = {
     // Remove tudo o que não for número
     let cleaned = phone.replace(/\D/g, '');
 
+    // Se já começa com 55, não precisa adicionar novamente
+    if (cleaned.startsWith('55')) {
+      return cleaned;
+    }
+
     // Se não começar com 55 e tiver 10 ou 11 dígitos, assume que é Brasil e adiciona 55
     if (cleaned.length === 10 || cleaned.length === 11) {
       cleaned = '55' + cleaned;
