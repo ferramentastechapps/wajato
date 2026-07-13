@@ -124,13 +124,49 @@ export const warmupWorker = new Worker(
     const { campaignId, isFirstMessageOfDay, currentTopic } = job.data;
 
     // ── 1. Buscar campanha ───────────────────────────────────────────────────
-    const campaign = await prisma.warmupCampaign.findUnique({
+    let campaign = await prisma.warmupCampaign.findUnique({
       where: { id: campaignId },
     });
 
     if (!campaign || campaign.status !== 'RUNNING') {
       console.log(`[Warmup Worker] Campanha ${campaignId} inativa. Ignorando.`);
       return;
+    }
+
+    // ── 1.1 Verificar mudança de dia do calendário ────────────────────────────
+    const weekend = isWeekend();
+    if (campaign.lastMessageAt) {
+      const lastSentDate = new Date(campaign.lastMessageAt);
+      const today = new Date();
+      
+      const isNewCalendarDay = 
+        today.getDate() !== lastSentDate.getDate() ||
+        today.getMonth() !== lastSentDate.getMonth() ||
+        today.getFullYear() !== lastSentDate.getFullYear();
+        
+      if (isNewCalendarDay) {
+        console.log(`[Warmup Worker] Mudança de dia do calendário detectada para campanha ${campaignId}. Reiniciando contadores.`);
+        
+        const nextDay = campaign.currentDay + 1;
+        const nextTarget = getRampUpTarget(nextDay, campaign.initialMsgsPerDay, campaign.maxMsgsPerDay, weekend);
+        
+        // Calcular heat score baseado em sucesso
+        const totalLogs = await prisma.warmupLog.count({ where: { campaignId } });
+        const successLogs = await prisma.warmupLog.count({ where: { campaignId, status: 'SENT' } });
+        const successRate = totalLogs > 0 ? successLogs / totalLogs : 1;
+        const heatScore = calculateHeatScore(nextDay, campaign.totalDays, successRate);
+
+        campaign = await prisma.warmupCampaign.update({
+          where: { id: campaignId },
+          data: {
+            currentDay: nextDay,
+            msgsSentToday: 0,
+            targetMsgsToday: nextTarget,
+            heatScore,
+            status: nextDay > campaign.totalDays ? 'COMPLETED' : 'RUNNING',
+          },
+        });
+      }
     }
 
     const sourceInstance = campaign.sourceInstance;
@@ -162,41 +198,15 @@ export const warmupWorker = new Worker(
     }
 
     // ── 4. Verificar cota diária ─────────────────────────────────────────────
-    const weekend = isWeekend();
-    
-    if (campaign.msgsSentToday >= campaign.targetMsgsToday && !isFirstMessageOfDay) {
-      console.log(`[Warmup Worker] Cota diária atingida (${campaign.msgsSentToday}/${campaign.targetMsgsToday}). Agendando para amanhã.`);
+    if (campaign.msgsSentToday >= campaign.targetMsgsToday) {
+      console.log(`[Warmup Worker] Cota diária atingida (${campaign.msgsSentToday}/${campaign.targetMsgsToday}). Parando por hoje e agendando próximo dia.`);
 
       const delayMs = getMsUntilTomorrowStart(campaign.startHour);
-      const nextDay = campaign.currentDay + 1;
-      const nextTarget = getRampUpTarget(nextDay, campaign.initialMsgsPerDay, campaign.maxMsgsPerDay, isWeekend());
-
-      // Calcular heat score baseado em sucesso
-      const totalLogs = await prisma.warmupLog.count({ where: { campaignId } });
-      const successLogs = await prisma.warmupLog.count({ where: { campaignId, status: 'SENT' } });
-      const successRate = totalLogs > 0 ? successLogs / totalLogs : 1;
-      const heatScore = calculateHeatScore(nextDay, campaign.totalDays, successRate);
-
-      await prisma.warmupCampaign.update({
-        where: { id: campaignId },
-        data: {
-          currentDay: nextDay,
-          msgsSentToday: 0,
-          targetMsgsToday: nextTarget,
-          heatScore,
-          status: nextDay > campaign.totalDays ? 'COMPLETED' : 'RUNNING',
-        },
-      });
-
-      console.log(`[Warmup Worker] Dia ${nextDay} programado com ${nextTarget} msgs. Heat Score: ${heatScore}/100`);
-
-      if (nextDay <= campaign.totalDays) {
-        await queueWarmupMessage(
-          { campaignId, sourceInstance, targetPhone, isFirstMessageOfDay: true },
-          delayMs,
-          delayMs * 0.1 + 60000 // 10% de jitter + 1 min base
-        );
-      }
+      await queueWarmupMessage(
+        { campaignId, sourceInstance, targetPhone, isFirstMessageOfDay: true },
+        delayMs,
+        delayMs * 0.1 + 60000 // 10% de jitter + 1 min base
+      );
       return;
     }
 
