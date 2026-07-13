@@ -58,6 +58,7 @@ fi
 
 echo ""
 echo "[5/6] Compilando o projeto Next.js..."
+rm -rf .next
 NODE_ENV=production npm run build
 echo "  ✅ Build concluído."
 

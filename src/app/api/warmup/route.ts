@@ -21,6 +21,22 @@ export async function GET() {
           orderBy: { createdAt: 'desc' },
         });
 
+        // Buscar últimas mensagens para calcular falhas consecutivas
+        const lastLogs = await prisma.warmupLog.findMany({
+          where: { campaignId: camp.id },
+          orderBy: { createdAt: 'desc' },
+          take: 3,
+        });
+
+        let consecutiveFailures = 0;
+        for (const log of lastLogs) {
+          if (log.status === 'FAILED') {
+            consecutiveFailures++;
+          } else {
+            break;
+          }
+        }
+
         // Taxa de sucesso
         const totalLogs = camp._count.logs;
         const successLogs = await prisma.warmupLog.count({
@@ -57,6 +73,7 @@ export async function GET() {
             successRate: Math.round(successRate * 100),
             msgsToday,
             heatScore: camp.heatScore,
+            consecutiveFailures,
             lastMessage: lastLog
               ? {
                   text: lastLog.message,

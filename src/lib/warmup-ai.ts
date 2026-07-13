@@ -127,6 +127,37 @@ export function selectConversationTopic(recentTopics: string[] = []): string {
 }
 
 /**
+ * Mescla mensagens consecutivas com o mesmo papel (user/model) e
+ * garante que o histórico comece com um 'user' para evitar rejeições das APIs de LLM.
+ */
+export function mergeConsecutiveRoles(history: ChatMessage[]): ChatMessage[] {
+  if (history.length === 0) return [];
+  
+  const merged: ChatMessage[] = [];
+  let current = { ...history[0] };
+  
+  for (let i = 1; i < history.length; i++) {
+    const item = history[i];
+    if (item.role === current.role) {
+      const currentText = current.parts.map(p => p.text).join('\n');
+      const itemText = item.parts.map(p => p.text).join('\n');
+      current.parts = [{ text: `${currentText}\n${itemText}` }];
+    } else {
+      merged.push(current);
+      current = { ...item };
+    }
+  }
+  merged.push(current);
+  
+  // Garante que o histórico sempre comece com 'user'
+  if (merged.length > 0 && merged[0].role === 'model') {
+    merged.unshift({ role: 'user', parts: [{ text: 'Oi' }] });
+  }
+  
+  return merged;
+}
+
+/**
  * Gera a próxima mensagem de texto para o aquecimento via Gemini AI.
  * Inclui contexto de persona rica, tópico dinâmico e instruções anti-detectabilidade.
  */
@@ -136,6 +167,7 @@ export async function generateNextWarmupMessage(
   topic?: string
 ): Promise<string> {
   try {
+    const mergedHistory = mergeConsecutiveRoles(history);
     let apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       const config = await prisma.chatbotConfig.findUnique({
@@ -167,11 +199,11 @@ RETORNE APENAS A MENSAGEM, sem aspas, sem prefixos, sem explicações.`;
     const isGroq = apiKey.startsWith('gsk_');
     const isOpenRouter = apiKey.startsWith('sk-or-');
 
-    const lastMessage = history[history.length - 1];
+    const lastMessage = mergedHistory[mergedHistory.length - 1];
     const isModelLast = lastMessage?.role === 'model';
 
     if (isGroq || isOpenRouter) {
-      const prompt = history.length === 0
+      const prompt = mergedHistory.length === 0
         ? (topic ? `Inicie uma conversa casual sobre ${topic}. Uma saudação curta e informal.` : 'Inicie a conversa com uma saudação muito casual.')
         : (isModelLast
             ? 'Continue a conversa de forma casual como você mesmo (sem simular o outro e sem responder a si mesmo). Diga algo novo ou mude o assunto naturalmente.'
@@ -197,7 +229,7 @@ RETORNE APENAS A MENSAGEM, sem aspas, sem prefixos, sem explicações.`;
           model: modelName,
           messages: [
             { role: 'system', content: systemInstruction },
-            ...history.map(h => ({
+            ...mergedHistory.map(h => ({
               role: h.role === 'model' ? 'assistant' : 'user',
               content: h.parts[0].text,
             })),
@@ -222,7 +254,7 @@ RETORNE APENAS A MENSAGEM, sem aspas, sem prefixos, sem explicações.`;
       });
 
       const chat = model.startChat({
-        history,
+        history: mergedHistory,
         generationConfig: {
           temperature: 0.95,
           maxOutputTokens: 80,
@@ -231,7 +263,7 @@ RETORNE APENAS A MENSAGEM, sem aspas, sem prefixos, sem explicações.`;
         },
       });
 
-      const prompt = history.length === 0
+      const prompt = mergedHistory.length === 0
         ? (topic ? `Inicie uma conversa casual sobre ${topic}. Uma saudação curta e informal.` : 'Inicie a conversa com uma saudação muito casual, como se fossem amigos.')
         : (isModelLast
             ? 'Continue a conversa de forma casual como você mesmo (sem simular o outro e sem responder a si mesmo). Diga algo novo ou mude o assunto naturalmente.'
@@ -244,9 +276,10 @@ RETORNE APENAS A MENSAGEM, sem aspas, sem prefixos, sem explicações.`;
   } catch (error) {
     console.error('Erro ao gerar mensagem de warmup via Gemini:', error);
     // Fallback inteligente com Spintax para máxima variedade de acordo com o estado do chat
-    const isModelLast = history[history.length - 1]?.role === 'model';
+    const mergedHistory = mergeConsecutiveRoles(history);
+    const isModelLast = mergedHistory[mergedHistory.length - 1]?.role === 'model';
     let templates: string[];
-    if (history.length === 0) {
+    if (mergedHistory.length === 0) {
       templates = [
         '{E aí|Oi|Olá|Salve} {mano|cara|véi|amigo}, {tudo bem?|tudo certo?|como você tá?}',
         '{Bom dia|Boa tarde|Boa noite}! {Tudo bem por aí?|Como estão as coisas?|Tudo tranquilo?}',

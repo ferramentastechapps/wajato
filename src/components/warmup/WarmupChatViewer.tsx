@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { X, RefreshCw, Pause, Play, Trash2, User } from 'lucide-react';
+import { X, RefreshCw, Pause, Play, Trash2, User, Edit } from 'lucide-react';
+import EditWarmupModal from './EditWarmupModal';
 
 interface Props {
   campaignId: string;
@@ -106,6 +107,7 @@ export default function WarmupChatViewer({ campaignId, onClose, onStatusChange }
   const [contactInfo, setContactInfo] = useState<ContactInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
 
   const fetchContactInfo = useCallback(async (camp: Campaign) => {
@@ -293,6 +295,9 @@ export default function WarmupChatViewer({ campaignId, onClose, onStatusChange }
                 <span style={{ fontSize: '0.8rem', fontWeight: 700 }}>✗</span>
               </button>
             )}
+            <button onClick={() => setIsEditing(true)} disabled={actionLoading} title="Editar Ciclo" style={iconBtn({ background: 'rgba(245,158,11,0.2)', color: '#fca5a5' })}>
+              <Edit size={14} style={{ color: '#f59e0b' }} />
+            </button>
             <button onClick={handleDelete} disabled={actionLoading} title="Remover campanha" style={iconBtn({ background: 'rgba(239,68,68,0.2)', color: '#fca5a5' })}>
               <Trash2 size={14} />
             </button>
@@ -479,6 +484,18 @@ export default function WarmupChatViewer({ campaignId, onClose, onStatusChange }
           <div ref={endRef} />
         </div>
       </div>
+
+      {isEditing && (
+        <EditWarmupModal
+          campaignId={campaignId}
+          onClose={() => setIsEditing(false)}
+          onUpdated={() => {
+            setIsEditing(false);
+            fetchData();
+            onStatusChange?.();
+          }}
+        />
+      )}
     </div>
   );
 }

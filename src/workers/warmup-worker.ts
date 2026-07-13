@@ -121,9 +121,7 @@ const WARMUP_LOCATIONS = [
 export const warmupWorker = new Worker(
   WARMUP_QUEUE_NAME,
   async (job: Job<WarmupJobData>) => {
-    const { campaignId, sourceInstance, targetPhone, isFirstMessageOfDay, currentTopic } = job.data;
-
-    console.log(`[Warmup Worker] Job recebido | Campanha: ${campaignId} | Instância: ${sourceInstance}`);
+    const { campaignId, isFirstMessageOfDay, currentTopic } = job.data;
 
     // ── 1. Buscar campanha ───────────────────────────────────────────────────
     const campaign = await prisma.warmupCampaign.findUnique({
@@ -134,6 +132,11 @@ export const warmupWorker = new Worker(
       console.log(`[Warmup Worker] Campanha ${campaignId} inativa. Ignorando.`);
       return;
     }
+
+    const sourceInstance = campaign.sourceInstance;
+    const targetPhone = campaign.targetPhone;
+
+    console.log(`[Warmup Worker] Job recebido | Campanha: ${campaignId} | Instância: ${sourceInstance} | Destinatário: ${targetPhone}`);
 
     // ── 2. Verificar rest period ativo ───────────────────────────────────────
     if (campaign.restPeriodUntil && campaign.restPeriodUntil > new Date()) {
@@ -622,11 +625,28 @@ export const warmupWorker = new Worker(
           }, meanDelay, stdDevDelay);
         }
       } else {
-        console.error(`[Warmup Worker] Falha no envio para campanha ${campaignId}. Reagendando...`);
+        console.error(`[Warmup Worker] Falha no envio para campanha ${campaignId}. Verificando falhas consecutivas...`);
         // Reporta falha para o ChipRouter atualizar health score
         await reportChipFailure(sourceInstance, `Falha na campanha ${campaignId}`);
-        // Em caso de falha, reagenda com delay maior
-        await queueWarmupMessage({ campaignId, sourceInstance, targetPhone }, 300000, 60000); // 5 min ± 1 min
+
+        // Busca logs recentes da campanha para contar falhas consecutivas
+        const recentLogs = await prisma.warmupLog.findMany({
+          where: { campaignId },
+          orderBy: { createdAt: 'desc' },
+          take: 3,
+        });
+
+        const consecutiveFailures = recentLogs.filter(l => l.status === 'FAILED').length;
+        if (consecutiveFailures >= 3) {
+          console.log(`[Warmup Worker] Campanha ${campaignId} atingiu ${consecutiveFailures} falhas consecutivas. Pausando automaticamente para evitar loops de envio.`);
+          await prisma.warmupCampaign.update({
+            where: { id: campaignId },
+            data: { status: 'PAUSED', restPeriodUntil: null },
+          });
+        } else {
+          // Em caso de falha pontual, reagenda com delay maior (5 min ± 1 min)
+          await queueWarmupMessage({ campaignId, sourceInstance, targetPhone }, 300000, 60000);
+        }
       }
 
     } finally {

@@ -2,9 +2,10 @@
 
 import React, { useEffect, useState, useMemo } from 'react';
 import AppLayout from '@/components/layout/AppLayout';
-import { Flame, Plus, MessageSquare, Pause, Play, TrendingUp, Clock, Activity, Users, HeartPulse, ChevronDown, ChevronRight, Smartphone } from 'lucide-react';
+import { Flame, Plus, MessageSquare, Pause, Play, TrendingUp, Clock, Activity, Users, HeartPulse, ChevronDown, ChevronRight, Smartphone, Edit, AlertTriangle } from 'lucide-react';
 import CreateWarmupModal from '@/components/warmup/CreateWarmupModal';
 import CreateWarmupPoolModal from '@/components/warmup/CreateWarmupPoolModal';
+import EditWarmupModal from '@/components/warmup/EditWarmupModal';
 import WarmupChatViewer from '@/components/warmup/WarmupChatViewer';
 import WarmupPoolChatViewer from '@/components/warmup/WarmupPoolChatViewer';
 import WarmupHeatGauge from '@/components/warmup/WarmupHeatGauge';
@@ -32,6 +33,7 @@ interface Campaign {
     successful: number;
     successRate: number;
     msgsToday: number;
+    consecutiveFailures?: number;
     lastMessage?: { text: string; at: string; type: string };
     messageTypeBreakdown: Record<string, number>;
   };
@@ -95,6 +97,7 @@ export default function WarmupPage() {
   // Modal open states
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isPoolModalOpen, setIsPoolModalOpen] = useState(false);
+  const [editingCampaignId, setEditingCampaignId] = useState<string | null>(null);
 
   // Chat viewer states
   const [selectedCampaign, setSelectedCampaign] = useState<string | null>(null);
@@ -556,8 +559,31 @@ export default function WarmupPage() {
 
                             {/* Name + target */}
                             <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'rgba(255,255,255,0.9)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {camp.name || camp.targetPhone}
+                              <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'rgba(255,255,255,0.9)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {camp.name || camp.targetPhone}
+                                </span>
+                                {camp.stats?.consecutiveFailures !== undefined && camp.stats.consecutiveFailures >= 3 && (
+                                  <span 
+                                    style={{
+                                      fontSize: '0.62rem',
+                                      background: 'rgba(239, 68, 68, 0.15)',
+                                      color: '#f87171',
+                                      padding: '1px 5px',
+                                      borderRadius: '4px',
+                                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                                      fontWeight: 600,
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '2px',
+                                      flexShrink: 0
+                                    }}
+                                    title="O aquecimento foi pausado automaticamente após 3 falhas consecutivas de envio. Verifique se o número possui WhatsApp e tente novamente."
+                                  >
+                                    <AlertTriangle size={10} />
+                                    Falha de Envio
+                                  </span>
+                                )}
                               </div>
                               {camp.stats?.lastMessage && (
                                 <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.35)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -597,6 +623,15 @@ export default function WarmupPage() {
                                 title="Ver conversa"
                               >
                                 <MessageSquare size={13} />
+                              </button>
+
+                              <button
+                                className="btn btn-secondary"
+                                style={{ padding: '0.3rem 0.55rem', fontSize: '0.72rem' }}
+                                onClick={() => setEditingCampaignId(camp.id)}
+                                title="Editar ciclo"
+                              >
+                                <Edit size={13} />
                               </button>
 
                               {camp.status === 'RUNNING' && (
@@ -848,6 +883,17 @@ export default function WarmupPage() {
         <CreateWarmupPoolModal
           onClose={() => setIsPoolModalOpen(false)}
           onCreated={() => { setIsPoolModalOpen(false); fetchPools(); }}
+        />
+      )}
+
+      {editingCampaignId && (
+        <EditWarmupModal
+          campaignId={editingCampaignId}
+          onClose={() => setEditingCampaignId(null)}
+          onUpdated={() => {
+            setEditingCampaignId(null);
+            fetchCampaigns();
+          }}
         />
       )}
 
