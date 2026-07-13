@@ -15,13 +15,31 @@ export async function comparePassword(password: string, hashed: string): Promise
   return bcrypt.compare(password, hashed);
 }
 
-export function signToken(payload: { userId: string; username: string }): string {
+export function signToken(payload: {
+  userId: string;
+  username: string;
+  email?: string | null;
+  name?: string | null;
+  avatarUrl?: string | null;
+}): string {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
 }
 
-export function verifyToken(token: string): { userId: string; username: string } | null {
+export function verifyToken(token: string): {
+  userId: string;
+  username: string;
+  email?: string | null;
+  name?: string | null;
+  avatarUrl?: string | null;
+} | null {
   try {
-    return jwt.verify(token, JWT_SECRET) as { userId: string; username: string };
+    return jwt.verify(token, JWT_SECRET) as {
+      userId: string;
+      username: string;
+      email?: string | null;
+      name?: string | null;
+      avatarUrl?: string | null;
+    };
   } catch (error) {
     return null;
   }
@@ -43,7 +61,7 @@ export async function getSessionUser() {
     
     const user = await prisma.user.findUnique({
       where: { id: decoded.userId },
-      select: { id: true, username: true },
+      select: { id: true, username: true, email: true, name: true, avatarUrl: true, role: true },
     });
     
     return user;

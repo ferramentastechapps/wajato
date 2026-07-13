@@ -31,12 +31,16 @@ enum UserRole {
 }
 
 model User {
-  id        String   @id @default(uuid())
-  username  String   @unique
-  password  String
-  role      UserRole @default(VIEWER)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String   @id @default(uuid())
+  username   String   @unique
+  password   String?  // Opcional para usuários que usam apenas Google OAuth
+  email      String?  @unique // E-mail vindo do Google
+  googleId   String?  @unique // ID único do Google
+  name       String?           // Nome completo do perfil Google
+  avatarUrl  String?           // Foto de perfil do Google
+  role       UserRole @default(VIEWER)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
 
 
