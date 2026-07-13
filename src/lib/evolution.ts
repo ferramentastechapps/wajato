@@ -502,7 +502,7 @@ export const evolutionApi = {
    */
   async findChats(instanceName: string): Promise<any[]> {
     try {
-      const response = await evolutionClient.get(`/chat/findChats/${instanceName}`);
+      const response = await evolutionClient.post(`/chat/findChats/${instanceName}`, {});
       return Array.isArray(response.data) ? response.data : [];
     } catch (error: any) {
       console.error(`Erro ao buscar conversas para ${instanceName}:`, error?.response?.data || error.message);
@@ -523,7 +523,7 @@ export const evolutionApi = {
         },
         limit
       });
-      return Array.isArray(response.data) ? response.data : (response.data?.records || []);
+      return Array.isArray(response.data) ? response.data : (response.data?.messages?.records || response.data?.records || []);
     } catch (error: any) {
       console.error(`Erro ao buscar mensagens do chat ${remoteJid} na instância ${instanceName}:`, error?.response?.data || error.message);
       return [];

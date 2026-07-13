@@ -11,7 +11,34 @@ export async function GET(req: Request) {
     }
 
     const chats = await evolutionApi.findChats(instanceName);
-    return NextResponse.json(chats);
+    
+    const mappedChats = chats.map((chat: any) => {
+      let lastMessageText = '';
+      if (chat.lastMessage) {
+        lastMessageText = 
+          chat.lastMessage.message?.conversation ||
+          chat.lastMessage.message?.extendedTextMessage?.text ||
+          chat.lastMessage.message?.imageMessage?.caption ||
+          chat.lastMessage.text || '';
+      }
+
+      let timestamp = undefined;
+      if (chat.lastMessage?.messageTimestamp) {
+        timestamp = Number(chat.lastMessage.messageTimestamp);
+      } else if (chat.updatedAt) {
+        timestamp = Math.floor(new Date(chat.updatedAt).getTime() / 1000);
+      }
+
+      return {
+        id: chat.remoteJid || chat.id,
+        name: chat.pushName || chat.remoteJid?.split('@')[0] || 'Desconhecido',
+        unreadCount: chat.unreadCount || 0,
+        conversationTimestamp: timestamp,
+        lastMessage: lastMessageText,
+      };
+    });
+
+    return NextResponse.json(mappedChats);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
