@@ -531,6 +531,27 @@ export const evolutionApi = {
   },
 
   /**
+   * Busca a representação em base64 de um anexo de mídia de uma mensagem recebida.
+   */
+  async getBase64Media(
+    instanceName: string,
+    key: { id: string; fromMe: boolean; remoteJid: string }
+  ): Promise<any> {
+    try {
+      const response = await evolutionClient.post(`/chat/getBase64FromMediaMessage/${instanceName}`, {
+        message: {
+          key
+        },
+        convertToMp4: false
+      });
+      return response.data;
+    } catch (error: any) {
+      console.error(`Erro ao obter base64 de mídia na instância ${instanceName}:`, error?.response?.data || error.message);
+      return null;
+    }
+  },
+
+  /**
    * Formata o número do telefone para o padrão do WhatsApp (sem caracteres especiais)
    * Garante o DDI (55 para Brasil). Retorna intacto se contiver '@'.
    */
