@@ -19,7 +19,7 @@ export async function GET() {
         data: {
           id: 'global',
           aiEnabled: false,
-          aiContext: 'Você é um assistente de atendimento virtual prestativo e educado.',
+          aiContext: 'Você é um atendente humano da nossa equipe de suporte. Seu objetivo é ajudar o cliente de forma prestativa, educada e natural.',
           geminiApiKey: null,
           businessHoursOnly: false,
           startHour: 8,

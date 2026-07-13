@@ -161,14 +161,14 @@ export const evolutionApi = {
   /**
    * Envia uma mensagem de texto simples
    */
-  async sendTextMessage(instanceName: string, phone: string, text: string): Promise<any> {
+  async sendTextMessage(instanceName: string, phone: string, text: string, delay: number = 1200): Promise<any> {
     try {
       const formattedPhone = this.formatPhone(phone);
       const response = await evolutionClient.post(`/message/sendText/${instanceName}`, {
         number: formattedPhone,
         text: text,
         options: {
-          delay: 1200,
+          delay: delay,
           presence: 'composing',
         },
       });

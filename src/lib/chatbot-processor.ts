@@ -22,7 +22,7 @@ export async function handleChatbotIncoming(phone: string, text: string, instanc
         data: {
           id: 'global',
           aiEnabled: false,
-          aiContext: 'Você é um assistente de atendimento virtual prestativo e educado.',
+          aiContext: 'Você é um atendente humano da nossa equipe de suporte. Seu objetivo é ajudar o cliente de forma prestativa, educada e natural.',
           businessHoursOnly: false,
           startHour: 8,
           endHour: 18,
@@ -112,7 +112,21 @@ export async function handleChatbotIncoming(phone: string, text: string, instanc
         .join('\n');
 
       const systemContext = config.aiContext;
+      
+      const humanEmulationRules = `
+[REGRAS CRÍTICAS DE COMPORTAMENTO - SIGA RIGOROSAMENTE]:
+1. Você DEVE se comportar como uma pessoa real (atendente humano da nossa equipe).
+2. NUNCA diga ou dê a entender que você é um robô, inteligência artificial, assistente virtual, chatbot, assistente automático, LLM ou algoritmo.
+3. Se o cliente perguntar se você é um robô ou chatbot, negue de forma descontraída e natural: diga que é humano e faz parte da equipe de atendimento (Ex: "Não, sou de carne e osso mesmo haha! Como posso te ajudar?", ou "Não, sou um atendente aqui da loja! Pode falar, no que posso ajudar?").
+4. Escreva de forma natural, curta, direta e amigável:
+   - Use parágrafos pequenos.
+   - Use emojis de forma moderada e natural (ex: 👍, 😊, 😉).
+   - Não use listas numeradas formais ou bullet points, a menos que o cliente peça uma lista. Fale como uma pessoa conversando no WhatsApp.
+   - Evite respostas longas ou formais demais. Seja objetivo e prestativo.
+`;
+
       const prompt = `${systemContext}
+${humanEmulationRules}
 
 Histórico da conversa recente com o cliente:
 ${historyPrompt}
@@ -171,14 +185,22 @@ Gere uma resposta curta, educada, prestativa e muito natural para o WhatsApp do 
       }
 
       if (aiResponse) {
-        await evolutionApi.sendTextMessage(instanceName, phone, aiResponse);
+        // Limpar qualquer prefixo indesejado gerado pela IA
+        const cleanResponse = aiResponse
+          .replace(/^(Você|Atendente|Suporte|Equipe|AI|IA|Bot):\s*/i, '')
+          .trim();
+
+        // Calcular tempo de digitação (ex: 35ms por caractere, mínimo 1.5s, máximo 5s)
+        const typingDelay = Math.min(Math.max(cleanResponse.length * 35, 1500), 5000);
+
+        await evolutionApi.sendTextMessage(instanceName, phone, cleanResponse, typingDelay);
 
         // Logar interação
         await prisma.chatbotLog.create({
           data: {
             phone,
             messageIn: text,
-            messageOut: aiResponse,
+            messageOut: cleanResponse,
             source: 'AI',
           },
         });
