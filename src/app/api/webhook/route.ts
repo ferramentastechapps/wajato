@@ -52,6 +52,7 @@ export async function POST(request: Request) {
 
     // ── MESSAGES_UPSERT: novas mensagens recebidas ────────────────────────────
     if (eventUpper === 'MESSAGES_UPSERT') {
+      console.log(`[Webhook Debug] MESSAGES_UPSERT payload:`, JSON.stringify(payload, null, 2));
       const messageData = data?.message || data;
 
       const fromMe = messageData?.key?.fromMe;
