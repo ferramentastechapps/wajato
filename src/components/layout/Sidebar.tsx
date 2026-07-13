@@ -44,6 +44,7 @@ export default function Sidebar({ username = 'Admin', isOpen = false, onClose }:
   const navItems = [
     { label: 'Dashboard', href: '/', icon: LayoutDashboard },
     { label: 'Conexões', href: '/connections', icon: Smartphone },
+    { label: 'Conversas', href: '/chat', icon: MessageSquare },
     { label: 'Contatos', href: '/contacts', icon: Users },
     { label: 'Segmentações', href: '/contacts/segments', icon: ListFilter },
     { label: 'CRM Kanban', href: '/crm', icon: Columns },

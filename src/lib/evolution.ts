@@ -498,6 +498,39 @@ export const evolutionApi = {
   },
 
   /**
+   * Busca todos os chats/conversas ativos de uma instância
+   */
+  async findChats(instanceName: string): Promise<any[]> {
+    try {
+      const response = await evolutionClient.get(`/chat/findChats/${instanceName}`);
+      return Array.isArray(response.data) ? response.data : [];
+    } catch (error: any) {
+      console.error(`Erro ao buscar conversas para ${instanceName}:`, error?.response?.data || error.message);
+      return [];
+    }
+  },
+
+  /**
+   * Busca as mensagens de uma conversa específica pelo remoteJid
+   */
+  async findMessages(instanceName: string, remoteJid: string, limit: number = 50): Promise<any[]> {
+    try {
+      const response = await evolutionClient.post(`/chat/findMessages/${instanceName}`, {
+        where: {
+          key: {
+            remoteJid
+          }
+        },
+        limit
+      });
+      return Array.isArray(response.data) ? response.data : (response.data?.records || []);
+    } catch (error: any) {
+      console.error(`Erro ao buscar mensagens do chat ${remoteJid} na instância ${instanceName}:`, error?.response?.data || error.message);
+      return [];
+    }
+  },
+
+  /**
    * Formata o número do telefone para o padrão do WhatsApp (sem caracteres especiais)
    * Garante o DDI (55 para Brasil). Retorna intacto se contiver '@'.
    */
