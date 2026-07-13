@@ -588,11 +588,11 @@ export default function ChatPage() {
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: '1rem', color: 'rgba(255,255,255,0.48)', flexShrink: 0 }}>
-                    <VideoIcon size={18} style={{ cursor: 'pointer' }} title="Videochamada" />
-                    <Phone size={17} style={{ cursor: 'pointer' }} title="Ligar" />
-                    <Search size={17} style={{ cursor: 'pointer' }} title="Buscar mensagem" />
-                    <Info size={17} style={{ cursor: 'pointer' }} title="Informações" onClick={e => { e.stopPropagation(); setShowInfo(v => !v); }} />
-                    <MoreVertical size={17} style={{ cursor: 'pointer' }} />
+                    <button type="button" aria-label="Videochamada" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.48)', display: 'flex', alignItems: 'center', padding: 0 }}><VideoIcon size={18} /></button>
+                    <button type="button" aria-label="Ligar" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.48)', display: 'flex', alignItems: 'center', padding: 0 }}><Phone size={17} /></button>
+                    <button type="button" aria-label="Buscar mensagem" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.48)', display: 'flex', alignItems: 'center', padding: 0 }}><Search size={17} /></button>
+                    <button type="button" aria-label="Informações" onClick={e => { e.stopPropagation(); setShowInfo(v => !v); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: showInfo ? C.green : 'rgba(255,255,255,0.48)', display: 'flex', alignItems: 'center', padding: 0 }}><Info size={17} /></button>
+                    <button type="button" aria-label="Mais opções" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.48)', display: 'flex', alignItems: 'center', padding: 0 }}><MoreVertical size={17} /></button>
                   </div>
                 </div>
 
