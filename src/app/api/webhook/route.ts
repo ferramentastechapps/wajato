@@ -52,12 +52,14 @@ export async function POST(request: Request) {
 
     // ── MESSAGES_UPSERT: novas mensagens recebidas ────────────────────────────
     if (eventUpper === 'MESSAGES_UPSERT') {
-      // Evolution API v2 envia um array em data.messages[]
-      // Evolution API v1 envia um único objeto em data.message ou data
+      // Evolution API pode enviar de 3 formas:
+      // 1. data.messages[] → array de mensagens (alguns endpoints v2)
+      // 2. data diretamente com data.key → objeto mensagem único
+      // 3. data como array → array direto
       const messagesArray: any[] = Array.isArray(data?.messages)
         ? data.messages
-        : data?.message
-          ? [data.message]
+        : data?.key  // objeto mensagem direto (tem key, message, pushName no mesmo nível)
+          ? [data]
           : Array.isArray(data)
             ? data
             : [data];
