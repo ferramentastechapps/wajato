@@ -52,112 +52,126 @@ export async function POST(request: Request) {
 
     // ── MESSAGES_UPSERT: novas mensagens recebidas ────────────────────────────
     if (eventUpper === 'MESSAGES_UPSERT') {
-      console.log(`[Webhook Debug] MESSAGES_UPSERT payload:`, JSON.stringify(payload, null, 2));
-      const messageData = data?.message || data;
+      // Evolution API v2 envia um array em data.messages[]
+      // Evolution API v1 envia um único objeto em data.message ou data
+      const messagesArray: any[] = Array.isArray(data?.messages)
+        ? data.messages
+        : data?.message
+          ? [data.message]
+          : Array.isArray(data)
+            ? data
+            : [data];
 
-      const fromMe = messageData?.key?.fromMe;
-      const remoteJid = messageData?.key?.remoteJid || '';
       const instanceName = payload.instance || data?.instance;
-      const incomingMessageId = messageData?.key?.id;
 
-      const isGroupMessage = remoteJid.endsWith('@g.us');
-      const isDirectMessage = remoteJid.endsWith('@s.whatsapp.net');
+      console.log(`[Webhook Debug] MESSAGES_UPSERT - instance: ${instanceName}, mensagens: ${messagesArray.length}, payload:`, JSON.stringify(payload, null, 2));
 
-      if (!fromMe && remoteJid && (isDirectMessage || isGroupMessage) && instanceName) {
-        // Para grupo, o JID do grupo identifica o chat. Mas o remetente real é o participant.
-        const senderJid = isGroupMessage ? (messageData?.key?.participant || remoteJid) : remoteJid;
-        const phone = normalizePhone(senderJid.split('@')[0]);
+      for (const messageData of messagesArray) {
+        const fromMe = messageData?.key?.fromMe;
+        const remoteJid = messageData?.key?.remoteJid || '';
+        const incomingMessageId = messageData?.key?.id;
 
-        // Zera o contador de mensagens consecutivas sem resposta da instância
-        try {
-          await prisma.whatsAppInstance.updateMany({
-            where: { name: instanceName },
-            data: { unrepliedMsgCount: 0 },
-          });
-        } catch (err: any) {
-          console.error(`[Webhook] Erro ao resetar unrepliedMsgCount para ${instanceName}:`, err.message);
-        }
+        const isGroupMessage = remoteJid.endsWith('@g.us');
+        const isDirectMessage = remoteJid.endsWith('@s.whatsapp.net');
 
-        const messageText =
-          messageData?.message?.conversation ||
-          messageData?.message?.extendedTextMessage?.text ||
-          messageData?.message?.imageMessage?.caption ||
-          messageData?.text || '';
+        if (!fromMe && remoteJid && (isDirectMessage || isGroupMessage) && instanceName) {
+          // Para grupo, o JID do grupo identifica o chat. Mas o remetente real é o participant.
+          const senderJid = isGroupMessage ? (messageData?.key?.participant || remoteJid) : remoteJid;
+          const phone = normalizePhone(senderJid.split('@')[0]);
 
-        // Nome do contato/grupo recebido pelo webhook
-        const pushName =
-          messageData?.pushName ||
-          messageData?.notifyName ||
-          data?.pushName ||
-          payload?.pushName ||
-          null;
+          // Zera o contador de mensagens consecutivas sem resposta da instância
+          try {
+            await prisma.whatsAppInstance.updateMany({
+              where: { name: instanceName },
+              data: { unrepliedMsgCount: 0 },
+            });
+          } catch (err: any) {
+            console.error(`[Webhook] Erro ao resetar unrepliedMsgCount para ${instanceName}:`, err.message);
+          }
 
-        if (messageText || isGroupMessage) {
-          // Verifica se o remetente é uma de nossas instâncias locais (para evitar loop biirecional)
-          const isLocalInstance = await prisma.whatsAppInstance.findFirst({
-            where: {
-              OR: [
-                { phone: phone },
-                { phone: phone.replace(/^55/, '') }, // sem DDI
-              ],
-            },
-          });
+          const messageText =
+            messageData?.message?.conversation ||
+            messageData?.message?.extendedTextMessage?.text ||
+            messageData?.message?.imageMessage?.caption ||
+            messageData?.text || '';
 
-          // Busca todas as campanhas ativas para esta instância no banco
-          const runningCampaigns = !isLocalInstance
-            ? await prisma.warmupCampaign.findMany({
-                where: {
-                  sourceInstance: instanceName,
-                  status: 'RUNNING'
-                }
-              })
-            : [];
+          // Nome do contato/grupo recebido pelo webhook
+          const pushName =
+            messageData?.pushName ||
+            messageData?.notifyName ||
+            data?.pushName ||
+            payload?.pushName ||
+            null;
 
-          // Encontra a campanha correspondente usando comparação flexível
-          const warmupCampaign = runningCampaigns.find(camp => {
-            const target = camp.targetPhone;
-            const targetPhones = camp.targetPhones || '';
-            if (isGroupMessage) {
-              return target === remoteJid || targetPhones.includes(remoteJid);
+          console.log(`[Webhook Debug] Mensagem de ${phone} (fromMe:${fromMe}, grupo:${isGroupMessage}): "${messageText}" pushName:"${pushName}"`);
+
+          if (messageText || isGroupMessage) {
+            // Verifica se o remetente é uma de nossas instâncias locais (para evitar loop bidirecional)
+            const isLocalInstance = await prisma.whatsAppInstance.findFirst({
+              where: {
+                OR: [
+                  { phone: phone },
+                  { phone: phone.replace(/^55/, '') }, // sem DDI
+                ],
+              },
+            });
+
+            // Busca todas as campanhas ativas para esta instância no banco
+            const runningCampaigns = !isLocalInstance
+              ? await prisma.warmupCampaign.findMany({
+                  where: {
+                    sourceInstance: instanceName,
+                    status: 'RUNNING'
+                  }
+                })
+              : [];
+
+            // Encontra a campanha correspondente usando comparação flexível
+            const warmupCampaign = runningCampaigns.find(camp => {
+              const target = camp.targetPhone;
+              const targetPhones = camp.targetPhones || '';
+              if (isGroupMessage) {
+                return target === remoteJid || targetPhones.includes(remoteJid);
+              }
+              return matchBrazilianPhone(phone, target) || targetPhones.split(',').some(p => matchBrazilianPhone(phone, p));
+            }) || null;
+
+            if (warmupCampaign && messageText) {
+              console.log(`[Webhook] ✅ Resposta de aquecimento de ${phone} (grupo: ${isGroupMessage}) mapeada para campanha ${warmupCampaign.id} (${warmupCampaign.targetPhone})`);
+
+              // Salva no WarmupLog como mensagem recebida
+              await prisma.warmupLog.create({
+                data: {
+                  campaignId: warmupCampaign.id,
+                  fromInstance: isGroupMessage ? phone : warmupCampaign.targetPhone,
+                  toPhone: instanceName,
+                  message: messageText,
+                  messageType: 'TEXT',
+                  status: 'READ',
+                  delayUsed: 0,
+                  messageId: incomingMessageId || null,
+                  senderName: pushName,
+                },
+              });
+
+              // Cancela jobs agendados para esta campanha e agenda resposta rápida
+              await cancelCampaignWarmupJobs(warmupCampaign.id);
+              await queueWarmupMessage(
+                {
+                  campaignId: warmupCampaign.id,
+                  sourceInstance: warmupCampaign.sourceInstance,
+                  targetPhone: isGroupMessage ? remoteJid : phone,
+                  isFirstMessageOfDay: false,
+                },
+                60000, // média 60s
+                20000  // desvio 20s
+              );
+            } else if (!warmupCampaign && messageText && isDirectMessage) {
+              // Chatbot normal apenas para mensagens diretas fora de campanhas
+              handleChatbotIncoming(phone, messageText, instanceName).catch((err) => {
+                console.error('[Webhook] Erro no processamento do chatbot:', err);
+              });
             }
-            return matchBrazilianPhone(phone, target) || targetPhones.split(',').some(p => matchBrazilianPhone(phone, p));
-          }) || null;
-
-          if (warmupCampaign && messageText) {
-            console.log(`[Webhook] ✅ Resposta de aquecimento de ${phone} (grupo: ${isGroupMessage}) mapeada para campanha ${warmupCampaign.id} (${warmupCampaign.targetPhone})`);
-
-            // Salva no WarmupLog como mensagem recebida usando o targetPhone cadastrado na campanha ou o telefone de quem enviou (grupo)
-            await prisma.warmupLog.create({
-              data: {
-                campaignId: warmupCampaign.id,
-                fromInstance: isGroupMessage ? phone : warmupCampaign.targetPhone,
-                toPhone: instanceName,
-                message: messageText,
-                messageType: 'TEXT',
-                status: 'READ',
-                delayUsed: 0,
-                messageId: incomingMessageId || null,
-                senderName: pushName,
-              },
-            });
-
-            // Cancela jobs agendados para esta campanha e agenda resposta rápida
-            await cancelCampaignWarmupJobs(warmupCampaign.id);
-            await queueWarmupMessage(
-              {
-                campaignId: warmupCampaign.id,
-                sourceInstance: warmupCampaign.sourceInstance,
-                targetPhone: isGroupMessage ? remoteJid : phone,
-                isFirstMessageOfDay: false,
-              },
-              60000, // média 60s
-              20000  // desvio 20s
-            );
-          } else if (!warmupCampaign && messageText && isDirectMessage) {
-            // Chatbot normal apenas para mensagens diretas fora de campanhas
-            handleChatbotIncoming(phone, messageText, instanceName).catch((err) => {
-              console.error('[Webhook] Erro no processamento do chatbot:', err);
-            });
           }
         }
       }
