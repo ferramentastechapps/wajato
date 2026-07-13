@@ -22,10 +22,17 @@ export async function GET(request: Request) {
       return NextResponse.redirect(new URL('/login?error=google_not_configured', request.url));
     }
 
-    // Obter o origin dinamicamente com base nas informações do host do cabeçalho da requisição
-    const host = request.headers.get('host') || '';
-    const protocol = request.headers.get('x-forwarded-proto') || (host.includes('localhost') ? 'http' : 'https');
-    const redirectUri = `${protocol}://${host}/api/auth/google/callback`;
+    // Usar NEXT_PUBLIC_APP_URL se definido para evitar problemas com reverse proxy host header
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+    let redirectUri = '';
+    
+    if (appUrl) {
+      redirectUri = `${appUrl.replace(/\/$/, '')}/api/auth/google/callback`;
+    } else {
+      const host = request.headers.get('host') || '';
+      const protocol = request.headers.get('x-forwarded-proto') || (host.includes('localhost') ? 'http' : 'https');
+      redirectUri = `${protocol}://${host}/api/auth/google/callback`;
+    }
 
     // 1. Trocar o código de autorização pelo Access Token
     const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
