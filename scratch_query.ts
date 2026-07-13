@@ -5,19 +5,37 @@ import { redisConnection } from './src/lib/redis';
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('1. Atualizando endHour das campanhas para 23...');
-  await prisma.warmupCampaign.updateMany({
-    data: { endHour: 23 }
+  const campaigns = await prisma.warmupCampaign.findMany({
+    select: {
+      id: true,
+      name: true,
+      status: true,
+      sourceInstance: true,
+      targetPhone: true,
+      endHour: true,
+    }
   });
-  console.log('   ✅ endHour atualizado.');
+  console.log('--- WARMUP CAMPAIGNS ---');
+  console.log(JSON.stringify(campaigns, null, 2));
 
-  console.log('2. Esvaziando a fila warmup-queue...');
   const queue = new Queue('warmup-queue', { connection: redisConnection as any });
   try {
-    await queue.drain();
-    console.log('   ✅ Fila esvaziada com sucesso.');
+    const jobs = await queue.getJobs(['waiting', 'delayed', 'active', 'failed', 'completed']);
+    console.log('--- WARMUP QUEUE JOBS ---');
+    console.log(JSON.stringify(
+      jobs.map(j => ({
+        id: j.id,
+        name: j.name,
+        data: j.data,
+        delay: j.opts.delay,
+        timestamp: new Date(j.timestamp),
+        nextRun: new Date(j.timestamp + (j.opts.delay || 0))
+      })),
+      null,
+      2
+    ));
   } catch (err: any) {
-    console.error('Erro ao limpar a fila:', err.message);
+    console.error('Error querying BullMQ:', err.message);
   } finally {
     await queue.close();
   }
