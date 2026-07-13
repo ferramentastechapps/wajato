@@ -113,10 +113,11 @@ export async function POST(request: Request) {
           // Encontra a campanha correspondente usando comparação flexível
           const warmupCampaign = runningCampaigns.find(camp => {
             const target = camp.targetPhone;
+            const targetPhones = camp.targetPhones || '';
             if (isGroupMessage) {
-              return target === remoteJid || camp.targetPhones.includes(remoteJid);
+              return target === remoteJid || targetPhones.includes(remoteJid);
             }
-            return matchBrazilianPhone(phone, target) || camp.targetPhones.split(',').some(p => matchBrazilianPhone(phone, p));
+            return matchBrazilianPhone(phone, target) || targetPhones.split(',').some(p => matchBrazilianPhone(phone, p));
           }) || null;
 
           if (warmupCampaign && messageText) {
