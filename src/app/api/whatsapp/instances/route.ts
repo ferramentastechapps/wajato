@@ -33,8 +33,15 @@ export async function GET() {
         let qrCode = dbInst.qrCode;
 
         if (apiInst) {
+          const isUnauthorized = apiInst.disconnectionReasonCode === 401 || 
+                                 (apiInst.disconnectionObject && 
+                                  typeof apiInst.disconnectionObject === 'string' && 
+                                  apiInst.disconnectionObject.includes('401'));
+
           // Se encontrou no gateway, atualiza os dados
-          status = apiInst.connectionStatus === 'open' ? 'CONNECTED' : (qrCode ? 'DISCONNECTED' : 'INITIALIZING');
+          status = (apiInst.connectionStatus === 'open' && !isUnauthorized)
+            ? 'CONNECTED'
+            : (qrCode ? 'DISCONNECTED' : 'INITIALIZING');
           
           if (apiInst.ownerJid) {
             phone = apiInst.ownerJid.split(':')[0].split('@')[0];
