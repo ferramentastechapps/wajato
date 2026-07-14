@@ -275,3 +275,14 @@ model ChatbotLog {
   createdAt  DateTime @default(now())
 }
 
+model WhatsAppStatus {
+  id           String   @id @default(uuid())
+  instanceName String
+  senderJid    String
+  senderName   String?
+  mediaType    String   @default("text") // text, image, video, audio
+  content      String?
+  mediaUrl     String?
+  createdAt    DateTime @default(now())
+}
+

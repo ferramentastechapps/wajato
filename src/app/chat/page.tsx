@@ -6,7 +6,7 @@ import {
   MessageSquare, Send, User, Users, Loader2, AlertCircle, Search,
   Paperclip, Smile, MoreVertical, Phone, Video as VideoIcon,
   CheckCheck, FileText, Play, Pause, Download, Volume2, X,
-  ChevronDown, Reply, Copy, Star, Forward, Info,
+  ChevronDown, Reply, Copy, Star, Forward, Info, CircleDot, Plus,
 } from 'lucide-react';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -247,6 +247,42 @@ export default function ChatPage() {
   const [loadingChats, setLoadingChats] = useState(false);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
   const [sending, setSending] = useState(false);
+
+  // ── Status updates states ──
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [statusesList, setStatusesList] = useState<any[]>([]);
+  const [loadingStatuses, setLoadingStatuses] = useState(false);
+  const [selectedContactJid, setSelectedContactJid] = useState<string | null>(null);
+  const [currentStoryIndex, setCurrentStoryIndex] = useState(0);
+  const [postType, setPostType] = useState<'text' | 'image'>('text');
+  const [postContent, setPostContent] = useState('');
+  const [postMediaUrl, setPostMediaUrl] = useState('');
+  const [postingStatus, setPostingStatus] = useState(false);
+
+  // ── Fetch statuses list ──
+  const fetchStatuses = async () => {
+    if (!selInstance) return;
+    try {
+      setLoadingStatuses(true);
+      const res = await fetch(`/api/chat/status?instanceName=${selInstance}`);
+      if (res.ok) {
+        const data = await res.json();
+        setStatusesList(data);
+      }
+    } catch (err) {
+      console.error('Erro ao buscar statuses:', err);
+    } finally {
+      setLoadingStatuses(false);
+    }
+  };
+
+  useEffect(() => {
+    if (showStatusModal) {
+      fetchStatuses();
+      setSelectedContactJid(null);
+      setCurrentStoryIndex(0);
+    }
+  }, [showStatusModal, selInstance]);
 
   const msgEndRef = useRef<HTMLDivElement>(null);
   const msgAreaRef = useRef<HTMLDivElement>(null);
@@ -583,7 +619,18 @@ export default function ChatPage() {
 
           {/* Instance selector */}
           <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid rgba(255,255,255,0.04)', flexShrink: 0 }}>
-            <div style={{ fontSize: '0.59rem', color: 'rgba(255,255,255,0.28)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: '0.4rem' }}>Instância Ativa</div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
+              <div style={{ fontSize: '0.59rem', color: 'rgba(255,255,255,0.28)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1.2 }}>Instância Ativa</div>
+              <button 
+                type="button"
+                onClick={() => setShowStatusModal(true)}
+                title="Status / Stories"
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.45)', display: 'flex', alignItems: 'center', gap: 4 }}
+              >
+                <CircleDot size={14} style={{ color: C.green }} />
+                <span style={{ fontSize: '0.68rem', fontWeight: 700, color: C.green }}>Status</span>
+              </button>
+            </div>
             {loadingInstances ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, color: 'rgba(255,255,255,0.35)', fontSize: '0.78rem' }}>
                 <Loader2 size={13} className="animate-spin" /> Carregando...
@@ -954,6 +1001,307 @@ export default function ChatPage() {
                 {item.icon}{item.label}
               </div>
             ))}
+          </div>
+        )}
+        {/* ════ STATUSES MODAL ════ */}
+        {showStatusModal && (
+          <div style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(11, 20, 26, 0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 1000, backdropFilter: 'blur(8px)'
+          }} onClick={() => setShowStatusModal(false)}>
+            <div style={{
+              width: '820px', height: '560px', background: '#222e35',
+              borderRadius: 16, border: '1px solid rgba(255,255,255,0.08)',
+              display: 'grid', gridTemplateColumns: '320px 1fr', overflow: 'hidden',
+              boxShadow: '0 24px 48px rgba(0,0,0,0.5)'
+            }} onClick={e => e.stopPropagation()}>
+              
+              {/* Left Side: status updates feed and post status trigger */}
+              <div style={{
+                background: '#111b21', borderRight: '1px solid rgba(255,255,255,0.06)',
+                display: 'flex', flexDirection: 'column', height: '100%'
+              }}>
+                {/* Header */}
+                <div style={{ padding: '1rem', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: '0.98rem', fontWeight: 700, color: 'white' }}>Status</span>
+                  <button type="button" onClick={() => setShowStatusModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.45)' }}><X size={17} /></button>
+                </div>
+
+                {/* Meu Status item */}
+                <div style={{ padding: '0.85rem 1rem', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer', background: selectedContactJid === 'me' ? 'rgba(255,255,255,0.04)' : 'transparent' }}
+                  onClick={() => setSelectedContactJid('me')}>
+                  <div style={{ width: 44, height: 44, borderRadius: '50%', background: C.green, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#111b21' }}>
+                    <Plus size={20} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600, fontSize: '0.84rem', color: 'white' }}>Meu Status</div>
+                    <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.38)' }}>Enviar nova atualização</div>
+                  </div>
+                </div>
+
+                {/* Recent updates feed */}
+                <div style={{ flex: 1, overflowY: 'auto', padding: '0.5rem 0' }}>
+                  <div style={{ fontSize: '0.65rem', color: C.green, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', padding: '0.5rem 1rem 0.25rem' }}>
+                    Atualizações Recentes
+                  </div>
+                  
+                  {loadingStatuses ? (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem', gap: 7, color: 'rgba(255,255,255,0.35)', fontSize: '0.78rem' }}>
+                      <Loader2 size={13} className="animate-spin" /> Carregando...
+                    </div>
+                  ) : statusesList.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '2rem 1rem', color: 'rgba(255,255,255,0.22)', fontSize: '0.78rem' }}>Nenhum status recente.</div>
+                  ) : (
+                    statusesList.map(contact => {
+                      const isActive = selectedContactJid === contact.senderJid;
+                      const hasUnread = true; 
+                      return (
+                        <div key={contact.senderJid}
+                          onClick={() => { setSelectedContactJid(contact.senderJid); setCurrentStoryIndex(0); }}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.65rem 1rem', cursor: 'pointer',
+                            background: isActive ? 'rgba(255,255,255,0.04)' : 'transparent',
+                            transition: 'background 0.1s'
+                          }}
+                          className="wa-ctx-item">
+                          
+                          {/* Avatar with Status indicator ring */}
+                          <div style={{
+                            position: 'relative', width: 44, height: 44, borderRadius: '50%',
+                            padding: 2, border: hasUnread ? `2px solid ${C.green}` : '2px solid transparent',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center'
+                          }}>
+                            <Avatar name={contact.senderName} src={contact.profilePicUrl} size={36} />
+                          </div>
+
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: 600, fontSize: '0.84rem', color: 'white', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {contact.senderName}
+                            </div>
+                            <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.35)' }}>
+                              {fmtDate(new Date(contact.statuses[contact.statuses.length - 1].createdAt).getTime() / 1000)}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              {/* Right Side: viewer or publisher form */}
+              <div style={{ background: '#0b141a', display: 'flex', flexDirection: 'column', height: '100%', position: 'relative' }}>
+                
+                {/* 1. MEU STATUS PUBLISHER FORM */}
+                {selectedContactJid === 'me' && (
+                  <div style={{ padding: '2rem 1.5rem', display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'space-between' }}>
+                    <div>
+                      <h3 style={{ margin: '0 0 1.5rem 0', fontSize: '1.05rem', color: 'white', fontWeight: 700 }}>Enviar Atualização de Status</h3>
+                      
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                        <div>
+                          <label style={{ fontSize: '0.68rem', color: C.green, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 6 }}>
+                            Tipo de Status
+                          </label>
+                          <div style={{ display: 'flex', gap: 10 }}>
+                            <button type="button" onClick={() => setPostType('text')}
+                              style={{ flex: 1, padding: '0.45rem', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', background: postType === 'text' ? C.green : '#222e35', color: postType === 'text' ? '#111b21' : 'white', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}>
+                              Apenas Texto
+                            </button>
+                            <button type="button" onClick={() => setPostType('image')}
+                              style={{ flex: 1, padding: '0.45rem', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', background: postType === 'image' ? C.green : '#222e35', color: postType === 'image' ? '#111b21' : 'white', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}>
+                              Imagem com Legenda
+                            </button>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label style={{ fontSize: '0.68rem', color: C.green, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 6 }}>
+                            {postType === 'text' ? 'Texto do Status' : 'Legenda da Imagem'}
+                          </label>
+                          <textarea
+                            value={postContent}
+                            onChange={e => setPostContent(e.target.value)}
+                            placeholder={postType === 'text' ? 'O que você está pensando hoje?' : 'Insira a legenda que acompanhará a foto...'}
+                            maxLength={postType === 'text' ? 240 : 1000}
+                            style={{
+                              width: '100%', height: '100px', padding: '0.65rem 0.8rem', background: '#222e35',
+                              border: '1px solid rgba(255,255,255,0.06)', borderRadius: 8, color: 'white',
+                              fontSize: '0.82rem', outline: 'none'
+                            }}
+                          />
+                        </div>
+
+                        {postType === 'image' && (
+                          <div>
+                            <label style={{ fontSize: '0.68rem', color: C.green, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 6 }}>
+                              URL da Imagem
+                            </label>
+                            <input
+                              type="text"
+                              value={postMediaUrl}
+                              onChange={e => setPostMediaUrl(e.target.value)}
+                              placeholder="https://exemplo.com/foto.jpg"
+                              style={{
+                                width: '100%', padding: '0.55rem 0.8rem', background: '#222e35',
+                                border: '1px solid rgba(255,255,255,0.06)', borderRadius: 8, color: 'white',
+                                fontSize: '0.82rem', outline: 'none'
+                              }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 10 }}>
+                      <button type="button" onClick={() => setSelectedContactJid(null)}
+                        style={{ flex: 1, padding: '0.55rem', borderRadius: 8, background: 'rgba(255,255,255,0.05)', border: 'none', color: 'white', fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer' }}>
+                        Cancelar
+                      </button>
+                      <button type="button"
+                        disabled={postingStatus || !postContent.trim() || (postType === 'image' && !postMediaUrl.trim())}
+                        onClick={async () => {
+                          try {
+                            setPostingStatus(true);
+                            const res = await fetch('/api/chat/status', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                instanceName: selInstance,
+                                type: postType,
+                                content: postContent,
+                                mediaUrl: postType === 'image' ? postMediaUrl : undefined,
+                              }),
+                            });
+                            if (res.ok) {
+                              setPostContent('');
+                              setPostMediaUrl('');
+                              fetchStatuses();
+                              setSelectedContactJid(null);
+                            }
+                          } catch (err) {
+                            console.error('Erro ao postar status:', err);
+                          } finally {
+                            setPostingStatus(false);
+                          }
+                        }}
+                        style={{ flex: 1, padding: '0.55rem', borderRadius: 8, background: C.green, border: 'none', color: '#111b21', fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                        {postingStatus ? <Loader2 size={14} className="animate-spin" /> : null}
+                        {postingStatus ? 'Publicando...' : 'Publicar Status'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* 2. CONTACT STATUS STORY VIEWER */}
+                {selectedContactJid && selectedContactJid !== 'me' && (() => {
+                  const contact = statusesList.find(c => c.senderJid === selectedContactJid);
+                  if (!contact) return null;
+                  const activeStory = contact.statuses[currentStoryIndex];
+                  if (!activeStory) return null;
+
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'space-between', padding: '1.25rem' }}>
+                      
+                      {/* Story Progress Indicator */}
+                      <div style={{ display: 'flex', gap: 4, width: '100%', marginBottom: 12 }}>
+                        {contact.statuses.map((s: any, idx: number) => (
+                          <div key={s.id} style={{
+                            flex: 1, height: 3, borderRadius: 1.5,
+                            background: idx <= currentStoryIndex ? C.green : 'rgba(255,255,255,0.2)'
+                          }} />
+                        ))}
+                      </div>
+
+                      {/* Header info */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: 'white', marginBottom: '1.5rem', flexShrink: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <Avatar name={contact.senderName} src={contact.profilePicUrl} size={34} />
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>{contact.senderName}</div>
+                            <div style={{ fontSize: '0.66rem', color: 'rgba(255,255,255,0.45)' }}>
+                              {fmtTime(new Date(activeStory.createdAt).getTime() / 1000)}
+                            </div>
+                          </div>
+                        </div>
+                        <button type="button" onClick={() => setSelectedContactJid(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.4)' }}><X size={18} /></button>
+                      </div>
+
+                      {/* Core Content Viewer (centered) */}
+                      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 0, position: 'relative' }}>
+                        
+                        {/* Text Status */}
+                        {activeStory.mediaType === 'text' && (
+                          <div style={{
+                            width: '100%', height: '100%', maxHeight: '340px', borderRadius: 12,
+                            background: 'linear-gradient(135deg, #009688, #00796b)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            padding: '2rem', textAlign: 'center', color: 'white',
+                            fontSize: '1.25rem', fontWeight: 600, overflowY: 'auto'
+                          }}>
+                            {activeStory.content}
+                          </div>
+                        )}
+
+                        {/* Image Status */}
+                        {activeStory.mediaType === 'image' && (
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', width: '100%', position: 'relative' }}>
+                            <img src={activeStory.mediaUrl} alt="Status"
+                              style={{ maxWidth: '100%', maxHeight: '310px', objectFit: 'contain', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)' }} />
+                            {activeStory.content && (
+                              <div style={{
+                                position: 'absolute', bottom: 10, left: 10, right: 10,
+                                background: 'rgba(0,0,0,0.6)', padding: '6px 12px', borderRadius: 8,
+                                color: 'white', fontSize: '0.81rem', textAlign: 'center',
+                                backdropFilter: 'blur(4px)', border: '1px solid rgba(255,255,255,0.05)'
+                              }}>
+                                {activeStory.content}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Controls footer */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1.5rem', flexShrink: 0 }}>
+                        <button type="button"
+                          disabled={currentStoryIndex === 0}
+                          onClick={() => setCurrentStoryIndex(currentStoryIndex - 1)}
+                          style={{ padding: '0.45rem 1rem', borderRadius: 6, border: 'none', background: 'rgba(255,255,255,0.06)', color: 'white', fontSize: '0.78rem', fontWeight: 600, cursor: currentStoryIndex === 0 ? 'default' : 'pointer', opacity: currentStoryIndex === 0 ? 0.3 : 1 }}>
+                          Anterior
+                        </button>
+                        
+                        {currentStoryIndex < contact.statuses.length - 1 ? (
+                          <button type="button"
+                            onClick={() => setCurrentStoryIndex(currentStoryIndex + 1)}
+                            style={{ padding: '0.45rem 1rem', borderRadius: 6, border: 'none', background: C.green, color: '#111b21', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer' }}>
+                            Próximo
+                          </button>
+                        ) : (
+                          <button type="button"
+                            onClick={() => setSelectedContactJid(null)}
+                            style={{ padding: '0.45rem 1rem', borderRadius: 6, border: 'none', background: 'rgba(255,255,255,0.06)', color: 'white', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer' }}>
+                            Fechar
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* 3. DEFAULT STATE (NO STATUS SELECTED) */}
+                {!selectedContactJid && (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: '1rem', color: 'rgba(255,255,255,0.3)', padding: '2rem', textAlign: 'center' }}>
+                    <CircleDot size={44} style={{ color: C.green }} />
+                    <div style={{ fontSize: '0.86rem', fontWeight: 600, color: 'white' }}>Nenhum Status Selecionado</div>
+                    <div style={{ fontSize: '0.74rem', color: 'rgba(255,255,255,0.35)', maxWidth: '240px' }}>
+                      Clique em um contato na barra lateral ou em "Meu Status" para postar uma atualização.
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         )}
       </div>

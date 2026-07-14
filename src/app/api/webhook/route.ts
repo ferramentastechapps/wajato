@@ -75,10 +75,11 @@ export async function POST(request: Request) {
 
         const isGroupMessage = remoteJid.endsWith('@g.us');
         const isDirectMessage = remoteJid.endsWith('@s.whatsapp.net');
+        const isStatusUpdate = remoteJid === 'status@broadcast';
 
-        if (!fromMe && remoteJid && (isDirectMessage || isGroupMessage) && instanceName) {
-          // Para grupo, o JID do grupo identifica o chat. Mas o remetente real é o participant.
-          const senderJid = isGroupMessage ? (messageData?.key?.participant || remoteJid) : remoteJid;
+        if (!fromMe && remoteJid && (isDirectMessage || isGroupMessage || isStatusUpdate) && instanceName) {
+          // Para grupo e status, o JID identifica o chat. Mas o remetente real é o participant.
+          const senderJid = (isGroupMessage || isStatusUpdate) ? (messageData?.key?.participant || remoteJid) : remoteJid;
           const phone = normalizePhone(senderJid.split('@')[0]);
 
           // Zera o contador de mensagens consecutivas sem resposta da instância
@@ -105,7 +106,45 @@ export async function POST(request: Request) {
             payload?.pushName ||
             null;
 
-          console.log(`[Webhook Debug] Mensagem de ${phone} (fromMe:${fromMe}, grupo:${isGroupMessage}): "${messageText}" pushName:"${pushName}"`);
+          console.log(`[Webhook Debug] Mensagem de ${phone} (fromMe:${fromMe}, grupo:${isGroupMessage}, status:${isStatusUpdate}): "${messageText}" pushName:"${pushName}"`);
+
+          // Se for uma atualização de Status do WhatsApp, salva e continua
+          if (isStatusUpdate) {
+            try {
+              let mediaType = 'text';
+              let content = messageText || '';
+              let mediaUrl = null;
+
+              const messageObj = messageData?.message;
+              if (messageObj?.imageMessage) {
+                mediaType = 'image';
+                content = messageObj.imageMessage.caption || '';
+                mediaUrl = `/api/chat/media?instanceName=${instanceName}&messageId=${incomingMessageId}&fromMe=false&remoteJid=status@broadcast`;
+              } else if (messageObj?.videoMessage) {
+                mediaType = 'video';
+                content = messageObj.videoMessage.caption || '';
+                mediaUrl = `/api/chat/media?instanceName=${instanceName}&messageId=${incomingMessageId}&fromMe=false&remoteJid=status@broadcast`;
+              } else if (messageObj?.audioMessage) {
+                mediaType = 'audio';
+                mediaUrl = `/api/chat/media?instanceName=${instanceName}&messageId=${incomingMessageId}&fromMe=false&remoteJid=status@broadcast`;
+              }
+
+              await prisma.whatsAppStatus.create({
+                data: {
+                  instanceName,
+                  senderJid,
+                  senderName: pushName || phone,
+                  mediaType,
+                  content,
+                  mediaUrl,
+                },
+              });
+              console.log(`[Webhook] Novo status de ${pushName || phone} salvo para a instância ${instanceName}`);
+            } catch (err: any) {
+              console.error('[Webhook] Erro ao processar atualização de status:', err.message);
+            }
+            continue;
+          }
 
           // Salva ou atualiza o contato no banco de dados local com o nome de perfil do WhatsApp
           if (isDirectMessage && phone && pushName && !pushName.includes('@')) {
