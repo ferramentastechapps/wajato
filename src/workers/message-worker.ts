@@ -50,8 +50,13 @@ const worker = new Worker(
     const contactName = log.contact.name || 'Cliente';
     // Se houver {{link}} no template, substitui pela descrição do grupo (onde salvamos o link do grupo)
     const groupLink = log.campaign.group?.description || '';
-    
-    let messageText = log.campaign.template.body
+
+    // Variantes de mensagem: inclui o corpo do template como opção 0 + todas as variantes cadastradas
+    const allVariants = [log.campaign.template.body, ...(log.campaign.messageVariants || [])];
+    // Seleciona aleatoriamente uma variante para parecer humano e evitar detecção de spam
+    const chosenVariant = allVariants[Math.floor(Math.random() * allVariants.length)];
+
+    let messageText = chosenVariant
       .replace(/{{nome}}/g, contactName)
       .replace(/{{link}}/g, groupLink);
 

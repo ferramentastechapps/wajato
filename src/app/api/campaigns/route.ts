@@ -87,7 +87,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { name, templateId, groupId, segmentId, delayMin, delayMax, scheduledAt } = result.data;
+    const { name, templateId, groupId, segmentId, delayMin, delayMax, messageVariants, batchSize, batchCooldown, scheduledAt } = result.data;
 
     const campaign = await prisma.campaign.create({
       data: {
@@ -97,6 +97,9 @@ export async function POST(request: Request) {
         segmentId: segmentId || null,
         delayMin,
         delayMax,
+        messageVariants: messageVariants || [],
+        batchSize: batchSize || 0,
+        batchCooldown: batchCooldown || 600,
         scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
         status: 'DRAFT',
       },

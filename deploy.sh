@@ -33,6 +33,7 @@ else
   psql "$DATABASE_URL" -f prisma/migrations/warmup_v3_messageid.sql 2>/dev/null || true
   psql "$DATABASE_URL" -f prisma/migrations/warmup_status_config.sql 2>/dev/null || true
   psql "$DATABASE_URL" -f prisma/migrations/add_whatsapp_status.sql 2>/dev/null || true
+  psql "$DATABASE_URL" -f prisma/migrations/add_campaign_variants.sql 2>/dev/null || true
 fi
 
 echo ""

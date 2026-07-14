@@ -41,6 +41,9 @@ export const campaignSchema = z.object({
   segmentId: z.preprocess((val) => val === '' ? null : val, z.string().uuid('ID do segmento inválido').optional().nullable()),
   delayMin: z.coerce.number().int().min(1, 'Delay mínimo deve ser pelo menos 1 segundo').default(5),
   delayMax: z.coerce.number().int().min(1, 'Delay máximo deve ser pelo menos 1 segundo').default(15),
+  messageVariants: z.array(z.string().trim().min(1)).default([]), // Variantes de texto adicionais
+  batchSize: z.coerce.number().int().min(0).default(0),           // 0 = desabilitado
+  batchCooldown: z.coerce.number().int().min(0).default(600),     // segundos de pausa entre lotes
   scheduledAt: z.preprocess((val) => val === '' || val === null ? null : val, z.string().datetime().nullable().optional()),
 }).refine(data => data.groupId || data.segmentId, {
   message: "Selecione um grupo de contatos ou uma segmentação para a campanha",

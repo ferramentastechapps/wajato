@@ -75,7 +75,10 @@ async function dispatchScheduledCampaigns() {
 
         const delayMin = campaign.delayMin ?? 5;
         const delayMax = campaign.delayMax ?? 15;
+        const batchSize = campaign.batchSize ?? 0;    // 0 = sem pausa de lote
+        const batchCooldown = campaign.batchCooldown ?? 600; // segundos de pausa padrão
         let cumulativeDelay = 0;
+        let msgsSinceLastBatch = 0;
 
         for (const contact of contacts) {
           // Cria o MessageLog
@@ -91,6 +94,20 @@ async function dispatchScheduledCampaigns() {
           const individualDelay =
             Math.floor(Math.random() * (delayMax - delayMin + 1) + delayMin) * 1000;
           cumulativeDelay += individualDelay;
+          msgsSinceLastBatch++;
+
+          // ── Batch Cooldown: pausa longa a cada N mensagens ────────────
+          if (batchSize > 0 && msgsSinceLastBatch >= batchSize) {
+            // Jitter de ±2 minutos para não parecer automático
+            const jitterMs = (Math.floor(Math.random() * 240) - 120) * 1000;
+            const cooldownMs = (batchCooldown * 1000) + jitterMs;
+            cumulativeDelay += cooldownMs;
+            msgsSinceLastBatch = 0;
+            logger.info('Pausa de lote inserida na fila', {
+              campaignId: campaign.id,
+              cooldownSeconds: Math.round(cooldownMs / 1000),
+            });
+          }
 
           await messageQueue.add(
             `send-message-${messageLog.id}`,

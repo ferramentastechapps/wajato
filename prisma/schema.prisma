@@ -89,21 +89,24 @@ model Template {
 }
 
 model Campaign {
-  id          String          @id @default(uuid())
-  name        String
-  status      CampaignStatus  @default(DRAFT)
-  templateId  String
-  template    Template        @relation(fields: [templateId], references: [id])
-  groupId     String?
-  group       ContactGroup?   @relation(fields: [groupId], references: [id])
-  segmentId   String?
-  segment     ContactSegment? @relation(fields: [segmentId], references: [id])
-  delayMin    Int             @default(5)  // mínimo em segundos
-  delayMax    Int             @default(15) // máximo em segundos
-  scheduledAt DateTime?
-  logs        MessageLog[]
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  id               String          @id @default(uuid())
+  name             String
+  status           CampaignStatus  @default(DRAFT)
+  templateId       String
+  template         Template        @relation(fields: [templateId], references: [id])
+  groupId          String?
+  group            ContactGroup?   @relation(fields: [groupId], references: [id])
+  segmentId        String?
+  segment          ContactSegment? @relation(fields: [segmentId], references: [id])
+  delayMin         Int             @default(5)  // mínimo em segundos
+  delayMax         Int             @default(15) // máximo em segundos
+  messageVariants  String[]        @default([]) // Variantes de texto adicionais (rotação automática)
+  batchSize        Int             @default(0)  // Nº de msgs por lote (0 = desabilitado)
+  batchCooldown    Int             @default(600) // Pausa entre lotes em segundos (padrão 10min)
+  scheduledAt      DateTime?
+  logs             MessageLog[]
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
 }
 
 model ContactSegment {
