@@ -19,6 +19,7 @@ interface WhatsAppInstance {
 interface Chat {
   id: string; name?: string; unreadCount?: number;
   conversationTimestamp?: number; lastMessage?: string;
+  phoneNumber?: string;
 }
 
 interface Message {
@@ -482,6 +483,51 @@ export default function ChatPage() {
         </div>
       );
     }
+    if (messageObj?.contactMessage) {
+      const contact = messageObj.contactMessage;
+      const displayName = contact.displayName || "Contato";
+      let phone = '';
+      const waidMatch = contact.vcard?.match(/waid=(\d+)/);
+      if (waidMatch) {
+        phone = '+' + waidMatch[1];
+      } else {
+        const telMatch = contact.vcard?.match(/TEL;[^:]+:([^\n\r]+)/);
+        if (telMatch) {
+          phone = telMatch[1].trim();
+        }
+      }
+      return (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(255,255,255,0.06)', padding: '10px 14px', borderRadius: 8, minWidth: 210 }}>
+          <User size={22} color="#25d366" />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: '0.84rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayName}</div>
+            {phone && <div style={{ fontSize: '0.67rem', color: 'rgba(255,255,255,0.38)' }}>{phone}</div>}
+          </div>
+        </div>
+      );
+    }
+    if (messageObj?.contactsArrayMessage) {
+      const contacts = messageObj.contactsArrayMessage.contacts || [];
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, background: 'rgba(255,255,255,0.06)', padding: '10px 14px', borderRadius: 8, minWidth: 210 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: 6 }}>
+            <Users size={18} color="#25d366" />
+            <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>{contacts.length} Contatos</span>
+          </div>
+          {contacts.map((c: any, ci: number) => {
+            let phone = '';
+            const waidMatch = c.vcard?.match(/waid=(\d+)/);
+            if (waidMatch) phone = '+' + waidMatch[1];
+            return (
+              <div key={ci} style={{ display: 'flex', flexDirection: 'column' }}>
+                <span style={{ fontSize: '0.78rem', fontWeight: 500 }}>{c.displayName || 'Contato'}</span>
+                {phone && <span style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.38)' }}>{phone}</span>}
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
     if (messageObj?.stickerMessage) return <img src={mediaUrl(msg)} alt="Sticker" style={{ width: 110, height: 110, objectFit: 'contain' }} />;
     return <div style={{ color: 'rgba(255,255,255,0.28)', fontStyle: 'italic', fontSize: '0.78rem' }}>[Tipo não suportado]</div>;
   };
@@ -572,7 +618,8 @@ export default function ChatPage() {
             ) : (
               filtered.map(chat => {
                 const sel = selChat?.id === chat.id;
-                const name = chat.name || chat.id.split('@')[0];
+                const displayNum = chat.phoneNumber ? `+${chat.phoneNumber}` : chat.id.split('@')[0];
+                const name = chat.name && !chat.name.includes('@') ? chat.name : displayNum;
                 const unread = (chat.unreadCount || 0) > 0;
                 return (
                   <div key={chat.id} className="wa-chat-item"
@@ -611,13 +658,13 @@ export default function ChatPage() {
                 {/* Header */}
                 <div style={{ padding: '0.55rem 1.2rem', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: C.panel, flexShrink: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer', flex: 1, minWidth: 0 }} onClick={() => setShowInfo(v => !v)}>
-                    <Avatar name={selChat.name || selChat.id.split('@')[0]} size={38} />
+                    <Avatar name={selChat.name && !selChat.name.includes('@') ? selChat.name : (selChat.phoneNumber ? `+${selChat.phoneNumber}` : selChat.id.split('@')[0])} size={38} />
                     <div style={{ minWidth: 0 }}>
                       <h3 style={{ margin: 0, fontSize: '0.87rem', fontWeight: 600, color: 'white', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {selChat.name || selChat.id.split('@')[0]}
+                        {selChat.name && !selChat.name.includes('@') ? selChat.name : (selChat.phoneNumber ? `+${selChat.phoneNumber}` : selChat.id.split('@')[0])}
                       </h3>
                       <span style={{ fontSize: '0.63rem', color: 'rgba(255,255,255,0.3)' }}>
-                        {isGroup ? `Grupo • toque para detalhes` : `+${selChat.id.split('@')[0]} • toque para detalhes`}
+                        {isGroup ? `Grupo • toque para detalhes` : `${selChat.phoneNumber ? `+${selChat.phoneNumber}` : selChat.id.split('@')[0]} • toque para detalhes`}
                       </span>
                     </div>
                   </div>
@@ -824,13 +871,13 @@ export default function ChatPage() {
               <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem 1rem' }}>
                 {/* Avatar big */}
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
-                  <Avatar name={selChat.name || selChat.id.split('@')[0]} size={82} />
+                  <Avatar name={selChat.name && !selChat.name.includes('@') ? selChat.name : (selChat.phoneNumber ? `+${selChat.phoneNumber}` : selChat.id.split('@')[0])} size={82} />
                   <div style={{ textAlign: 'center' }}>
                     <div style={{ fontWeight: 700, fontSize: '1rem', color: 'white', marginBottom: 4 }}>
-                      {selChat.name || selChat.id.split('@')[0]}
+                      {selChat.name && !selChat.name.includes('@') ? selChat.name : (selChat.phoneNumber ? `+${selChat.phoneNumber}` : selChat.id.split('@')[0])}
                     </div>
                     <div style={{ fontSize: '0.76rem', color: 'rgba(255,255,255,0.38)' }}>
-                      {isGroup ? '👥 Grupo do WhatsApp' : `📱 +${selChat.id.split('@')[0]}`}
+                      {isGroup ? '👥 Grupo do WhatsApp' : `📱 ${selChat.phoneNumber ? `+${selChat.phoneNumber}` : selChat.id.split('@')[0]}`}
                     </div>
                   </div>
                   {/* Actions */}
@@ -849,7 +896,7 @@ export default function ChatPage() {
                 {/* Info list */}
                 <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 12, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.05)' }}>
                   {[
-                    { label: 'ID / Número', value: selChat.id.split('@')[0] },
+                    { label: 'ID / Número', value: selChat.phoneNumber ? `+${selChat.phoneNumber}` : selChat.id.split('@')[0] },
                     { label: 'Tipo', value: isGroup ? 'Grupo' : 'Contato Individual' },
                     { label: 'Não lidas', value: String(selChat.unreadCount || 0) },
                     { label: 'Total de mensagens', value: String(messages.length) },

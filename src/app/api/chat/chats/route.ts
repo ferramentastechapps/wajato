@@ -29,12 +29,31 @@ export async function GET(req: Request) {
         timestamp = Math.floor(new Date(chat.updatedAt).getTime() / 1000);
       }
 
+      let phoneNumber = '';
+      if (chat.remoteJid?.endsWith('@s.whatsapp.net')) {
+        phoneNumber = chat.remoteJid.split('@')[0];
+      } else {
+        const altJid = chat.lastMessage?.key?.remoteJidAlt || chat.lastMessage?.key?.participantAlt;
+        if (altJid?.endsWith('@s.whatsapp.net')) {
+          phoneNumber = altJid.split('@')[0];
+        } else {
+          phoneNumber = chat.remoteJid?.split('@')[0] || '';
+        }
+      }
+
+      const displayName = chat.pushName && !chat.pushName.includes('@')
+        ? chat.pushName
+        : phoneNumber
+          ? `+${phoneNumber}`
+          : chat.remoteJid?.split('@')[0] || 'Desconhecido';
+
       return {
         id: chat.remoteJid || chat.id,
-        name: chat.pushName || chat.remoteJid?.split('@')[0] || 'Desconhecido',
+        name: displayName,
         unreadCount: chat.unreadCount || 0,
         conversationTimestamp: timestamp,
         lastMessage: lastMessageText,
+        phoneNumber: phoneNumber || undefined,
       };
     });
 
