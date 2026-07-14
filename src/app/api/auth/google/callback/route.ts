@@ -22,8 +22,8 @@ export async function GET(request: Request) {
       return NextResponse.redirect(new URL('/login?error=google_not_configured', request.url));
     }
 
-    // Usar NEXT_PUBLIC_APP_URL se definido para evitar problemas com reverse proxy host header
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+    // Usar APP_URL ou NEXT_PUBLIC_APP_URL se definido para evitar problemas com reverse proxy host header
+    const appUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL;
     let redirectUri = '';
     
     if (appUrl) {
