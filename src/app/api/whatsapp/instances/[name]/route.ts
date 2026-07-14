@@ -128,3 +128,50 @@ export async function DELETE(_req: Request, { params }: Params) {
     return NextResponse.json({ error: error.message || 'Erro interno' }, { status: 500 });
   }
 }
+
+// PATCH — Atualiza configurações da instância (como a proxy)
+export async function PATCH(req: Request, { params }: Params) {
+  try {
+    const user = await getSessionUser();
+    if (!user) {
+      return NextResponse.json({ message: 'Não autorizado' }, { status: 401 });
+    }
+
+    const { name } = await params;
+    const body = await req.json();
+    const { proxy } = body;
+
+    const dbInst = await prisma.whatsAppInstance.findUnique({
+      where: { name },
+    });
+
+    if (!dbInst) {
+      return NextResponse.json({ error: 'Instância não encontrada' }, { status: 404 });
+    }
+
+    // 1. Atualiza no banco local
+    const updatedInst = await prisma.whatsAppInstance.update({
+      where: { name },
+      data: { proxy: proxy || null },
+    });
+
+    // 2. Envia o proxy para o Evolution API
+    if (proxy) {
+      try {
+        await evolutionApi.setInstanceProxy(name, proxy);
+        console.log(`[PATCH Instance] Proxy atualizado com sucesso no gateway para ${name}`);
+      } catch (proxyErr: any) {
+        console.error(`Erro ao atualizar proxy no gateway para ${name}:`, proxyErr.message);
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      instance: updatedInst,
+    });
+  } catch (error: any) {
+    console.error(`Erro ao atualizar instância:`, error);
+    return NextResponse.json({ error: error.message || 'Erro interno' }, { status: 500 });
+  }
+}
+

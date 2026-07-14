@@ -150,6 +150,44 @@ export default function ConnectionsPage() {
   const [pairingErrors, setPairingErrors] = useState<Record<string, string>>({});
   const [copiedInstance, setCopiedInstance] = useState<string | null>(null);
 
+  // Estados para edição manual de proxy
+  const [editingInstance, setEditingInstance] = useState<string | null>(null);
+  const [editProxy, setEditProxy] = useState('');
+
+  const handleUpdateProxy = async (name: string) => {
+    let formattedProxy = editProxy.trim();
+    if (formattedProxy) {
+      if (!formattedProxy.startsWith('http://') && !formattedProxy.startsWith('https://') && !formattedProxy.startsWith('socks5://')) {
+        const parts = formattedProxy.split(':');
+        if (parts.length === 4) {
+          formattedProxy = `http://${parts[2]}:${parts[3]}@${parts[0]}:${parts[1]}`;
+        } else {
+          formattedProxy = `http://${formattedProxy}`;
+        }
+      }
+    }
+
+    setActionLoading(name);
+    try {
+      const res = await fetch(`/api/whatsapp/instances/${name}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ proxy: formattedProxy || null }),
+      });
+      if (res.ok) {
+        setEditingInstance(null);
+        await fetchInstances();
+      } else {
+        alert('Erro ao atualizar proxy da conexão.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Erro de conexão ao atualizar proxy.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   // Estados para Proteção anti-ban por mensagens sem resposta
   const [protectionEnabled, setProtectionEnabled] = useState<Record<string, boolean>>({});
   const [protectionLimit, setProtectionLimit] = useState<Record<string, number>>({});
@@ -774,14 +812,73 @@ export default function ConnectionsPage() {
                           border: `1px solid ${inst.proxy ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)'}`,
                           fontSize: '0.65rem',
                         }}>
-                          <div style={{ color: inst.proxy ? '#10b981' : '#ef4444', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '3px' }}>
-                            <Globe size={10} />
-                            {inst.proxy ? '✓ Proxy Ativo' : '✗ Sem Proxy'}
-                          </div>
-                          {inst.proxy && (
-                            <div style={{ color: 'rgba(255,255,255,0.3)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {inst.proxy.includes('@') ? inst.proxy.split('@')[1] : inst.proxy}
+                          {editingInstance === inst.name ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              <input
+                                type="text"
+                                value={editProxy}
+                                onChange={e => setEditProxy(e.target.value)}
+                                placeholder="http://user:pass@host:port"
+                                style={{
+                                  background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.15)',
+                                  borderRadius: 4, color: 'white', fontSize: '0.68rem', padding: '3px 4px',
+                                  width: '100%', outline: 'none'
+                                }}
+                              />
+                              <div style={{ display: 'flex', gap: 4 }}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateProxy(inst.name)}
+                                  disabled={actionLoading === inst.name}
+                                  style={{
+                                    flex: 1, background: '#10b981', border: 'none', color: '#111b21',
+                                    fontSize: '0.65rem', fontWeight: 700, borderRadius: 4, padding: '2px 4px',
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  {actionLoading === inst.name ? '...' : 'OK'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingInstance(null)}
+                                  style={{
+                                    flex: 1, background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white',
+                                    fontSize: '0.65rem', fontWeight: 600, borderRadius: 4, padding: '2px 4px',
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  Canc
+                                </button>
+                              </div>
                             </div>
+                          ) : (
+                            <>
+                              <div style={{ color: inst.proxy ? '#10b981' : '#ef4444', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '3px', justifyContent: 'space-between' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                  <Globe size={10} />
+                                  {inst.proxy ? '✓ Proxy' : '✗ Sem Proxy'}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingInstance(inst.name);
+                                    setEditProxy(inst.proxy || '');
+                                  }}
+                                  style={{
+                                    background: 'none', border: 'none', cursor: 'pointer',
+                                    color: '#10b981', fontSize: '0.62rem', fontWeight: 700,
+                                    textDecoration: 'underline', padding: 0
+                                  }}
+                                >
+                                  Alt
+                                </button>
+                              </div>
+                              {inst.proxy && (
+                                <div style={{ color: 'rgba(255,255,255,0.3)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={inst.proxy}>
+                                  {inst.proxy.includes('@') ? inst.proxy.split('@')[1] : inst.proxy}
+                                </div>
+                              )}
+                            </>
                           )}
                         </div>
 
