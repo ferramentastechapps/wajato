@@ -67,6 +67,11 @@ export async function GET() {
           rssMb: Math.round(memoryUsage.rss / 1024 / 1024),
         },
       },
+      env: {
+        APP_URL: process.env.APP_URL || 'UNDEFINED',
+        NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL || 'UNDEFINED',
+        GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID ? 'DEFINED' : 'UNDEFINED',
+      },
     },
     { status: responseStatus }
   );
