@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { evolutionApi } from '@/lib/evolution';
+import { prisma } from '@/lib/prisma';
 
 export async function GET(req: Request) {
   try {
@@ -57,7 +58,51 @@ export async function GET(req: Request) {
       };
     });
 
-    return NextResponse.json(mappedChats);
+    // Buscar nomes dos contatos salvos no banco local (CRM) para substituir na exibição
+    const phoneNumbers = mappedChats
+      .map((c: any) => c.phoneNumber)
+      .filter(Boolean) as string[];
+
+    const normalizedPhones = [
+      ...phoneNumbers,
+      ...phoneNumbers.map(p => p.startsWith('55') ? p.slice(2) : `55${p}`)
+    ];
+
+    const dbContacts = await prisma.contact.findMany({
+      where: {
+        phone: { in: normalizedPhones },
+      },
+      select: {
+        phone: true,
+        name: true,
+      },
+    });
+
+    const contactMap = new Map<string, string>();
+    for (const c of dbContacts) {
+      if (c.name) {
+        contactMap.set(c.phone, c.name);
+      }
+    }
+
+    const finalChats = mappedChats.map((c: any, index: number) => {
+      const chat = chats[index];
+      let finalName = c.name;
+      if (c.phoneNumber) {
+        const dbName = contactMap.get(c.phoneNumber) || 
+                       contactMap.get(c.phoneNumber.startsWith('55') ? c.phoneNumber.slice(2) : `55${c.phoneNumber}`);
+        if (dbName) {
+          finalName = dbName;
+        }
+      }
+      return {
+        ...c,
+        name: finalName,
+        profilePicUrl: chat.profilePicUrl || null,
+      };
+    });
+
+    return NextResponse.json(finalChats);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

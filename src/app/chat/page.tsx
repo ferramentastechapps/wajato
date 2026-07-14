@@ -20,6 +20,7 @@ interface Chat {
   id: string; name?: string; unreadCount?: number;
   conversationTimestamp?: number; lastMessage?: string;
   phoneNumber?: string;
+  profilePicUrl?: string | null;
 }
 
 interface Message {
@@ -103,7 +104,23 @@ const EMOJIS = [
 
 // ─── Avatar Component ────────────────────────────────────────────────────────
 
-function Avatar({ name, size = 42 }: { name: string; size?: number }) {
+function Avatar({ name, src, size = 42 }: { name: string; src?: string | null; size?: number }) {
+  if (src) {
+    return (
+      <img
+        src={src}
+        alt={name}
+        loading="lazy"
+        style={{
+          width: `${size}px`,
+          height: `${size}px`,
+          borderRadius: '50%',
+          objectFit: 'cover',
+          flexShrink: 0,
+        }}
+      />
+    );
+  }
   const bg = avatarColor(name || '?');
   return (
     <div style={{
@@ -627,7 +644,7 @@ export default function ChatPage() {
                   <div key={chat.id} className="wa-chat-item"
                     onClick={() => openChat(chat)}
                     style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.6rem 1rem', cursor: 'pointer', background: sel ? '#2a3942' : 'transparent', borderBottom: '1px solid rgba(255,255,255,0.02)', transition: 'background 0.12s' }}>
-                    <Avatar name={name} size={44} />
+                    <Avatar name={name} src={chat.profilePicUrl} size={44} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 2 }}>
                         <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'white', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: 6 }}>{name}</div>
@@ -660,7 +677,11 @@ export default function ChatPage() {
                 {/* Header */}
                 <div style={{ padding: '0.55rem 1.2rem', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: C.panel, flexShrink: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer', flex: 1, minWidth: 0 }} onClick={() => setShowInfo(v => !v)}>
-                    <Avatar name={selChat.name && !selChat.name.includes('@') ? selChat.name : (selChat.phoneNumber ? `+${selChat.phoneNumber}` : selChat.id.split('@')[0])} size={38} />
+                    <Avatar 
+                      name={selChat.name && !selChat.name.includes('@') ? selChat.name : (selChat.phoneNumber ? `+${selChat.phoneNumber}` : selChat.id.split('@')[0])} 
+                      src={selChat.profilePicUrl}
+                      size={38} 
+                    />
                     <div style={{ minWidth: 0 }}>
                       <h3 style={{ margin: 0, fontSize: '0.87rem', fontWeight: 600, color: 'white', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {selChat.name && !selChat.name.includes('@') ? selChat.name : (selChat.phoneNumber ? `+${selChat.phoneNumber}` : selChat.id.split('@')[0])}
@@ -873,7 +894,11 @@ export default function ChatPage() {
               <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem 1rem' }}>
                 {/* Avatar big */}
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
-                  <Avatar name={selChat.name && !selChat.name.includes('@') ? selChat.name : (selChat.phoneNumber ? `+${selChat.phoneNumber}` : selChat.id.split('@')[0])} size={82} />
+                  <Avatar 
+                    name={selChat.name && !selChat.name.includes('@') ? selChat.name : (selChat.phoneNumber ? `+${selChat.phoneNumber}` : selChat.id.split('@')[0])} 
+                    src={selChat.profilePicUrl}
+                    size={82} 
+                  />
                   <div style={{ textAlign: 'center' }}>
                     <div style={{ fontWeight: 700, fontSize: '1rem', color: 'white', marginBottom: 4 }}>
                       {selChat.name && !selChat.name.includes('@') ? selChat.name : (selChat.phoneNumber ? `+${selChat.phoneNumber}` : selChat.id.split('@')[0])}
