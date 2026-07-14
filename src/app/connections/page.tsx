@@ -188,6 +188,23 @@ export default function ConnectionsPage() {
     }
   };
 
+  const handleGetWebshareProxyForEdit = async () => {
+    setLoadingWebshare(true);
+    try {
+      const res = await fetch('/api/whatsapp/webshare-proxies?action=random');
+      const data = await res.json();
+      if (res.ok && data.proxy) {
+        setEditProxy(data.proxy);
+      } else {
+        alert(data.error || 'Nenhum proxy disponível na sua conta Webshare.');
+      }
+    } catch (err) {
+      alert('Falha ao conectar na API da Webshare.');
+    } finally {
+      setLoadingWebshare(false);
+    }
+  };
+
   // Estados para Proteção anti-ban por mensagens sem resposta
   const [protectionEnabled, setProtectionEnabled] = useState<Record<string, boolean>>({});
   const [protectionLimit, setProtectionLimit] = useState<Record<string, number>>({});
@@ -825,6 +842,21 @@ export default function ConnectionsPage() {
                                   width: '100%', outline: 'none'
                                 }}
                               />
+                              {webshareAvailable && (
+                                <button
+                                  type="button"
+                                  onClick={handleGetWebshareProxyForEdit}
+                                  disabled={loadingWebshare}
+                                  style={{
+                                    background: 'none', border: 'none', cursor: 'pointer',
+                                    color: '#3b82f6', fontSize: '0.62rem', fontWeight: 700,
+                                    textDecoration: 'underline', padding: 0, textAlign: 'left',
+                                    marginBottom: 2
+                                  }}
+                                >
+                                  {loadingWebshare ? 'Gerando...' : '⚡ Gerar via Webshare'}
+                                </button>
+                              )}
                               <div style={{ display: 'flex', gap: 4 }}>
                                 <button
                                   type="button"
