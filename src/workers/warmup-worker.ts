@@ -253,18 +253,43 @@ export const warmupWorker = new Worker(
         return;
       }
 
-      // ── 8. Buscar histórico de mensagens para contexto da IA (filtrado por contato) ───
+      // ── 8. Buscar histórico de mensagens para contexto da IA ───
       const logs = await prisma.warmupLog.findMany({
-        where: {
-          campaignId,
-          OR: [
-            { toPhone: targetPhone },
-            { fromInstance: targetPhone }
-          ]
-        },
+        where: { campaignId },
         orderBy: { createdAt: 'desc' },
         take: 12, // Um pouco mais de contexto
       });
+
+      const lastLog = logs[0]; // mais recente antes de reverter a ordem
+
+      // Selecionar tópico (rotaciona a cada nova conversa ou mantém o atual)
+      const recentTopics = logs.slice(-3).map(l => l.message.substring(0, 30));
+      const topic = currentTopic || selectConversationTopic(recentTopics);
+
+      // Se a última mensagem foi nossa e não é a primeira mensagem do dia, não enviamos nada
+      if (lastLog && lastLog.fromInstance === sourceInstance && !isFirstMessageOfDay) {
+        console.log(`[Warmup Worker] A última mensagem foi nossa (${sourceInstance}). Aguardando resposta do destinatário ${targetPhone}. Reagendando.`);
+        
+        let meanDelay = 1.5 * 60 * 60 * 1000; // 1.5 horas
+        let stdDevDelay = 20 * 60 * 1000;     // 20 minutos
+        if (campaign.isGroup) {
+          meanDelay = 35 * 60 * 1000;         // 35 minutos para grupo
+          stdDevDelay = 10 * 60 * 1000;
+        }
+
+        await queueWarmupMessage(
+          {
+            campaignId,
+            sourceInstance,
+            targetPhone,
+            isFirstMessageOfDay: false,
+            currentTopic: topic,
+          },
+          meanDelay,
+          stdDevDelay
+        );
+        return;
+      }
 
       const history: ChatMessage[] = logs.reverse().map(log => ({
         role: log.fromInstance === sourceInstance ? 'model' : 'user',
@@ -276,10 +301,6 @@ export const warmupWorker = new Worker(
       let messageText = '';
       let messageType: 'TEXT' | 'EMOJI' | 'REACTION' | 'STICKER' | 'AUDIO' = 'TEXT';
       let typingDelay = 1500;
-
-      // Selecionar tópico (rotaciona a cada nova conversa ou mantém o atual)
-      const recentTopics = logs.slice(-3).map(l => l.message.substring(0, 30));
-      const topic = currentTopic || selectConversationTopic(recentTopics);
 
       // Contexto da persona customizado ou padrão
       const personaContext = campaign.customContext
