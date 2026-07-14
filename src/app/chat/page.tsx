@@ -35,6 +35,8 @@ interface Message {
     viewOnceMessage?: { message?: any };
     viewOnceMessageV2?: { message?: any };
     viewOnceMessageV2Extension?: { message?: any };
+    contactMessage?: { displayName?: string; vcard?: string };
+    contactsArrayMessage?: { contacts?: Array<{ displayName?: string; vcard?: string }> };
   };
   text?: string;
   messageTimestamp?: number;
