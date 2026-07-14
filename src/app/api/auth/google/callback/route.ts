@@ -9,9 +9,12 @@ export async function GET(request: Request) {
     const state = searchParams.get('state');
     const errorParam = searchParams.get('error');
 
+    const appUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL;
+    const baseUrl = appUrl || request.url;
+
     if (errorParam || !code) {
       console.error('[Google OAuth] Erro retornado ou código ausente:', errorParam);
-      return NextResponse.redirect(new URL('/login?error=google_failed', request.url));
+      return NextResponse.redirect(new URL('/login?error=google_failed', baseUrl));
     }
 
     const googleClientId = process.env.GOOGLE_CLIENT_ID;
@@ -19,11 +22,10 @@ export async function GET(request: Request) {
 
     if (!googleClientId || !googleClientSecret) {
       console.error('[Google OAuth] Credenciais do Google não configuradas nas variáveis de ambiente.');
-      return NextResponse.redirect(new URL('/login?error=google_not_configured', request.url));
+      return NextResponse.redirect(new URL('/login?error=google_not_configured', baseUrl));
     }
 
     // Usar APP_URL ou NEXT_PUBLIC_APP_URL se definido para evitar problemas com reverse proxy host header
-    const appUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL;
     let redirectUri = '';
     
     if (appUrl) {
@@ -53,7 +55,7 @@ export async function GET(request: Request) {
 
     if (!tokenResponse.ok) {
       console.error('[Google OAuth] Erro ao trocar código pelo token:', tokenData);
-      return NextResponse.redirect(new URL('/login?error=google_token_exchange_failed', request.url));
+      return NextResponse.redirect(new URL('/login?error=google_token_exchange_failed', baseUrl));
     }
 
     const accessToken = tokenData.access_token;
@@ -69,14 +71,14 @@ export async function GET(request: Request) {
 
     if (!profileResponse.ok) {
       console.error('[Google OAuth] Erro ao carregar perfil do Google:', profileData);
-      return NextResponse.redirect(new URL('/login?error=google_profile_fetch_failed', request.url));
+      return NextResponse.redirect(new URL('/login?error=google_profile_fetch_failed', baseUrl));
     }
 
     const { sub: googleId, email, name, picture: avatarUrl } = profileData;
 
     if (!email) {
       console.error('[Google OAuth] Perfil do Google sem endereço de e-mail.');
-      return NextResponse.redirect(new URL('/login?error=google_email_missing', request.url));
+      return NextResponse.redirect(new URL('/login?error=google_email_missing', baseUrl));
     }
 
     // 3. Buscar usuário no banco de dados local
@@ -107,7 +109,7 @@ export async function GET(request: Request) {
     // 4. Opção A: Restringir acesso apenas a e-mails cadastrados previamente
     if (!user) {
       console.warn(`[Google OAuth] Tentativa de login não autorizada do e-mail: ${email}`);
-      const errUrl = new URL('/login', request.url);
+      const errUrl = new URL('/login', baseUrl);
       errUrl.searchParams.set('error', 'google_unauthorized');
       errUrl.searchParams.set('email', email);
       return NextResponse.redirect(errUrl);
@@ -125,9 +127,9 @@ export async function GET(request: Request) {
     await setSessionCookie(token);
 
     // 6. Redirecionar usuário logado ao painel
-    return NextResponse.redirect(new URL('/', request.url));
+    return NextResponse.redirect(new URL('/', baseUrl));
   } catch (error) {
     console.error('[Google OAuth] Erro geral no callback:', error);
-    return NextResponse.redirect(new URL('/login?error=server_error', request.url));
+    return NextResponse.redirect(new URL('/login?error=server_error', baseUrl));
   }
 }
