@@ -31,23 +31,23 @@ interface Group { id: string; name: string; _count?: { contacts: number }; }
 interface Template { id: string; name: string; body: string; imageUrl?: string | null; }
 
 const DELAY_PRESETS = [
-  { id: 'safe',   label: '\u{1F6E1}\uFE0F Muito Seguro', min: 45, max: 120 },
-  { id: 'medium', label: '\u2696\uFE0F Balanceado',      min: 20, max: 60  },
-  { id: 'fast',   label: '\u26A1 R\u00E1pido',           min: 8,  max: 20  },
-  { id: 'custom', label: '\u2699\uFE0F Manual',           min: 20, max: 60  },
+  { id: 'safe',   label: '🛡️ Muito Seguro', min: 45, max: 120 },
+  { id: 'medium', label: '⚖️ Balanceado',   min: 20, max: 60  },
+  { id: 'fast',   label: '⚡ Rápido',        min: 8,  max: 20  },
+  { id: 'custom', label: '⚙️ Manual',        min: 20, max: 60  },
 ];
 
 const BATCH_PRESETS = [
   { label: 'Desativado',               size: 0,  cooldown: 0   },
-  { label: 'A cada 20 msgs \u2192 10min', size: 20, cooldown: 600 },
-  { label: 'A cada 30 msgs \u2192 12min', size: 30, cooldown: 720 },
-  { label: 'A cada 50 msgs \u2192 15min', size: 50, cooldown: 900 },
+  { label: 'A cada 20 msgs → 10min',   size: 20, cooldown: 600 },
+  { label: 'A cada 30 msgs → 12min',   size: 30, cooldown: 720 },
+  { label: 'A cada 50 msgs → 15min',   size: 50, cooldown: 900 },
 ];
 
 function parseSpintax(text: string): string {
   let result = text;
   const pattern = /\{([^{}]+)\}/;
-  let match: RegExpExecArray | null;
+  let match;
   let safety = 0;
   while ((match = pattern.exec(result)) !== null && safety++ < 100) {
     const options = match[1].split('|');
@@ -110,7 +110,7 @@ export default function CampaignsPage() {
     const variants = allVariants();
     if (variants.length === 0) { setPreviewText(''); return; }
     const idx = previewVariantIdx % variants.length;
-    const raw = variants[idx].replace(/{{nome}}/g, 'Jo\u00E3o Silva').replace(/{{link}}/g, 'https://wa.me/grupopromo');
+    const raw = variants[idx].replace(/{{nome}}/g, 'João Silva').replace(/{{link}}/g, 'https://wa.me/grupopromo');
     setPreviewText(parseSpintax(raw));
   }, [allVariants, previewVariantIdx]);
 
@@ -146,10 +146,10 @@ export default function CampaignsPage() {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault(); setErrorMsg('');
     const targetId = targetType === 'GROUP' ? groupId : segmentId;
-    if (!name || !targetId || !templateId) { setErrorMsg('Todos os campos marcados s\u00E3o obrigat\u00F3rios'); return; }
+    if (!name || !targetId || !templateId) { setErrorMsg('Todos os campos marcados são obrigatórios'); return; }
     if (isScheduled && !scheduledAt) { setErrorMsg('Selecione data e hora.'); return; }
-    if (delayMin < 5) { setErrorMsg('Delay m\u00EDnimo: 5 segundos.'); return; }
-    if (delayMax <= delayMin) { setErrorMsg('Delay m\u00E1ximo deve ser maior que o m\u00EDnimo.'); return; }
+    if (delayMin < 5) { setErrorMsg('Delay mínimo: 5 segundos.'); return; }
+    if (delayMax <= delayMin) { setErrorMsg('Delay máximo deve ser maior que o mínimo.'); return; }
     const cleanVariants = messageVariants.filter(v => v.trim().length > 0);
     setIsSubmitting(true);
     try {
@@ -159,7 +159,7 @@ export default function CampaignsPage() {
       });
       if (r.ok) { setShowAddCampaign(false); fetchCampaigns(); }
       else setErrorMsg((await r.json()).message || 'Erro ao criar campanha.');
-    } catch { setErrorMsg('Erro de conex\u00E3o.'); }
+    } catch { setErrorMsg('Erro de conexão.'); }
     finally { setIsSubmitting(false); }
   };
 
@@ -167,7 +167,7 @@ export default function CampaignsPage() {
     try {
       const r = await fetch(`/api/campaigns/${id}/action`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action }) });
       if (!r.ok) alert((await r.json()).message || 'Erro.'); fetchCampaigns();
-    } catch { alert('Erro de conex\u00E3o.'); }
+    } catch { alert('Erro de conexão.'); }
   };
 
   const handleDelete = async (id: string) => {
@@ -180,7 +180,7 @@ export default function CampaignsPage() {
     if (status === 'QUEUED') return <span className="badge badge-warning">Na Fila</span>;
     if (status === 'SENDING') return <span className="badge badge-success pulse-glow">Enviando</span>;
     if (status === 'PAUSED') return <span className="badge badge-warning">Pausada</span>;
-    if (status === 'COMPLETED') return <span className="badge badge-success">Conclu\u00EDda</span>;
+    if (status === 'COMPLETED') return <span className="badge badge-success">Concluída</span>;
     if (status === 'CANCELLED') return <span className="badge badge-error">Cancelada</span>;
     return <span className="badge badge-info">{status}</span>;
   };
@@ -227,7 +227,7 @@ export default function CampaignsPage() {
                     <div style={{display:'flex',gap:'1.25rem',flexWrap:'wrap',fontSize:'0.75rem',color:'#9ca3af',alignItems:'center'}}>
                       <span>Template: <strong>{camp.template.name}</strong></span>
                       {camp.group ? <span>Grupo: <strong>{camp.group.name}</strong></span> : camp.segment ? <span>Segmento: <strong>{camp.segment.name}</strong></span> : null}
-                      <span style={{display:'flex',alignItems:'center',gap:'0.25rem'}}><Clock size={12}/>{camp.delayMin}s\u2013{camp.delayMax}s</span>
+                      <span style={{display:'flex',alignItems:'center',gap:'0.25rem'}}><Clock size={12}/>{camp.delayMin}s–{camp.delayMax}s</span>
                       {(camp.batchSize??0)>0 && <span style={{display:'flex',alignItems:'center',gap:'0.25rem',color:'#a78bfa'}}><Coffee size={12}/>Pausa a cada {camp.batchSize} msgs</span>}
                       {(camp.messageVariants?.length??0)>0 && <span style={{display:'flex',alignItems:'center',gap:'0.25rem',color:'#34d399'}}><Shuffle size={12}/>{(camp.messageVariants?.length??0)+1} variantes</span>}
                       {camp.scheduledAt && <span style={{display:'flex',alignItems:'center',gap:'0.3rem',color:'#818cf8',fontWeight:600}}><Calendar size={12}/>{new Date(camp.scheduledAt).toLocaleString('pt-BR')}</span>}
@@ -268,197 +268,220 @@ export default function CampaignsPage() {
 
       {showAddCampaign && (
         <div className="modal-overlay" style={{zIndex:1000}}>
-          <div className="modal-content" style={{maxWidth:'960px',width:'100%',animation:'modalIn 0.22s cubic-bezier(0.16,1,0.3,1)'}}>
-            <div className="modal-header">
-              <h3 className="modal-title" style={{fontSize:'1.15rem',fontWeight:700}}>\uD83D\uDE80 Configurar Campanha de Disparos</h3>
+          <div className="modal-content" style={{maxWidth:'1000px',width:'100%',animation:'modalIn 0.22s cubic-bezier(0.16,1,0.3,1)',border:'1px solid rgba(255,255,255,0.08)'}}>
+            <div className="modal-header" style={{borderBottom:'1px solid rgba(255,255,255,0.08)'}}>
+              <h3 className="modal-title" style={{fontSize:'1.2rem',fontWeight:700,color:'#f8fafc',display:'flex',alignItems:'center',gap:'0.5rem'}}>
+                🚀 Configurar Campanha de Disparos
+              </h3>
               <X className="modal-close" onClick={()=>setShowAddCampaign(false)}/>
             </div>
             <form onSubmit={handleCreate}>
-              <div className="modal-body" style={{display:'grid',gridTemplateColumns:'minmax(320px,1fr) minmax(280px,400px)',gap:'2rem',padding:'1.5rem',alignItems:'start'}}>
+              <div className="modal-body" style={{display:'grid',gridTemplateColumns:'1.3fr 1fr',gap:'2rem',padding:'1.5rem',alignItems:'start',maxHeight:'80vh',overflowY:'auto'}}>
 
-                {/* COLUNA 1 */}
-                <div style={{display:'flex',flexDirection:'column',gap:'1rem'}}>
-                  {errorMsg && <div style={{display:'flex',alignItems:'center',gap:'0.5rem',backgroundColor:'rgba(239,68,68,0.1)',border:'1px solid rgba(239,68,68,0.2)',color:'#ef4444',padding:'0.75rem',borderRadius:'8px',fontSize:'0.8125rem'}}><AlertCircle size={16}/><span>{errorMsg}</span></div>}
-
-                  <div className="form-group">
-                    <label className="form-label" style={{fontWeight:600,fontSize:'0.8rem',color:'#e2e8f0'}}>Nome da Campanha *</label>
-                    <input type="text" className="input-control" placeholder="Ex: Promo\u00E7\u00E3o Domingo" value={name} onChange={e=>setName(e.target.value)} required/>
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label" style={{fontWeight:600,fontSize:'0.8rem',color:'#e2e8f0'}}>Destinat\u00E1rios *</label>
-                    <div style={{display:'flex',gap:'1.25rem',marginBottom:'0.5rem'}}>
-                      {(['GROUP','SEGMENT'] as const).map(t=>(
-                        <label key={t} style={{display:'flex',alignItems:'center',gap:'0.35rem',fontSize:'0.82rem',cursor:'pointer',color:'#94a3b8'}}>
-                          <input type="radio" name="targetType" value={t} checked={targetType===t} onChange={()=>{setTargetType(t);if(t==='GROUP'){setGroupId(groups[0]?.id||'');setSegmentId('');}else{setSegmentId(segments[0]?.id||'');setGroupId('');}}}/>
-                          {t==='GROUP'?'Grupo Est\u00E1tico':'Segmenta\u00E7\u00E3o Din\u00E2mica'}
-                        </label>
-                      ))}
+                {/* COLUNA 1: DADOS DO FORMULÁRIO */}
+                <div style={{display:'flex',flexDirection:'column',gap:'1.2rem'}}>
+                  {errorMsg && (
+                    <div style={{display:'flex',alignItems:'center',gap:'0.5rem',backgroundColor:'rgba(239,68,68,0.1)',border:'1px solid rgba(239,68,68,0.2)',color:'#ef4444',padding:'0.75rem',borderRadius:'8px',fontSize:'0.8125rem'}}>
+                      <AlertCircle size={16}/><span>{errorMsg}</span>
                     </div>
-                    {targetType==='GROUP'?(
-                      <select className="input-control" value={groupId} onChange={e=>setGroupId(e.target.value)} required>
-                        {groups.length===0?<option value="">Crie um grupo primeiro!</option>:groups.map(g=><option key={g.id} value={g.id}>{g.name} ({g._count?.contacts||0} contatos)</option>)}
+                  )}
+
+                  {/* Informações Gerais */}
+                  <div style={{background:'rgba(255,255,255,0.02)',border:'1px solid rgba(255,255,255,0.05)',borderRadius:'10px',padding:'1.2rem',display:'flex',flexDirection:'column',gap:'1rem'}}>
+                    <div style={{fontSize:'0.88rem',fontWeight:700,color:'#f1f5f9',borderBottom:'1px solid rgba(255,255,255,0.05)',paddingBottom:'0.5rem',marginBottom:'0.2rem'}}>
+                      📋 Informações Gerais
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label" style={{fontWeight:600,fontSize:'0.8rem',color:'#e2e8f0',marginBottom:'0.4rem',display:'block'}}>Nome da Campanha *</label>
+                      <input type="text" className="input-control" placeholder="Ex: Promoção de Domingo" value={name} onChange={e=>setName(e.target.value)} required style={{width:'100%'}}/>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label" style={{fontWeight:600,fontSize:'0.8rem',color:'#e2e8f0',marginBottom:'0.4rem',display:'block'}}>Destinatários *</label>
+                      <div style={{display:'flex',gap:'1.5rem',marginBottom:'0.6rem'}}>
+                        {(['GROUP','SEGMENT'] as const).map(t=>(
+                          <label key={t} style={{display:'flex',alignItems:'center',gap:'0.4rem',fontSize:'0.82rem',cursor:'pointer',color:'#94a3b8',userSelect:'none'}}>
+                            <input type="radio" name="targetType" value={t} checked={targetType===t} onChange={()=>{setTargetType(t);if(t==='GROUP'){setGroupId(groups[0]?.id||'');setSegmentId('');}else{setSegmentId(segments[0]?.id||'');setGroupId('');}}} style={{accentColor:'#25d366'}}/>
+                            {t==='GROUP'?'Grupo Estático':'Segmentação Dinâmica'}
+                          </label>
+                        ))}
+                      </div>
+                      {targetType==='GROUP'?(
+                        <select className="input-control" value={groupId} onChange={e=>setGroupId(e.target.value)} required style={{width:'100%'}}>
+                          {groups.length===0?<option value="">Crie um grupo primeiro!</option>:groups.map(g=><option key={g.id} value={g.id}>{g.name} ({g._count?.contacts||0} contatos)</option>)}
+                        </select>
+                      ):(
+                        <select className="input-control" value={segmentId} onChange={e=>setSegmentId(e.target.value)} required style={{width:'100%'}}>
+                          {segments.length===0?<option value="">Crie uma segmentação primeiro!</option>:segments.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+                        </select>
+                      )}
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label" style={{fontWeight:600,fontSize:'0.8rem',color:'#e2e8f0',marginBottom:'0.4rem',display:'block'}}>Mensagem Base (Template) *</label>
+                      <select className="input-control" value={templateId} onChange={e=>{setTemplateId(e.target.value);setPreviewVariantIdx(0);}} required style={{width:'100%'}}>
+                        {templates.length===0?<option value="">Crie um template primeiro!</option>:templates.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
                       </select>
-                    ):(
-                      <select className="input-control" value={segmentId} onChange={e=>setSegmentId(e.target.value)} required>
-                        {segments.length===0?<option value="">Crie uma segmenta\u00E7\u00E3o primeiro!</option>:segments.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
-                      </select>
-                    )}
+                    </div>
                   </div>
 
-                  <div className="form-group">
-                    <label className="form-label" style={{fontWeight:600,fontSize:'0.8rem',color:'#e2e8f0'}}>Mensagem Base (Template) *</label>
-                    <select className="input-control" value={templateId} onChange={e=>{setTemplateId(e.target.value);setPreviewVariantIdx(0);}} required>
-                      {templates.length===0?<option value="">Crie um template primeiro!</option>:templates.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
-                    </select>
-                  </div>
-
-                  {/* VARIANTES */}
-                  <div style={{background:'rgba(52,211,153,0.04)',border:'1px solid rgba(52,211,153,0.15)',borderRadius:'10px',padding:'1rem'}}>
-                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.65rem'}}>
+                  {/* VARIANTES DE MENSAGEM */}
+                  <div style={{background:'rgba(52,211,153,0.02)',border:'1px solid rgba(52,211,153,0.12)',borderRadius:'10px',padding:'1.2rem'}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.8rem',borderBottom:'1px solid rgba(52,211,153,0.1)',paddingBottom:'0.5rem'}}>
                       <div>
-                        <div style={{fontSize:'0.82rem',fontWeight:700,color:'#34d399',display:'flex',alignItems:'center',gap:'0.4rem'}}>
-                          <Shuffle size={14}/> Varia\u00E7\u00F5es de Mensagem
+                        <div style={{fontSize:'0.88rem',fontWeight:700,color:'#34d399',display:'flex',alignItems:'center',gap:'0.4rem'}}>
+                          <Shuffle size={15}/> Variações de Mensagem
                         </div>
-                        <div style={{fontSize:'0.68rem',color:'rgba(255,255,255,0.35)',marginTop:'2px'}}>
-                          Sistema rotaciona aleatoriamente \u2014 cada pessoa recebe um texto diferente
+                        <div style={{fontSize:'0.68rem',color:'rgba(255,255,255,0.4)',marginTop:'2px'}}>
+                          O sistema rotaciona aleatoriamente entre estes textos para evitar bloqueios.
                         </div>
                       </div>
-                      <button type="button" onClick={handleAddVariant} className="btn btn-secondary" style={{padding:'0.3rem 0.6rem',fontSize:'0.7rem',borderColor:'rgba(52,211,153,0.3)',color:'#34d399',flexShrink:0}}>
-                        <MessageSquarePlus size={13}/> + Adicionar Texto
+                      <button type="button" onClick={handleAddVariant} className="btn btn-secondary" style={{padding:'0.35rem 0.75rem',fontSize:'0.7rem',borderColor:'rgba(52,211,153,0.3)',color:'#34d399',display:'flex',alignItems:'center',gap:'0.3rem'}}>
+                        <MessageSquarePlus size={13}/> + Texto
                       </button>
                     </div>
-                    {messageVariants.length===0?(
-                      <div style={{textAlign:'center',padding:'0.75rem',color:'rgba(255,255,255,0.22)',fontSize:'0.73rem',border:'1px dashed rgba(255,255,255,0.08)',borderRadius:'8px'}}>
-                        Sem variantes \u2014 usando apenas a mensagem base do template
+
+                    {messageVariants.length === 0 ? (
+                      <div style={{textAlign:'center',padding:'1.5rem',color:'rgba(255,255,255,0.25)',fontSize:'0.75rem',border:'1px dashed rgba(255,255,255,0.08)',borderRadius:'8px',background:'rgba(0,0,0,0.1)'}}>
+                        Nenhuma variação extra. Usando apenas a Mensagem Base.
                       </div>
-                    ):(
-                      <div style={{display:'flex',flexDirection:'column',gap:'0.5rem'}}>
+                    ) : (
+                      <div style={{display:'flex',flexDirection:'column',gap:'0.8rem'}}>
                         {messageVariants.map((v,i)=>(
-                          <div key={i} style={{animation:'wa-fadeUp 0.15s ease'}}>
-                            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.25rem'}}>
-                              <span style={{fontSize:'0.68rem',color:'#34d399',fontWeight:600}}>Variante {i+2}</span>
-                              <button type="button" onClick={()=>handleRemoveVariant(i)} style={{background:'none',border:'none',color:'#ef4444',cursor:'pointer',padding:'2px',opacity:0.7}}><X size={13}/></button>
+                          <div key={i} style={{animation:'wa-fadeUp 0.15s ease',background:'rgba(0,0,0,0.15)',border:'1px solid rgba(255,255,255,0.04)',borderRadius:'8px',padding:'0.8rem'}}>
+                            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.4rem'}}>
+                              <span style={{fontSize:'0.72rem',color:'#34d399',fontWeight:700}}>Variante #{i+2}</span>
+                              <button type="button" onClick={()=>handleRemoveVariant(i)} style={{background:'none',border:'none',color:'#ef4444',cursor:'pointer',padding:'2px',display:'flex',alignItems:'center',gap:'0.2rem',fontSize:'0.65rem',opacity:0.8}}><X size={12}/> Remover</button>
                             </div>
-                            <textarea className="input-control" placeholder={`Texto alternativo ${i+2}...\n\nUse {{nome}} e {{link}}`} value={v} onChange={e=>{handleVariantChange(i,e.target.value);setPreviewVariantIdx(i+1);}} onFocus={()=>setPreviewVariantIdx(i+1)} style={{minHeight:'80px',fontSize:'0.78rem',resize:'vertical'}}/>
+                            <textarea className="input-control" placeholder={"Texto alternativo da variante " + (i+2) + "...\\n\\nUse {{nome}} e {{link}} para personalizar."} value={v} onChange={e=>{handleVariantChange(i,e.target.value);setPreviewVariantIdx(i+1);}} onFocus={()=>setPreviewVariantIdx(i+1)} style={{minHeight:'90px',fontSize:'0.78rem',resize:'vertical',width:'100%',background:'rgba(0,0,0,0.2)'}}/>
                           </div>
                         ))}
                       </div>
                     )}
                   </div>
 
-                  {/* DELAY */}
-                  <div style={{background:'rgba(255,255,255,0.02)',border:'1px solid rgba(255,255,255,0.05)',borderRadius:'10px',padding:'1rem'}}>
-                    <div style={{fontSize:'0.82rem',fontWeight:700,color:'#e2e8f0',marginBottom:'0.6rem',display:'flex',alignItems:'center',gap:'0.4rem'}}>
-                      <Clock size={14}/> Intervalo entre Mensagens
+                  {/* CONFIGURAÇÕES ANTI-BAN */}
+                  <div style={{background:'rgba(255,255,255,0.02)',border:'1px solid rgba(255,255,255,0.05)',borderRadius:'10px',padding:'1.2rem',display:'flex',flexDirection:'column',gap:'1rem'}}>
+                    <div style={{fontSize:'0.88rem',fontWeight:700,color:'#f1f5f9',borderBottom:'1px solid rgba(255,255,255,0.05)',paddingBottom:'0.5rem'}}>
+                      🛡️ Configurações Anti-Ban
                     </div>
-                    <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'0.35rem',marginBottom:'0.75rem'}}>
-                      {DELAY_PRESETS.map(p=>(
-                        <button key={p.id} type="button" onClick={()=>handlePresetChange(p)} className={`btn ${delayPreset===p.id?'btn-primary':'btn-secondary'}`} style={{padding:'0.35rem 0',fontSize:'0.62rem',fontWeight:600}}>{p.label}</button>
-                      ))}
-                    </div>
-                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.75rem'}}>
-                      <div>
-                        <label style={{fontSize:'0.68rem',color:'#94a3b8',display:'flex',justifyContent:'space-between',marginBottom:'0.3rem'}}><span>M\u00EDnimo</span><strong style={{color:'#e2e8f0'}}>{delayMin}s</strong></label>
-                        <input type="range" min={5} max={120} step={1} value={delayMin} onChange={e=>{const v=parseInt(e.target.value);setDelayMin(v);if(v>=delayMax)setDelayMax(v+5);setDelayPreset('custom');}} style={{width:'100%',accentColor:'#25d366'}}/>
+                    
+                    <div className="form-group">
+                      <label className="form-label" style={{fontWeight:600,fontSize:'0.8rem',color:'#e2e8f0',marginBottom:'0.4rem',display:'block'}}>Intervalo entre Mensagens</label>
+                      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'0.4rem',marginBottom:'0.8rem'}}>
+                        {DELAY_PRESETS.map(p=>(
+                          <button key={p.id} type="button" onClick={()=>handlePresetChange(p)} className={`btn ${delayPreset===p.id?'btn-primary':'btn-secondary'}`} style={{padding:'0.45rem 0',fontSize:'0.65rem',fontWeight:700,width:'100%'}}>{p.label}</button>
+                        ))}
                       </div>
-                      <div>
-                        <label style={{fontSize:'0.68rem',color:'#94a3b8',display:'flex',justifyContent:'space-between',marginBottom:'0.3rem'}}><span>M\u00E1ximo</span><strong style={{color:'#e2e8f0'}}>{delayMax}s</strong></label>
-                        <input type="range" min={6} max={180} step={1} value={delayMax} onChange={e=>{const v=parseInt(e.target.value);setDelayMax(v);if(v<=delayMin)setDelayMin(v-5);setDelayPreset('custom');}} style={{width:'100%',accentColor:'#25d366'}}/>
+                      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'1rem'}}>
+                        <div>
+                          <label style={{fontSize:'0.68rem',color:'#94a3b8',display:'flex',justifyContent: 'space-between',marginBottom:'0.3rem'}}><span>Mínimo</span><strong style={{color:'#e2e8f0'}}>{delayMin}s</strong></label>
+                          <input type="range" min={5} max={120} step={1} value={delayMin} onChange={e=>{const v=parseInt(e.target.value);setDelayMin(v);if(v>=delayMax)setDelayMax(v+5);setDelayPreset('custom');}} style={{width:'100%',accentColor:'#25d366'}}/>
+                        </div>
+                        <div>
+                          <label style={{fontSize:'0.68rem',color:'#94a3b8',display:'flex',justifyContent: 'space-between',marginBottom:'0.3rem'}}><span>Máximo</span><strong style={{color:'#e2e8f0'}}>{delayMax}s</strong></label>
+                          <input type="range" min={6} max={180} step={1} value={delayMax} onChange={e=>{const v=parseInt(e.target.value);setDelayMax(v);if(v<=delayMin)setDelayMin(v-5);setDelayPreset('custom');}} style={{width:'100%',accentColor:'#25d366'}}/>
+                        </div>
+                      </div>
+                      <div style={{marginTop:'0.8rem',display:'flex',alignItems:'center',gap:'0.6rem',background:'rgba(0,0,0,0.15)',padding:'0.5rem 0.8rem',borderRadius:'8px'}}>
+                        <Shield size={14} style={{color:riskColor,flexShrink:0}}/>
+                        <div style={{flex:1,background:'rgba(255,255,255,0.06)',borderRadius:'99px',height:'6px',overflow:'hidden'}}>
+                          <div style={{height:'100%',width:`${(risk/5)*100}%`,background:riskColor,borderRadius:'99px',transition:'width 0.3s,background 0.3s'}}/>
+                        </div>
+                        <span style={{fontSize:'0.7rem',color:riskColor,fontWeight:700,minWidth:'80px',textAlign:'right'}}>Risco: {riskLabel}</span>
                       </div>
                     </div>
-                    <div style={{marginTop:'0.75rem',display:'flex',alignItems:'center',gap:'0.6rem'}}>
-                      <Shield size={13} style={{color:riskColor,flexShrink:0}}/>
-                      <div style={{flex:1,background:'rgba(255,255,255,0.06)',borderRadius:'99px',height:'6px',overflow:'hidden'}}>
-                        <div style={{height:'100%',width:`${(risk/5)*100}%`,background:riskColor,borderRadius:'99px',transition:'width 0.3s,background 0.3s'}}/>
-                      </div>
-                      <span style={{fontSize:'0.68rem',color:riskColor,fontWeight:700,minWidth:'80px'}}>{riskLabel}</span>
-                    </div>
-                  </div>
 
-                  {/* BATCH COOLDOWN */}
-                  <div style={{background:'rgba(167,139,250,0.04)',border:'1px solid rgba(167,139,250,0.15)',borderRadius:'10px',padding:'1rem'}}>
-                    <div style={{fontSize:'0.82rem',fontWeight:700,color:'#a78bfa',marginBottom:'0.4rem',display:'flex',alignItems:'center',gap:'0.4rem'}}>
-                      <Coffee size={14}/> Pausa de Seguran\u00E7a entre Lotes
-                    </div>
-                    <div style={{fontSize:'0.68rem',color:'rgba(255,255,255,0.35)',marginBottom:'0.65rem'}}>
-                      A cada N mensagens o sistema para automaticamente por alguns minutos \u2014 imita comportamento humano
-                    </div>
-                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.35rem'}}>
-                      {BATCH_PRESETS.map((p,i)=>(
-                        <button key={i} type="button" onClick={()=>handleBatchPreset(i)} className={`btn ${batchPresetIdx===i?'btn-primary':'btn-secondary'}`} style={{padding:'0.4rem 0.5rem',fontSize:'0.65rem',fontWeight:600,borderColor:batchPresetIdx===i?'':'rgba(167,139,250,0.2)'}}>{p.label}</button>
-                      ))}
+                    <div className="form-group" style={{borderTop:'1px solid rgba(255,255,255,0.05)',paddingTop:'1rem'}}>
+                      <label className="form-label" style={{fontWeight:600,fontSize:'0.8rem',color:'#e2e8f0',marginBottom:'0.4rem',display:'block'}}>Pausa de Segurança entre Lotes</label>
+                      <div style={{fontSize:'0.68rem',color:'rgba(255,255,255,0.4)',marginBottom:'0.6rem'}}>
+                        Simula o descanso humano inserindo pausas longas programadas na fila.
+                      </div>
+                      <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:'0.4rem'}}>
+                        {BATCH_PRESETS.map((p,i)=>(
+                          <button key={i} type="button" onClick={()=>handleBatchPreset(i)} className={`btn ${batchPresetIdx===i?'btn-primary':'btn-secondary'}`} style={{padding:'0.45rem 0',fontSize:'0.65rem',fontWeight:700,width:'100%',borderColor:batchPresetIdx===i?'':'rgba(167,139,250,0.2)'}}>{p.label}</button>
+                        ))}
+                      </div>
                     </div>
                   </div>
 
                   {/* AGENDAMENTO */}
-                  <div style={{background:'rgba(255,255,255,0.02)',border:'1px solid rgba(255,255,255,0.05)',borderRadius:'10px',padding:'0.75rem 1rem'}}>
-                    <label style={{display:'flex',alignItems:'center',gap:'0.5rem',cursor:'pointer',fontSize:'0.82rem',fontWeight:600,color:'#e2e8f0'}}>
-                      <input type="checkbox" checked={isScheduled} onChange={e=>{setIsScheduled(e.target.checked);if(e.target.checked&&!scheduledAt){const d=new Date();d.setDate(d.getDate()+1);setScheduledAt(d.toISOString().slice(0,16));}}}/>
-                      \uD83D\uDCC5 Agendar envio para depois
+                  <div style={{background:'rgba(255,255,255,0.02)',border:'1px solid rgba(255,255,255,0.05)',borderRadius:'10px',padding:'1.2rem'}}>
+                    <label style={{display:'flex',alignItems:'center',gap:'0.5rem',cursor:'pointer',fontSize:'0.82rem',fontWeight:700,color:'#f1f5f9',userSelect:'none'}}>
+                      <input type="checkbox" checked={isScheduled} onChange={e=>{setIsScheduled(e.target.checked);if(e.target.checked&&!scheduledAt){const d=new Date();d.setDate(d.getDate()+1);setScheduledAt(d.toISOString().slice(0,16));}}} style={{accentColor:'#25d366'}}/>
+                      📅 Agendar envio para depois
                     </label>
                     {isScheduled&&(
-                      <div style={{marginTop:'0.65rem',animation:'wa-fadeUp 0.15s ease'}}>
-                        <input type="datetime-local" className="input-control" value={scheduledAt} onChange={e=>setScheduledAt(e.target.value)} min={new Date().toISOString().slice(0,16)} style={{fontSize:'0.78rem'}}/>
-                        <span style={{fontSize:'0.63rem',color:'rgba(255,255,255,0.3)',marginTop:4,display:'block'}}>A campanha ficar\u00E1 na fila e disparar\u00E1 automaticamente.</span>
+                      <div style={{marginTop:'0.8rem',animation:'wa-fadeUp 0.15s ease',display:'flex',flexDirection:'column',gap:'0.4rem'}}>
+                        <input type="datetime-local" className="input-control" value={scheduledAt} onChange={e=>setScheduledAt(e.target.value)} min={new Date().toISOString().slice(0,16)} style={{fontSize:'0.78rem',width:'100%'}}/>
+                        <span style={{fontSize:'0.63rem',color:'rgba(255,255,255,0.3)'}}>A campanha ficará na fila do servidor e começará a rodar sozinha na data marcada.</span>
                       </div>
                     )}
                   </div>
                 </div>
 
-                {/* COLUNA 2: PREVIEW */}
-                <div style={{display:'flex',flexDirection:'column',background:'#0b141a',borderRadius:'12px',border:'1px solid rgba(255,255,255,0.06)',overflow:'hidden',position:'sticky',top:'1rem'}}>
-                  <div style={{background:'#202c33',padding:'0.7rem 1rem',display:'flex',alignItems:'center',justifyContent:'space-between',borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
+                {/* COLUNA 2: PREVIEW E ESTIMATIVAS */}
+                <div style={{display:'flex',flexDirection:'column',background:'#0b141a',borderRadius:'12px',border:'1px solid rgba(255,255,255,0.06)',overflow:'hidden',position:'sticky',top:'1rem',boxShadow:'0 10px 30px rgba(0,0,0,0.5)'}}>
+                  <div style={{background:'#202c33',padding:'0.8rem 1rem',display:'flex',alignItems:'center',justifyContent:'space-between',borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
                     <div style={{display:'flex',alignItems:'center',gap:'0.65rem'}}>
-                      <Smartphone size={16} color="#25d366"/>
+                      <Smartphone size={18} color="#25d366"/>
                       <div>
-                        <div style={{fontSize:'0.76rem',fontWeight:700,color:'white'}}>Live Preview</div>
-                        <div style={{fontSize:'0.59rem',color:'#8696a0'}}>{vars.length>0?`Variante ${previewVariantIdx+1} de ${vars.length}`:'Selecione um template'}</div>
+                        <div style={{fontSize:'0.8rem',fontWeight:700,color:'white'}}>Visualização do Cliente</div>
+                        <div style={{fontSize:'0.62rem',color:'#8696a0'}}>
+                          {vars.length > 0 ? "Variante " + (previewVariantIdx + 1) + " de " + vars.length : "Selecione um template"}
+                        </div>
                       </div>
                     </div>
-                    {vars.length>1&&<button type="button" onClick={()=>setPreviewVariantIdx(v=>(v+1)%vars.length)} className="btn btn-secondary" style={{padding:'0.3rem 0.5rem',fontSize:'0.65rem',gap:'0.3rem'}}><RefreshCw size={11}/> Pr\u00F3xima</button>}
+                    {vars.length>1&&<button type="button" onClick={()=>setPreviewVariantIdx(v=>(v+1)%vars.length)} className="btn btn-secondary" style={{padding:'0.3rem 0.6rem',fontSize:'0.65rem',gap:'0.3rem',display:'flex',alignItems:'center'}}><RefreshCw size={11}/> Próxima</button>}
                   </div>
+
                   {vars.length>1&&(
-                    <div style={{background:'#1a2730',display:'flex',overflowX:'auto',borderBottom:'1px solid rgba(255,255,255,0.04)',padding:'0.35rem 0.75rem',gap:'0.3rem'}}>
+                    <div style={{background:'#182229',display:'flex',overflowX:'auto',borderBottom:'1px solid rgba(255,255,255,0.04)',padding:'0.4rem 0.6rem',gap:'0.4rem'}}>
                       {vars.map((_,i)=>(
-                        <button key={i} type="button" onClick={()=>setPreviewVariantIdx(i)} style={{background:previewVariantIdx===i?'rgba(37,211,102,0.15)':'transparent',border:`1px solid ${previewVariantIdx===i?'#25d366':'rgba(255,255,255,0.08)'}`,color:previewVariantIdx===i?'#25d366':'#8696a0',borderRadius:'6px',padding:'0.2rem 0.5rem',fontSize:'0.65rem',cursor:'pointer',whiteSpace:'nowrap',transition:'all 0.15s'}}>
-                          {i===0?'\uD83D\uDCC4 Base':`\u270F\uFE0F Var. ${i+1}`}
+                        <button key={i} type="button" onClick={()=>setPreviewVariantIdx(i)} style={{background:previewVariantIdx===i?'rgba(37,211,102,0.12)':'transparent',border:`1px solid ${previewVariantIdx===i?'#25d366':'rgba(255,255,255,0.06)'}`,color:previewVariantIdx===i?'#25d366':'#8696a0',borderRadius:'6px',padding:'0.25rem 0.6rem',fontSize:'0.65rem',cursor:'pointer',whiteSpace:'nowrap',transition:'all 0.15s',fontWeight:600}}>
+                          {i===0?'📄 Base':`✏️ Var. ${i+1}`}
                         </button>
                       ))}
                     </div>
                   )}
-                  <div style={{flex:1,padding:'1rem',display:'flex',flexDirection:'column',backgroundImage:'radial-gradient(circle,rgba(255,255,255,0.015) 1px,transparent 1px)',backgroundSize:'16px 16px',backgroundColor:'#0b141a',minHeight:'200px',overflowY:'auto'}}>
+
+                  {/* CHAT DISPLAY */}
+                  <div style={{flex:1,padding:'1.2rem',display:'flex',flexDirection:'column',backgroundImage:'radial-gradient(circle,rgba(255,255,255,0.015) 1px,transparent 1px)',backgroundSize:'16px 16px',backgroundColor:'#0b141a',minHeight:'240px',overflowY:'auto'}}>
                     {templateId&&previewText?(
-                      <div style={{alignSelf:'flex-start',maxWidth:'92%',background:'#005c4b',color:'white',padding:'0.55rem 0.8rem',borderRadius:'0 8px 8px 8px',fontSize:'0.8rem',lineHeight:1.45,boxShadow:'0 1px 2px rgba(0,0,0,0.3)',wordBreak:'break-word',animation:'wa-fadeUp 0.15s ease'}}>
-                        {(()=>{const sel=templates.find(t=>t.id===templateId);return sel?.imageUrl&&previewVariantIdx===0?<img src={sel.imageUrl} alt="M\u00EDdia" style={{borderRadius:'6px',width:'100%',maxHeight:'160px',objectFit:'cover',marginBottom:'0.5rem'}}/>:null;})()}
+                      <div style={{alignSelf:'flex-start',maxWidth:'92%',background:'#005c4b',color:'white',padding:'0.6rem 0.9rem',borderRadius:'0 8px 8px 8px',fontSize:'0.82rem',lineHeight:1.45,boxShadow:'0 1px 2px rgba(0,0,0,0.3)',wordBreak:'break-word',animation:'wa-fadeUp 0.15s ease'}}>
+                        {(()=>{const sel=templates.find(t=>t.id===templateId);return sel?.imageUrl&&previewVariantIdx===0?<img src={sel.imageUrl} alt="Mídia" style={{borderRadius:'6px',width:'100%',maxHeight:'170px',objectFit:'cover',marginBottom:'0.6rem',border:'1px solid rgba(255,255,255,0.05)'}}/>:null;})()}
                         <div style={{whiteSpace:'pre-wrap'}}>{previewText}</div>
                         <div style={{display:'flex',justifyContent:'flex-end',fontSize:'0.56rem',color:'rgba(255,255,255,0.4)',marginTop:'4px'}}>
                           <span>{new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</span>
                         </div>
                       </div>
                     ):(
-                      <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',color:'rgba(255,255,255,0.2)',fontSize:'0.75rem'}}>Selecione um template para ver a simula\u00E7\u00E3o.</div>
+                      <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',color:'rgba(255,255,255,0.2)',fontSize:'0.75rem',textAlign:'center',padding:'2rem'}}>
+                        Selecione um template de mensagem para ver a simulação da entrega aqui.
+                      </div>
                     )}
                   </div>
-                  <div style={{background:'rgba(255,255,255,0.02)',borderTop:'1px solid rgba(255,255,255,0.04)',padding:'0.75rem 1rem'}}>
-                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.4rem',marginBottom:'0.5rem'}}>
-                      <div style={{fontSize:'0.65rem',color:'rgba(255,255,255,0.35)',display:'flex',flexDirection:'column',gap:'0.2rem'}}>
-                        <span>\u23F1 Delay: <strong style={{color:'#e2e8f0'}}>{delayMin}s \u2013 {delayMax}s</strong></span>
-                        <span>\uD83C\uDFB2 Variantes: <strong style={{color:'#34d399'}}>{vars.length}</strong></span>
+
+                  {/* ESTIMATIVAS E METADADOS */}
+                  <div style={{background:'rgba(255,255,255,0.02)',borderTop:'1px solid rgba(255,255,255,0.05)',padding:'1rem'}}>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.6rem',marginBottom:'0.6rem',fontSize:'0.72rem'}}>
+                      <div style={{color:'rgba(255,255,255,0.45)',display:'flex',flexDirection:'column',gap:'0.2rem'}}>
+                        <span>⏱️ Delay: <strong style={{color:'#f8fafc'}}>{delayMin}s – {delayMax}s</strong></span>
+                        <span>🎲 Textos: <strong style={{color:'#34d399'}}>{vars.length} variantes</strong></span>
                       </div>
-                      <div style={{fontSize:'0.65rem',color:'rgba(255,255,255,0.35)',display:'flex',flexDirection:'column',gap:'0.2rem'}}>
-                        <span>\u2615 Lote: <strong style={{color:'#a78bfa'}}>{batchSize>0?`${batchSize} msgs`:'Desativado'}</strong></span>
-                        <span>\uD83D\uDEE1\uFE0F Risco: <strong style={{color:riskColor}}>{riskLabel}</strong></span>
+                      <div style={{color:'rgba(255,255,255,0.45)',display:'flex',flexDirection:'column',gap:'0.2rem'}}>
+                        <span>☕ Cooldown: <strong style={{color:'#a78bfa'}}>{batchSize>0?`Lote de ${batchSize} msgs`:'Desativado'}</strong></span>
+                        <span>🛡️ Risco Ban: <strong style={{color:riskColor}}>{riskLabel}</strong></span>
                       </div>
                     </div>
-                    {contactsCount>0&&est&&(
+                    {contactsCount > 0 && est && (
                       <>
                         <div style={{height:'1px',background:'rgba(255,255,255,0.05)',marginBottom:'0.5rem'}}/>
-                        <div style={{display:'flex',justifyContent:'space-between',fontSize:'0.68rem',color:'rgba(255,255,255,0.4)'}}>
-                          <span>Contatos: <strong style={{color:'white'}}>{contactsCount}</strong></span>
+                        <div style={{display:'flex',justifyContent:'space-between',fontSize:'0.72rem',color:'rgba(255,255,255,0.4)'}}>
+                          <span>Total de Contatos: <strong style={{color:'#f8fafc'}}>{contactsCount}</strong></span>
                         </div>
-                        <div style={{display:'flex',justifyContent:'space-between',fontSize:'0.68rem',color:'rgba(255,255,255,0.4)',marginTop:'0.2rem'}}>
-                          <span>Tempo total estimado (c/ pausas):</span>
+                        <div style={{display:'flex',justifyContent:'space-between',fontSize:'0.72rem',color:'rgba(255,255,255,0.4)',marginTop:'0.2rem'}}>
+                          <span>Duração Total Estimada:</span>
                           <span style={{fontWeight:700,color:'#10b981'}}>{est.min} ~ {est.max}</span>
                         </div>
                       </>
@@ -467,10 +490,10 @@ export default function CampaignsPage() {
                 </div>
 
               </div>
-              <div className="modal-footer">
+              <div className="modal-footer" style={{borderTop:'1px solid rgba(255,255,255,0.08)',padding:'1rem 1.5rem'}}>
                 <button type="button" className="btn btn-secondary" onClick={()=>setShowAddCampaign(false)} disabled={isSubmitting}>Cancelar</button>
-                <button type="submit" className="btn btn-primary" disabled={isSubmitting||(targetType==='GROUP'&&groups.length===0)||(targetType==='SEGMENT'&&segments.length===0)||templates.length===0}>
-                  {isSubmitting?'Criando...':`\uD83D\uDE80 Criar Campanha${vars.length>1?` (${vars.length} variantes)`:''}`}
+                <button type="submit" className="btn btn-primary" disabled={isSubmitting||(targetType==='GROUP'&&groups.length===0)||(targetType==='SEGMENT'&&segments.length===0)||templates.length===0} style={{display:'flex',alignItems:'center',gap:'0.4rem'}}>
+                  {"🚀 Criar Campanha " + (vars.length > 1 ? "(" + vars.length + " variantes)" : "")}
                 </button>
               </div>
             </form>
