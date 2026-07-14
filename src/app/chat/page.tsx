@@ -31,6 +31,9 @@ interface Message {
     audioMessage?: { mimetype?: string; seconds?: number };
     documentMessage?: { title?: string; mimetype?: string; fileName?: string };
     stickerMessage?: { mimetype?: string };
+    viewOnceMessage?: { message?: any };
+    viewOnceMessageV2?: { message?: any };
+    viewOnceMessageV2Extension?: { message?: any };
   };
   text?: string;
   messageTimestamp?: number;
@@ -57,7 +60,15 @@ function initials(name: string) {
 }
 
 function getMsgText(msg: Message) {
-  return msg.message?.conversation || msg.message?.extendedTextMessage?.text || msg.text || '';
+  let messageObj = msg.message;
+  if (messageObj?.viewOnceMessage?.message) {
+    messageObj = messageObj.viewOnceMessage.message;
+  } else if (messageObj?.viewOnceMessageV2?.message) {
+    messageObj = messageObj.viewOnceMessageV2.message;
+  } else if (messageObj?.viewOnceMessageV2Extension?.message) {
+    messageObj = messageObj.viewOnceMessageV2Extension.message;
+  }
+  return messageObj?.conversation || messageObj?.extendedTextMessage?.text || msg.text || '';
 }
 
 function playPing() {
@@ -409,38 +420,61 @@ export default function ChatPage() {
     `/api/chat/media?instanceName=${selInstance}&messageId=${msg.key.id}&fromMe=${msg.key.fromMe}&remoteJid=${selChat?.id}`;
 
   const renderContent = (msg: Message) => {
-    const txt = getMsgText(msg);
-    if (txt) return <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.45 }}>{txt}</div>;
+    let messageObj = msg.message;
+    let isViewOnce = false;
 
-    if (msg.message?.imageMessage) {
+    if (messageObj?.viewOnceMessage?.message) {
+      messageObj = messageObj.viewOnceMessage.message;
+      isViewOnce = true;
+    } else if (messageObj?.viewOnceMessageV2?.message) {
+      messageObj = messageObj.viewOnceMessageV2.message;
+      isViewOnce = true;
+    } else if (messageObj?.viewOnceMessageV2Extension?.message) {
+      messageObj = messageObj.viewOnceMessageV2Extension.message;
+      isViewOnce = true;
+    }
+
+    const txt = messageObj?.conversation || messageObj?.extendedTextMessage?.text || msg.text || '';
+    if (txt && !messageObj?.imageMessage && !messageObj?.videoMessage) {
+      return (
+        <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.45 }}>
+          {isViewOnce && <span style={{ color: '#ffb300', fontWeight: 600, marginRight: 5 }}>[Visualização Única]</span>}
+          {txt}
+        </div>
+      );
+    }
+
+    if (messageObj?.imageMessage) {
       const url = mediaUrl(msg);
       return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          {isViewOnce && <div style={{ color: '#ffb300', fontSize: '0.78rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>👁️ Foto de Visualização Única (Salva)</div>}
           <img src={url} alt="Imagem" loading="lazy" onClick={() => window.open(url, '_blank')}
             style={{ borderRadius: 8, maxWidth: '100%', maxHeight: 280, objectFit: 'cover', cursor: 'pointer', border: '1px solid rgba(255,255,255,0.05)' }} />
-          {msg.message.imageMessage.caption && <div style={{ fontSize: '0.84rem', whiteSpace: 'pre-wrap' }}>{msg.message.imageMessage.caption}</div>}
+          {messageObj.imageMessage.caption && <div style={{ fontSize: '0.84rem', whiteSpace: 'pre-wrap' }}>{messageObj.imageMessage.caption}</div>}
         </div>
       );
     }
-    if (msg.message?.videoMessage) {
+    if (messageObj?.videoMessage) {
       const url = mediaUrl(msg);
       return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          {isViewOnce && <div style={{ color: '#ffb300', fontSize: '0.78rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>👁️ Vídeo de Visualização Única (Salvo)</div>}
           <video src={url} controls preload="metadata" style={{ borderRadius: 8, maxWidth: '100%', maxHeight: 240, background: '#000' }} />
-          {msg.message.videoMessage.caption && <div style={{ fontSize: '0.84rem', whiteSpace: 'pre-wrap' }}>{msg.message.videoMessage.caption}</div>}
+          {messageObj.videoMessage.caption && <div style={{ fontSize: '0.84rem', whiteSpace: 'pre-wrap' }}>{messageObj.videoMessage.caption}</div>}
         </div>
       );
     }
-    if (msg.message?.audioMessage) return <AudioPlayer src={mediaUrl(msg)} />;
-    if (msg.message?.documentMessage) {
+    if (messageObj?.audioMessage) return <AudioPlayer src={mediaUrl(msg)} />;
+    if (messageObj?.documentMessage) {
       const url = mediaUrl(msg);
-      const name = msg.message.documentMessage.title || msg.message.documentMessage.fileName || 'Documento';
+      const name = messageObj.documentMessage.title || messageObj.documentMessage.fileName || 'Documento';
       return (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(255,255,255,0.06)', padding: '10px 14px', borderRadius: 8, minWidth: 210 }}>
           <FileText size={22} color="#25d366" />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: '0.84rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
-            <div style={{ fontSize: '0.67rem', color: 'rgba(255,255,255,0.38)' }}>{msg.message.documentMessage.mimetype || 'document'}</div>
+            <div style={{ fontSize: '0.67rem', color: 'rgba(255,255,255,0.38)' }}>{messageObj.documentMessage.mimetype || 'document'}</div>
           </div>
           <a href={url} download={name} style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', textDecoration: 'none' }}>
             <Download size={12} />
@@ -448,7 +482,7 @@ export default function ChatPage() {
         </div>
       );
     }
-    if (msg.message?.stickerMessage) return <img src={mediaUrl(msg)} alt="Sticker" style={{ width: 110, height: 110, objectFit: 'contain' }} />;
+    if (messageObj?.stickerMessage) return <img src={mediaUrl(msg)} alt="Sticker" style={{ width: 110, height: 110, objectFit: 'contain' }} />;
     return <div style={{ color: 'rgba(255,255,255,0.28)', fontStyle: 'italic', fontSize: '0.78rem' }}>[Tipo não suportado]</div>;
   };
 
