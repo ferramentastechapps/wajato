@@ -3,14 +3,14 @@ import { prisma } from '@/lib/prisma';
 import { signToken, setSessionCookie } from '@/lib/auth';
 
 export async function GET(request: Request) {
+  const appUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL;
+  const baseUrl = appUrl || request.url;
+
   try {
     const { searchParams } = new URL(request.url);
     const code = searchParams.get('code');
     const state = searchParams.get('state');
     const errorParam = searchParams.get('error');
-
-    const appUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL;
-    const baseUrl = appUrl || request.url;
 
     if (errorParam || !code) {
       console.error('[Google OAuth] Erro retornado ou código ausente:', errorParam);
