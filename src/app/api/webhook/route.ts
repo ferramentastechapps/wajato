@@ -107,6 +107,27 @@ export async function POST(request: Request) {
 
           console.log(`[Webhook Debug] Mensagem de ${phone} (fromMe:${fromMe}, grupo:${isGroupMessage}): "${messageText}" pushName:"${pushName}"`);
 
+          // Salva ou atualiza o contato no banco de dados local com o nome de perfil do WhatsApp
+          if (isDirectMessage && phone && pushName && !pushName.includes('@')) {
+            try {
+              const contact = await prisma.contact.findUnique({ where: { phone } });
+              if (!contact) {
+                await prisma.contact.create({
+                  data: { phone, name: pushName },
+                });
+                console.log(`[Webhook] Contato ${phone} cadastrado automaticamente com pushName: ${pushName}`);
+              } else if (!contact.name) {
+                await prisma.contact.update({
+                  where: { id: contact.id },
+                  data: { name: pushName },
+                });
+                console.log(`[Webhook] Contato ${phone} atualizado com nome pushName: ${pushName}`);
+              }
+            } catch (err: any) {
+              console.error(`[Webhook] Erro ao cadastrar/atualizar contato ${phone}:`, err.message);
+            }
+          }
+
           if (messageText || isGroupMessage) {
             // Verifica se o remetente é uma de nossas instâncias locais (para evitar loop bidirecional)
             const isLocalInstance = await prisma.whatsAppInstance.findFirst({

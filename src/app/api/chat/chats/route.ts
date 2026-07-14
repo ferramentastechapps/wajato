@@ -85,6 +85,39 @@ export async function GET(req: Request) {
       }
     }
 
+    // Salvar contatos não cadastrados ou sem nome usando o pushName do WhatsApp
+    const contactsToUpsert = [];
+    for (let i = 0; i < mappedChats.length; i++) {
+      const c = mappedChats[i];
+      const chat = chats[i];
+      if (c.phoneNumber && chat.pushName && !chat.pushName.includes('@') && !chat.remoteJid?.endsWith('@g.us')) {
+        const dbName = contactMap.get(c.phoneNumber) || 
+                       contactMap.get(c.phoneNumber.startsWith('55') ? c.phoneNumber.slice(2) : `55${c.phoneNumber}`);
+        if (!dbName) {
+          contactsToUpsert.push({
+            phone: c.phoneNumber,
+            name: chat.pushName,
+          });
+        }
+      }
+    }
+
+    if (contactsToUpsert.length > 0) {
+      await Promise.all(
+        contactsToUpsert.map(item => 
+          prisma.contact.upsert({
+            where: { phone: item.phone },
+            update: { name: item.name },
+            create: { phone: item.phone, name: item.name },
+          }).catch(err => console.error(`[Chats Route] Erro ao cadastrar/atualizar contato ${item.phone}:`, err.message))
+        )
+      );
+
+      for (const item of contactsToUpsert) {
+        contactMap.set(item.phone, item.name);
+      }
+    }
+
     const finalChats = mappedChats.map((c: any, index: number) => {
       const chat = chats[index];
       let finalName = c.name;
