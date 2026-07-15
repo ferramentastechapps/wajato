@@ -50,13 +50,15 @@ export interface ConnectionStateResponse {
 
 export const evolutionApi = {
   /**
-   * Cria uma nova instância de conexão no Evolution API
+   * Cria uma nova instância de conexão no Evolution API.
+   * @param instanceName Nome da instância
+   * @param qrcode Se true (padrão), gera QR code. Se false, usa modo pairing code.
    */
-  async createInstance(instanceName: string): Promise<CreateInstanceResponse> {
+  async createInstance(instanceName: string, qrcode: boolean = true): Promise<CreateInstanceResponse> {
     try {
       const response = await evolutionClient.post<CreateInstanceResponse>('/instance/create', {
         instanceName,
-        qrcode: true,
+        qrcode,
         integration: 'WHATSAPP-BAILEYS',
       });
       return response.data;
@@ -65,6 +67,7 @@ export const evolutionApi = {
       throw new Error(error?.response?.data?.message || 'Falha ao criar instância no Evolution API');
     }
   },
+
 
   /**
    * Busca a lista de todas as instâncias no Evolution API

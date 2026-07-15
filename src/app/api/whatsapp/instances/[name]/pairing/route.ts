@@ -35,11 +35,33 @@ export async function POST(req: Request, { params }: Params) {
       return NextResponse.json({ error: 'Instância não encontrada no banco' }, { status: 404 });
     }
 
-    // 2. Garante que a instância é desconectada antes de pedir o pairing code (evita estado 'connecting' travado)
+    // 2. Garante que a instância está em estado limpo (close) para receber pairing code.
+    // O pairing code SÓ é retornado pela Evolution API quando a instância está desconectada (close).
+    // Se a instância está em estado 'open' (mesmo que fantasma), o logout simples pode falhar.
+    // Por isso, deletamos e recriamos a instância para garantir estado limpo.
     try {
       await evolutionApi.logoutInstance(name);
     } catch {
-      // Ignora erro de logout se a instância já estiver desconectada
+      // Se logout falhou (ex: instância em estado inválido), força delete + recreate
+      try {
+        await evolutionApi.deleteInstance(name);
+      } catch { /* ignora */ }
+
+      // Recria a instância SEM QR code (modo pairing code)
+      await evolutionApi.createInstance(name, false);
+
+      // Reconfigura webhook
+      const appUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+      try {
+        await evolutionApi.setWebhook(name, `${appUrl}/api/webhook`);
+      } catch { /* não crítico */ }
+
+      // Reconfigura proxy se havia
+      if (dbInst.proxy) {
+        try {
+          await evolutionApi.setInstanceProxy(name, dbInst.proxy);
+        } catch { /* não crítico */ }
+      }
     }
 
     // 3. Chama o Evolution API para gerar o código de pareamento
@@ -49,7 +71,7 @@ export async function POST(req: Request, { params }: Params) {
       return NextResponse.json({ error: 'O gateway Evolution não retornou um código de pareamento válido' }, { status: 500 });
     }
 
-    // 3. Salva o telefone informado na instância e marca como INITIALIZING
+    // 4. Salva o telefone informado na instância e marca como INITIALIZING
     await prisma.whatsAppInstance.update({
       where: { name },
       data: {
