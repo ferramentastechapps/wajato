@@ -1144,7 +1144,7 @@ export default function ChatPage() {
                 {/* 1. MEU STATUS PUBLISHER FORM */}
                 {selectedContactJid === 'me' && (
                   <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'space-between', overflow: 'hidden' }}>
-                    <div style={{ flex: 1, overflowY: 'auto', paddingRight: '0.4rem', marginBottom: '1rem', minHeight: 0 }}>
+                    <div style={{ maxHeight: '420px', overflowY: 'auto', paddingRight: '0.4rem', marginBottom: '1rem' }}>
                       <h3 style={{ margin: '0 0 1.2rem 0', fontSize: '1.05rem', color: 'white', fontWeight: 700 }}>Enviar Atualização de Status</h3>
                       
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
