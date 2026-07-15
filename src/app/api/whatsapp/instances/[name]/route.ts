@@ -75,6 +75,16 @@ export async function GET(_req: Request, { params }: Params) {
       },
     });
 
+    let about = null;
+    if (updatedInst.status === 'CONNECTED' && updatedInst.phone) {
+      try {
+        const contactInfo = await evolutionApi.fetchContactInfo(name, updatedInst.phone);
+        about = contactInfo?.about || null;
+      } catch (err) {
+        console.warn(`[GET Instance] Erro ao buscar recado do perfil para ${name}:`, err);
+      }
+    }
+
     return NextResponse.json({
       success: true,
       status: updatedInst.status,
@@ -82,6 +92,7 @@ export async function GET(_req: Request, { params }: Params) {
       phone: updatedInst.phone,
       profileName: updatedInst.profileName,
       profilePicUrl: updatedInst.profilePicUrl,
+      about,
     });
   } catch (error: any) {
     console.error(`Erro ao consultar status da instância:`, error);
@@ -129,7 +140,7 @@ export async function DELETE(_req: Request, { params }: Params) {
   }
 }
 
-// PATCH — Atualiza configurações da instância (como a proxy)
+// PATCH — Atualiza configurações da instância (como a proxy, perfil, etc.)
 export async function PATCH(req: Request, { params }: Params) {
   try {
     const user = await getSessionUser();
@@ -139,7 +150,7 @@ export async function PATCH(req: Request, { params }: Params) {
 
     const { name } = await params;
     const body = await req.json();
-    const { proxy } = body;
+    const { proxy, profileName, profileStatus, profilePic } = body;
 
     const dbInst = await prisma.whatsAppInstance.findUnique({
       where: { name },
@@ -149,14 +160,36 @@ export async function PATCH(req: Request, { params }: Params) {
       return NextResponse.json({ error: 'Instância não encontrada' }, { status: 404 });
     }
 
-    // 1. Atualiza no banco local
-    const updatedInst = await prisma.whatsAppInstance.update({
-      where: { name },
-      data: { proxy: proxy || null },
-    });
+    // 1. Envia as atualizações para o Evolution API se fornecidas
+    if (profileName !== undefined) {
+      try {
+        await evolutionApi.updateProfileName(name, profileName);
+      } catch (err: any) {
+        console.error(`Erro ao atualizar nome do perfil no gateway para ${name}:`, err.message);
+        return NextResponse.json({ error: `Falha ao atualizar nome do perfil: ${err.message}` }, { status: 400 });
+      }
+    }
 
-    // 2. Envia o proxy para o Evolution API
-    if (proxy) {
+    if (profileStatus !== undefined) {
+      try {
+        await evolutionApi.updateProfileStatus(name, profileStatus);
+      } catch (err: any) {
+        console.error(`Erro ao atualizar recado do perfil no gateway para ${name}:`, err.message);
+        return NextResponse.json({ error: `Falha ao atualizar recado do perfil: ${err.message}` }, { status: 400 });
+      }
+    }
+
+    if (profilePic !== undefined) {
+      try {
+        await evolutionApi.updateProfilePicture(name, profilePic);
+      } catch (err: any) {
+        console.error(`Erro ao atualizar foto do perfil no gateway para ${name}:`, err.message);
+        return NextResponse.json({ error: `Falha ao atualizar foto de perfil: ${err.message}` }, { status: 400 });
+      }
+    }
+
+    // 2. Envia o proxy para o Evolution API se fornecido
+    if (proxy !== undefined && proxy !== null) {
       try {
         await evolutionApi.setInstanceProxy(name, proxy);
         console.log(`[PATCH Instance] Proxy atualizado com sucesso no gateway para ${name}`);
@@ -164,6 +197,19 @@ export async function PATCH(req: Request, { params }: Params) {
         console.error(`Erro ao atualizar proxy no gateway para ${name}:`, proxyErr.message);
       }
     }
+
+    // 3. Atualiza no banco local
+    const dataToUpdate: any = {};
+    if (proxy !== undefined) dataToUpdate.proxy = proxy || null;
+    if (profileName !== undefined) dataToUpdate.profileName = profileName || null;
+    if (profilePic !== undefined && profilePic.startsWith('http')) {
+      dataToUpdate.profilePicUrl = profilePic;
+    }
+
+    const updatedInst = await prisma.whatsAppInstance.update({
+      where: { name },
+      data: dataToUpdate,
+    });
 
     return NextResponse.json({
       success: true,

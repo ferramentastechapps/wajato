@@ -384,6 +384,46 @@ export const evolutionApi = {
   },
 
   /**
+   * Atualiza o nome do perfil do WhatsApp da instância.
+   */
+  async updateProfileName(instanceName: string, name: string): Promise<any> {
+    try {
+      const response = await evolutionClient.post(`/chat/updateProfileName/${instanceName}`, { name });
+      return response.data;
+    } catch (error: any) {
+      console.error(`Erro ao atualizar nome do perfil para ${instanceName}:`, error?.response?.data || error.message);
+      throw new Error(error?.response?.data?.message || 'Falha ao atualizar nome do perfil');
+    }
+  },
+
+  /**
+   * Atualiza o recado (status/bio) do perfil do WhatsApp da instância.
+   */
+  async updateProfileStatus(instanceName: string, status: string): Promise<any> {
+    try {
+      const response = await evolutionClient.post(`/chat/updateProfileStatus/${instanceName}`, { status });
+      return response.data;
+    } catch (error: any) {
+      console.error(`Erro ao atualizar recado do perfil para ${instanceName}:`, error?.response?.data || error.message);
+      throw new Error(error?.response?.data?.message || 'Falha ao atualizar recado do perfil');
+    }
+  },
+
+  /**
+   * Atualiza a foto do perfil do WhatsApp da instância.
+   * Aceita URL pública ou string Base64 da imagem.
+   */
+  async updateProfilePicture(instanceName: string, picture: string): Promise<any> {
+    try {
+      const response = await evolutionClient.post(`/chat/updateProfilePicture/${instanceName}`, { picture });
+      return response.data;
+    } catch (error: any) {
+      console.error(`Erro ao atualizar foto do perfil para ${instanceName}:`, error?.response?.data || error.message);
+      throw new Error(error?.response?.data?.message || 'Falha ao atualizar foto de perfil');
+    }
+  },
+
+  /**
    * Envia uma enquete nativa do WhatsApp.
    * Altíssimo engajamento — usuário consegue votar de forma fácil e natural.
    */
@@ -534,6 +574,7 @@ export const evolutionApi = {
     name: string | null;
     pushName: string | null;
     profilePicUrl: string | null;
+    about?: string | null;
     isGroup: boolean;
     groupSubject: string | null;
   }> {
@@ -550,6 +591,7 @@ export const evolutionApi = {
           name: data?.subject || null,
           pushName: data?.subject || null,
           profilePicUrl: data?.profilePicUrl || null,
+          about: null,
           isGroup: true,
           groupSubject: data?.subject || null,
         };
@@ -564,13 +606,14 @@ export const evolutionApi = {
           name: data?.name || data?.pushName || null,
           pushName: data?.pushName || data?.name || null,
           profilePicUrl: data?.picture || data?.profilePicUrl || null,
+          about: data?.status || null,
           isGroup: false,
           groupSubject: null,
         };
       }
     } catch (error: any) {
       // Retorna nulo silenciosamente se não conseguir buscar o perfil
-      return { name: null, pushName: null, profilePicUrl: null, isGroup, groupSubject: null };
+      return { name: null, pushName: null, profilePicUrl: null, about: null, isGroup, groupSubject: null };
     }
   },
 

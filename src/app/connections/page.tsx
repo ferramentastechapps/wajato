@@ -29,7 +29,8 @@ import {
   Globe,
   Snowflake,
   BookOpen,
-  Info
+  Info,
+  Edit3
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -153,6 +154,105 @@ export default function ConnectionsPage() {
   // Estados para edição manual de proxy
   const [editingInstance, setEditingInstance] = useState<string | null>(null);
   const [editProxy, setEditProxy] = useState('');
+
+  // Estados para Edição de Perfil do WhatsApp
+  const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
+  const [editingProfileInstance, setEditingProfileInstance] = useState<Instance | null>(null);
+  const [editProfileName, setEditProfileName] = useState('');
+  const [editProfileStatus, setEditProfileStatus] = useState('');
+  const [editProfilePic, setEditProfilePic] = useState('');
+  const [updatingProfile, setUpdatingProfile] = useState(false);
+  const [editProfileError, setEditProfileError] = useState('');
+
+  const handleOpenEditProfile = async (inst: Instance) => {
+    setEditingProfileInstance(inst);
+    setEditProfileName(inst.profileName || '');
+    setEditProfilePic(inst.profilePicUrl || '');
+    setEditProfileStatus('');
+    setEditProfileError('');
+    setIsEditProfileOpen(true);
+
+    try {
+      const res = await fetch(`/api/whatsapp/instances/${inst.name}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.about) {
+          setEditProfileStatus(data.about);
+        }
+        if (data.profileName) {
+          setEditProfileName(data.profileName);
+        }
+        if (data.profilePicUrl) {
+          setEditProfilePic(data.profilePicUrl);
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao buscar bio do perfil:', err);
+    }
+  };
+
+  const handleUpdateProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingProfileInstance) return;
+
+    setUpdatingProfile(true);
+    setEditProfileError('');
+
+    try {
+      const payload: any = {};
+      
+      if (editProfileName !== editingProfileInstance.profileName) {
+        payload.profileName = editProfileName.trim();
+      }
+      
+      payload.profileStatus = editProfileStatus.trim();
+      
+      if (editProfilePic !== editingProfileInstance.profilePicUrl) {
+        payload.profilePic = editProfilePic.trim();
+      }
+
+      const res = await fetch(`/api/whatsapp/instances/${editingProfileInstance.name}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        setIsEditProfileOpen(false);
+        setEditingProfileInstance(null);
+        await fetchInstances();
+      } else {
+        const data = await res.json();
+        setEditProfileError(data.error || 'Erro ao atualizar dados do perfil.');
+      }
+    } catch (err: any) {
+      console.error(err);
+      setEditProfileError('Erro de conexão ao atualizar perfil.');
+    } finally {
+      setUpdatingProfile(false);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      setEditProfileError('A imagem deve ter no máximo 2MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      if (typeof reader.result === 'string') {
+        setEditProfilePic(reader.result);
+      }
+    };
+    reader.onerror = () => {
+      setEditProfileError('Erro ao ler o arquivo de imagem.');
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleUpdateProxy = async (name: string) => {
     let formattedProxy = editProxy.trim();
@@ -694,26 +794,63 @@ export default function ConnectionsPage() {
                   {/* Foto de Perfil */}
                   {isConnected && inst.profilePicUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={inst.profilePicUrl}
-                      alt="Avatar"
-                      style={{ width: '48px', height: '48px', borderRadius: '50%', border: '2px solid #10b981' }}
-                    />
+                    <div 
+                      style={{ position: 'relative', cursor: 'pointer' }} 
+                      onClick={() => handleOpenEditProfile(inst)}
+                      title="Editar Perfil"
+                    >
+                      <img
+                        src={inst.profilePicUrl}
+                        alt="Avatar"
+                        style={{ width: '48px', height: '48px', borderRadius: '50%', border: '2px solid #10b981', transition: 'opacity 0.2s' }}
+                        onMouseEnter={e => e.currentTarget.style.opacity = '0.8'}
+                        onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+                      />
+                      <div style={{
+                        position: 'absolute', bottom: 0, right: 0,
+                        background: '#10b981', borderRadius: '50%',
+                        width: '16px', height: '16px',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        border: '2px solid #222e35'
+                      }}>
+                        <Edit3 size={9} color="#111b21" />
+                      </div>
+                    </div>
                   ) : (
-                    <div style={{
-                      width: '48px',
-                      height: '48px',
-                      borderRadius: '50%',
-                      background: 'linear-gradient(135deg, #1e293b, #334155)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '1.2rem',
-                      fontWeight: 700,
-                      color: isConnected ? '#10b981' : '#6b7280',
-                      border: isConnected ? '2px solid #10b981' : '2px solid rgba(255,255,255,0.05)',
-                    }}>
+                    <div 
+                      onClick={() => isConnected && handleOpenEditProfile(inst)}
+                      style={{
+                        width: '48px',
+                        height: '48px',
+                        borderRadius: '50%',
+                        background: 'linear-gradient(135deg, #1e293b, #334155)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '1.2rem',
+                        fontWeight: 700,
+                        color: isConnected ? '#10b981' : '#6b7280',
+                        border: isConnected ? '2px solid #10b981' : '2px solid rgba(255,255,255,0.05)',
+                        position: 'relative',
+                        cursor: isConnected ? 'pointer' : 'default',
+                        transition: 'opacity 0.2s'
+                      }}
+                      onMouseEnter={e => { if (isConnected) e.currentTarget.style.opacity = '0.8'; }}
+                      onMouseLeave={e => { if (isConnected) e.currentTarget.style.opacity = '1'; }}
+                      title={isConnected ? "Editar Perfil" : undefined}
+                    >
                       {inst.profileName ? inst.profileName[0]?.toUpperCase() : inst.name[0]?.toUpperCase()}
+                      {isConnected && (
+                        <div style={{
+                          position: 'absolute', bottom: 0, right: 0,
+                          background: '#10b981', borderRadius: '50%',
+                          width: '16px', height: '16px',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          border: '2px solid #222e35'
+                        }}>
+                          <Edit3 size={9} color="#111b21" />
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -723,6 +860,23 @@ export default function ConnectionsPage() {
                       <h4 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 700, color: 'white', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {inst.profileName || inst.name}
                       </h4>
+                      {isConnected && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditProfile(inst)}
+                          style={{
+                            background: 'none', border: 'none', cursor: 'pointer',
+                            color: 'rgba(255,255,255,0.45)', padding: '2px',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            transition: 'color 0.2s'
+                          }}
+                          onMouseEnter={e => e.currentTarget.style.color = '#10b981'}
+                          onMouseLeave={e => e.currentTarget.style.color = 'rgba(255,255,255,0.45)'}
+                          title="Editar Perfil"
+                        >
+                          <Edit3 size={11} />
+                        </button>
+                      )}
                       {inst.profileName && (
                         <span style={{ fontSize: '0.65rem', padding: '1px 5px', background: 'rgba(255,255,255,0.08)', borderRadius: '4px', color: 'rgba(255,255,255,0.5)' }}>
                           {inst.name}
@@ -1396,6 +1550,203 @@ export default function ConnectionsPage() {
         </div>
       )}
 
+      {/* Modal - Editar Perfil */}
+      {isEditProfileOpen && editingProfileInstance && (
+        <div className="modal-overlay" style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(11, 20, 26, 0.85)', backdropFilter: 'blur(8px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 9999, transition: 'all 0.3s ease'
+        }}>
+          <div className="modal-content" style={{
+            maxWidth: '450px', width: '100%', background: '#222e35',
+            border: '1px solid rgba(255,255,255,0.08)', borderRadius: '16px',
+            boxShadow: '0 20px 25px -5px rgba(0,0,0,0.5), 0 10px 10px -5px rgba(0,0,0,0.4)',
+            overflow: 'hidden', padding: '1.5rem', animation: 'scaleUp 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
+          }}>
+            <div className="modal-header" style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '1rem',
+              marginBottom: '1.25rem'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <Edit3 size={18} color="#10b981" />
+                <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: 'white' }}>
+                  Editar Perfil — {editingProfileInstance.name}
+                </h3>
+              </div>
+              <button 
+                type="button"
+                className="btn-close" 
+                onClick={() => { setIsEditProfileOpen(false); setEditingProfileInstance(null); }}
+                style={{
+                  background: 'none', border: 'none', color: 'rgba(255,255,255,0.5)',
+                  cursor: 'pointer', padding: '4px', borderRadius: '50%',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  transition: 'background 0.2s'
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'none'}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateProfile} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              {/* Foto de perfil */}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{ position: 'relative', width: '90px', height: '90px' }}>
+                  {editProfilePic ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={editProfilePic}
+                      alt="Preview Avatar"
+                      style={{ width: '90px', height: '90px', borderRadius: '50%', objectFit: 'cover', border: '3px solid #10b981' }}
+                    />
+                  ) : (
+                    <div style={{
+                      width: '90px', height: '90px', borderRadius: '50%',
+                      background: 'linear-gradient(135deg, #1e293b, #334155)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: '2rem', fontWeight: 700, color: '#10b981',
+                      border: '3px solid rgba(255,255,255,0.05)'
+                    }}>
+                      {editProfileName ? editProfileName[0]?.toUpperCase() : editingProfileInstance.name[0]?.toUpperCase()}
+                    </div>
+                  )}
+                  <label htmlFor="profile-pic-file" style={{
+                    position: 'absolute', bottom: 0, right: 0,
+                    background: '#10b981', borderRadius: '50%',
+                    width: '28px', height: '28px',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    border: '3px solid #222e35', cursor: 'pointer',
+                    boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
+                    transition: 'transform 0.2s'
+                  }}
+                    onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.1)'}
+                    onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+                  >
+                    <Edit3 size={12} color="#111b21" />
+                    <input
+                      type="file"
+                      id="profile-pic-file"
+                      accept="image/*"
+                      onChange={handleFileChange}
+                      style={{ display: 'none' }}
+                    />
+                  </label>
+                </div>
+                <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.45)' }}>
+                  Clique no ícone para fazer upload de uma imagem (máx. 2MB)
+                </span>
+                
+                {/* Fallback de URL de Imagem */}
+                <div style={{ width: '100%', marginTop: '0.25rem' }}>
+                  <label style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.5)', marginBottom: 4, display: 'block' }}>
+                    Ou insira uma URL de Imagem Pública
+                  </label>
+                  <input
+                    type="text"
+                    value={editProfilePic.startsWith('data:') ? '' : editProfilePic}
+                    onChange={e => setEditProfilePic(e.target.value)}
+                    placeholder="https://exemplo.com/minha-foto.jpg"
+                    style={{
+                      width: '100%', padding: '0.45rem 0.6rem', background: 'rgba(255,255,255,0.03)',
+                      border: '1px solid rgba(255,255,255,0.08)', borderRadius: '6px', color: '#fff',
+                      fontSize: '0.8rem', outline: 'none'
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Nome do perfil */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <label style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)', margin: 0 }}>
+                    Nome de Perfil (WhatsApp)
+                  </label>
+                  <span style={{ fontSize: '0.68rem', color: editProfileName.length > 25 ? '#ef4444' : 'rgba(255,255,255,0.3)' }}>
+                    {editProfileName.length}/25
+                  </span>
+                </div>
+                <input
+                  type="text"
+                  maxLength={25}
+                  required
+                  placeholder="Nome exibido nos contatos"
+                  value={editProfileName}
+                  onChange={e => setEditProfileName(e.target.value)}
+                  style={{
+                    width: '100%', padding: '0.5rem 0.75rem', background: 'rgba(255,255,255,0.03)',
+                    border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', color: '#fff',
+                    fontSize: '0.82rem', outline: 'none'
+                  }}
+                />
+              </div>
+
+              {/* Recado / Bio */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <label style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)', margin: 0 }}>
+                    Recado (Status / Bio)
+                  </label>
+                  <span style={{ fontSize: '0.68rem', color: editProfileStatus.length > 139 ? '#ef4444' : 'rgba(255,255,255,0.3)' }}>
+                    {editProfileStatus.length}/139
+                  </span>
+                </div>
+                <input
+                  type="text"
+                  maxLength={139}
+                  placeholder="Recado no perfil (ex: Disponível)"
+                  value={editProfileStatus}
+                  onChange={e => setEditProfileStatus(e.target.value)}
+                  style={{
+                    width: '100%', padding: '0.5rem 0.75rem', background: 'rgba(255,255,255,0.03)',
+                    border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', color: '#fff',
+                    fontSize: '0.82rem', outline: 'none'
+                  }}
+                />
+              </div>
+
+              {editProfileError && (
+                <div style={{
+                  color: '#ef4444', fontSize: '0.78rem', padding: '0.6rem 0.8rem',
+                  background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.15)',
+                  borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '0.4rem'
+                }}>
+                  <AlertTriangle size={14} style={{ flexShrink: 0 }} />
+                  {editProfileError}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '1rem' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ flex: 1, padding: '0.55rem', borderRadius: '8px', fontSize: '0.82rem', fontWeight: 600 }}
+                  onClick={() => { setIsEditProfileOpen(false); setEditingProfileInstance(null); }}
+                  disabled={updatingProfile}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{
+                    flex: 1, padding: '0.55rem', borderRadius: '8px', fontSize: '0.82rem',
+                    fontWeight: 700, background: '#10b981', color: '#111b21', border: 'none',
+                    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
+                  }}
+                  disabled={updatingProfile || editProfileName.length === 0}
+                >
+                  {updatingProfile ? 'Salvando...' : 'Salvar Alterações'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       <style>{`
         @keyframes pulse {
           0%, 100% { opacity: 1; transform: scale(1); }
@@ -1404,6 +1755,10 @@ export default function ConnectionsPage() {
         @keyframes spin {
           from { transform: rotate(0deg); }
           to { transform: rotate(360deg); }
+        }
+        @keyframes scaleUp {
+          from { transform: scale(0.95); opacity: 0; }
+          to { transform: scale(1); opacity: 1; }
         }
         .spin {
           animation: spin 1s linear infinite;
