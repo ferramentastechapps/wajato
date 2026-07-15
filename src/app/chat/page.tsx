@@ -1143,9 +1143,9 @@ export default function ChatPage() {
                 
                 {/* 1. MEU STATUS PUBLISHER FORM */}
                 {selectedContactJid === 'me' && (
-                  <div style={{ padding: '2rem 1.5rem', display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'space-between' }}>
-                    <div>
-                      <h3 style={{ margin: '0 0 1.5rem 0', fontSize: '1.05rem', color: 'white', fontWeight: 700 }}>Enviar Atualização de Status</h3>
+                  <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'space-between', overflow: 'hidden' }}>
+                    <div style={{ flex: 1, overflowY: 'auto', paddingRight: '0.4rem', marginBottom: '1rem', minHeight: 0 }}>
+                      <h3 style={{ margin: '0 0 1.2rem 0', fontSize: '1.05rem', color: 'white', fontWeight: 700 }}>Enviar Atualização de Status</h3>
                       
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                         <div>
@@ -1244,7 +1244,7 @@ export default function ChatPage() {
                       </div>
                     </div>
 
-                    <div style={{ display: 'flex', gap: 10 }}>
+                    <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
                       <button type="button" onClick={() => setSelectedContactJid(null)}
                         style={{ flex: 1, padding: '0.55rem', borderRadius: 8, background: 'rgba(255,255,255,0.05)', border: 'none', color: 'white', fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer' }}>
                         Cancelar
