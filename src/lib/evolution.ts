@@ -145,27 +145,9 @@ export const evolutionApi = {
       const response = await evolutionClient.get<ConnectionStateResponse>(`/instance/connectionState/${instanceName}`);
       const state = response.data?.instance?.state;
       
-      if (state === 'open') {
-        // Para evitar falsos positivos (zombie sessions / device_removed),
-        // buscamos os detalhes da instância para verificar se há erro 401 de desconexão.
-        try {
-          const apiInstances = await this.fetchInstances();
-          const apiInst = apiInstances.find((i: any) => i.name === instanceName);
-          if (apiInst) {
-            const isUnauthorized = apiInst.disconnectionReasonCode === 401 || 
-                                   (apiInst.disconnectionObject && 
-                                    typeof apiInst.disconnectionObject === 'string' && 
-                                    apiInst.disconnectionObject.includes('401'));
-            if (isUnauthorized) {
-              console.warn(`[Evolution API] Instância ${instanceName} marcada como open no connectionState mas desconectada com erro 401 no fetchInstances.`);
-              return 'DISCONNECTED';
-            }
-          }
-        } catch (err) {
-          console.error('[Evolution API] Erro ao validar integridade da conexão via fetchInstances:', err);
-        }
-        return 'CONNECTED';
-      }
+      // IMPORTANTE: disconnectionReasonCode é HISTÓRICO e não deve sobrescrever o estado atual.
+      // Se a Evolution API reporta 'open', a instância ESTÁ conectada — ponto final.
+      if (state === 'open') return 'CONNECTED';
       if (state === 'connecting') return 'INITIALIZING';
       return 'DISCONNECTED';
     } catch (error: any) {

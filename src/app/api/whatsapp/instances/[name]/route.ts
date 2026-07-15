@@ -46,7 +46,7 @@ export async function GET(_req: Request, { params }: Params) {
           const createData = await evolutionApi.createInstance(name);
           qrCodeBase64 = createData?.qrcode?.base64 || null;
           
-          const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+          const appUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
           await evolutionApi.setWebhook(name, `${appUrl}/api/webhook`);
 
           if (dbInst.proxy) {

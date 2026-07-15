@@ -63,7 +63,7 @@ export async function POST() {
 
     // 3. Configura o webhook para receber atualizações na API de webhook local
     if (connectionState === 'CONNECTED' || connectionState === 'INITIALIZING') {
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+      const appUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
       try {
         await evolutionApi.setWebhook(INSTANCE_NAME, `${appUrl}/api/webhook`);
       } catch (webhookErr) {

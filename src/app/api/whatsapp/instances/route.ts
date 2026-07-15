@@ -33,15 +33,15 @@ export async function GET() {
         let qrCode = dbInst.qrCode;
 
         if (apiInst) {
-          const isUnauthorized = apiInst.disconnectionReasonCode === 401 || 
-                                 (apiInst.disconnectionObject && 
-                                  typeof apiInst.disconnectionObject === 'string' && 
-                                  apiInst.disconnectionObject.includes('401'));
-
-          // Se encontrou no gateway, atualiza os dados
-          status = (apiInst.connectionStatus === 'open' && !isUnauthorized)
-            ? 'CONNECTED'
-            : (qrCode ? 'DISCONNECTED' : 'INITIALIZING');
+          // IMPORTANTE: disconnectionReasonCode é HISTÓRICO (referente ao último logout),
+          // NÃO indica o estado atual. Se o connectionStatus é 'open', a instância ESTÁ conectada
+          // independente do motivo de desconexão anterior.
+          if (apiInst.connectionStatus === 'open') {
+            status = 'CONNECTED';
+          } else {
+            // Só usa o código de desconexão para classificar estados não-'open'
+            status = qrCode ? 'DISCONNECTED' : 'INITIALIZING';
+          }
           
           if (apiInst.ownerJid) {
             phone = apiInst.ownerJid.split(':')[0].split('@')[0];
@@ -303,7 +303,7 @@ export async function POST(req: Request) {
     }
 
     // 4. Configura Webhook
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const appUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
     try {
       await evolutionApi.setWebhook(cleanName, `${appUrl}/api/webhook`);
     } catch (webhookErr) {
