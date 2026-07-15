@@ -2,6 +2,46 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { evolutionApi } from '@/lib/evolution';
 import { getSessionUser } from '@/lib/auth';
+import fs from 'fs';
+import path from 'path';
+
+// Helper to save base64 to public directory and return its url
+async function saveBase64File(base64Data: string, type: 'image' | 'video'): Promise<string> {
+  const matches = base64Data.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+  if (!matches || matches.length !== 3) {
+    throw new Error('Formato base64 inválido');
+  }
+
+  const fileBuffer = Buffer.from(matches[2], 'base64');
+  
+  // Detect extension
+  const mimeType = matches[1];
+  let extension = 'bin';
+  if (type === 'image') {
+    if (mimeType === 'image/png') extension = 'png';
+    else if (mimeType === 'image/gif') extension = 'gif';
+    else if (mimeType === 'image/webp') extension = 'webp';
+    else extension = 'jpg';
+  } else if (type === 'video') {
+    if (mimeType === 'video/webm') extension = 'webm';
+    else if (mimeType === 'video/ogg') extension = 'ogg';
+    else extension = 'mp4';
+  }
+
+  const filename = `status_${Date.now()}_${Math.floor(Math.random() * 10000)}.${extension}`;
+  
+  // Ensure public/uploads directory exists
+  const publicUploadsDir = path.join(process.cwd(), 'public', 'uploads');
+  if (!fs.existsSync(publicUploadsDir)) {
+    fs.mkdirSync(publicUploadsDir, { recursive: true });
+  }
+
+  const filePath = path.join(publicUploadsDir, filename);
+  fs.writeFileSync(filePath, fileBuffer);
+
+  const appUrl = process.env.APP_URL || 'http://localhost:3000';
+  return `${appUrl}/uploads/${filename}`;
+}
 
 // ── GET: Listar Statuses dos contatos das últimas 24h ─────────────────────
 export async function GET(req: Request) {
@@ -109,8 +149,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Tipo inválido. Deve ser "text", "image" ou "video"' }, { status: 400 });
     }
 
+    let finalMediaUrl = mediaUrl;
+    if (mediaUrl && mediaUrl.startsWith('data:')) {
+      try {
+        finalMediaUrl = await saveBase64File(mediaUrl, type);
+      } catch (err: any) {
+        console.error('Erro ao salvar arquivo base64:', err);
+        return NextResponse.json({ error: 'Erro ao salvar o arquivo enviado.' }, { status: 500 });
+      }
+    }
+
     // 1. Envia o status para a Evolution API
-    const response = await evolutionApi.sendStatusUpdate(instanceName, content, type, undefined, mediaUrl);
+    const response = await evolutionApi.sendStatusUpdate(instanceName, content, type, undefined, finalMediaUrl);
 
     if (!response) {
       return NextResponse.json({ error: 'Erro ao postar status no gateway Evolution' }, { status: 500 });
@@ -132,7 +182,7 @@ export async function POST(req: Request) {
         senderName: `${myName} (Você)`,
         mediaType: type,
         content: content,
-        mediaUrl: mediaUrl || null,
+        mediaUrl: finalMediaUrl || null,
       },
     });
 
