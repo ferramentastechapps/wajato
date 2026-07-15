@@ -21,6 +21,7 @@ interface Chat {
   conversationTimestamp?: number; lastMessage?: string;
   phoneNumber?: string;
   profilePicUrl?: string | null;
+  instanceName?: string;
 }
 
 interface Message {
@@ -331,11 +332,12 @@ export default function ChatPage() {
   useEffect(() => {
     if (!selInstance || !selChat) return;
     const jid = selChat.id;
+    const instName = selChat.instanceName || selInstance;
 
     async function load(initial = false) {
       try {
         if (initial) setLoadingMsgs(true);
-        const r = await fetch(`/api/chat/messages?instanceName=${selInstance}&remoteJid=${jid}`);
+        const r = await fetch(`/api/chat/messages?instanceName=${instName}&remoteJid=${jid}`);
         if (r.ok) {
           const d = await r.json();
           const sorted = Array.isArray(d) ? d.reverse() : [];
@@ -401,6 +403,7 @@ export default function ChatPage() {
     if (!selInstance || !selChat || !newMsg.trim() || sending) return;
     const txt = newMsg, reply = replyTo;
     setNewMsg(''); setReplyTo(null); setSending(true);
+    const instName = selChat.instanceName || selInstance;
 
     const temp: Message = {
       key: { id: Math.random().toString(), fromMe: true, remoteJid: selChat.id },
@@ -415,7 +418,7 @@ export default function ChatPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          instanceName: selInstance, remoteJid: selChat.id, message: txt,
+          instanceName: instName, remoteJid: selChat.id, message: txt,
           quotedMessageId: reply?.key.id,
           quotedMessage: reply?.message,
         }),
@@ -472,8 +475,10 @@ export default function ChatPage() {
   };
 
   const isGroup = selChat?.id.endsWith('@g.us');
-  const mediaUrl = (msg: Message) =>
-    `/api/chat/media?instanceName=${selInstance}&messageId=${msg.key.id}&fromMe=${msg.key.fromMe}&remoteJid=${selChat?.id}`;
+  const mediaUrl = (msg: Message) => {
+    const instName = selChat?.instanceName || selInstance;
+    return `/api/chat/media?instanceName=${instName}&messageId=${msg.key.id}&fromMe=${msg.key.fromMe}&remoteJid=${selChat?.id}`;
+  };
 
   const renderContent = (msg: Message) => {
     let messageObj = msg.message;
@@ -621,15 +626,17 @@ export default function ChatPage() {
           <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid rgba(255,255,255,0.04)', flexShrink: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
               <div style={{ fontSize: '0.59rem', color: 'rgba(255,255,255,0.28)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1.2 }}>Instância Ativa</div>
-              <button 
-                type="button"
-                onClick={() => setShowStatusModal(true)}
-                title="Status / Stories"
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.45)', display: 'flex', alignItems: 'center', gap: 4 }}
-              >
-                <CircleDot size={14} style={{ color: C.green }} />
-                <span style={{ fontSize: '0.68rem', fontWeight: 700, color: C.green }}>Status</span>
-              </button>
+              {selInstance !== 'all' && (
+                <button 
+                  type="button"
+                  onClick={() => setShowStatusModal(true)}
+                  title="Status / Stories"
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.45)', display: 'flex', alignItems: 'center', gap: 4 }}
+                >
+                  <CircleDot size={14} style={{ color: C.green }} />
+                  <span style={{ fontSize: '0.68rem', fontWeight: 700, color: C.green }}>Status</span>
+                </button>
+              )}
             </div>
             {loadingInstances ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, color: 'rgba(255,255,255,0.35)', fontSize: '0.78rem' }}>
@@ -642,6 +649,9 @@ export default function ChatPage() {
             ) : (
               <select value={selInstance} onChange={e => setSelInstance(e.target.value)}
                 style={{ width: '100%', padding: '0.5rem 0.7rem', background: C.panel, border: '1px solid rgba(255,255,255,0.05)', borderRadius: 8, color: 'white', fontSize: '0.81rem', fontWeight: 600, cursor: 'pointer' }}>
+                {instances.length > 1 && (
+                  <option value="all" style={{ background: C.sidebar }}>👥 Todas as conexões</option>
+                )}
                 {instances.map(i => <option key={i.id} value={i.name} style={{ background: C.sidebar }}>🟢 {i.name}{i.profileName ? ` (${i.profileName})` : ''}</option>)}
               </select>
             )}
@@ -683,18 +693,25 @@ export default function ChatPage() {
               <div style={{ textAlign: 'center', padding: '4rem 1rem', color: 'rgba(255,255,255,0.2)', fontSize: '0.78rem' }}>Nenhuma conversa encontrada.</div>
             ) : (
               filtered.map(chat => {
-                const sel = selChat?.id === chat.id;
+                const sel = selChat?.id === chat.id && selChat?.instanceName === chat.instanceName;
                 const displayNum = chat.phoneNumber ? `+${chat.phoneNumber}` : chat.id.split('@')[0];
                 const name = chat.name && !chat.name.includes('@') ? chat.name : displayNum;
                 const unread = (chat.unreadCount || 0) > 0;
                 return (
-                  <div key={chat.id} className="wa-chat-item"
+                  <div key={`${chat.instanceName || selInstance}:${chat.id}`} className="wa-chat-item"
                     onClick={() => openChat(chat)}
                     style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.6rem 1rem', cursor: 'pointer', background: sel ? '#2a3942' : 'transparent', borderBottom: '1px solid rgba(255,255,255,0.02)', transition: 'background 0.12s' }}>
                     <Avatar name={name} src={chat.profilePicUrl} size={44} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 2 }}>
-                        <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'white', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: 6 }}>{name}</div>
+                        <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'white', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: 6, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+                          {selInstance === 'all' && chat.instanceName && (
+                            <span style={{ fontSize: '0.62rem', padding: '1px 5px', background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)', borderRadius: '4px', fontWeight: 600, flexShrink: 0 }}>
+                              {chat.instanceName}
+                            </span>
+                          )}
+                        </div>
                         {chat.conversationTimestamp && <span style={{ fontSize: '0.63rem', color: unread ? C.green : 'rgba(255,255,255,0.28)', whiteSpace: 'nowrap', fontWeight: unread ? 600 : 400 }}>{fmtDate(chat.conversationTimestamp)}</span>}
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

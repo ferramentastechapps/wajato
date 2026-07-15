@@ -11,7 +11,33 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Parâmetro instanceName é obrigatório' }, { status: 400 });
     }
 
-    const chats = await evolutionApi.findChats(instanceName);
+    let chats: any[] = [];
+    if (instanceName === 'all') {
+      const dbInsts = await prisma.whatsAppInstance.findMany({
+        where: { status: 'CONNECTED' },
+        select: { name: true }
+      });
+      const names = dbInsts.map(i => i.name);
+      if (names.length === 0) {
+        return NextResponse.json([]);
+      }
+      
+      const chatsPromises = names.map(async (name) => {
+        try {
+          const list = await evolutionApi.findChats(name);
+          return list.map((c: any) => ({ ...c, instanceName: name }));
+        } catch (err) {
+          console.error(`[Chats Route] Erro ao buscar chats para ${name}:`, err);
+          return [];
+        }
+      });
+      
+      const results = await Promise.all(chatsPromises);
+      chats = results.flat();
+    } else {
+      const list = await evolutionApi.findChats(instanceName);
+      chats = list.map((c: any) => ({ ...c, instanceName }));
+    }
     
     const mappedChats = chats.map((chat: any) => {
       let lastMessageText = '';
@@ -133,6 +159,13 @@ export async function GET(req: Request) {
         name: finalName,
         profilePicUrl: chat.profilePicUrl || null,
       };
+    });
+
+    // Ordenar por data da última conversa decrescente
+    finalChats.sort((a: any, b: any) => {
+      const tsA = a.conversationTimestamp || 0;
+      const tsB = b.conversationTimestamp || 0;
+      return tsB - tsA;
     });
 
     return NextResponse.json(finalChats);
