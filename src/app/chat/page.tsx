@@ -255,10 +255,41 @@ export default function ChatPage() {
   const [loadingStatuses, setLoadingStatuses] = useState(false);
   const [selectedContactJid, setSelectedContactJid] = useState<string | null>(null);
   const [currentStoryIndex, setCurrentStoryIndex] = useState(0);
-  const [postType, setPostType] = useState<'text' | 'image'>('text');
+  const [postType, setPostType] = useState<'text' | 'image' | 'video'>('text');
   const [postContent, setPostContent] = useState('');
   const [postMediaUrl, setPostMediaUrl] = useState('');
   const [postingStatus, setPostingStatus] = useState(false);
+  const [selectedStatusFile, setSelectedStatusFile] = useState<File | null>(null);
+  const [uploadedMediaPreview, setUploadedMediaPreview] = useState<string>('');
+  const [statusUploadError, setStatusUploadError] = useState<string>('');
+
+  useEffect(() => {
+    setSelectedStatusFile(null);
+    setUploadedMediaPreview('');
+    setStatusUploadError('');
+  }, [postType]);
+
+  const handleStatusFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const maxBytes = 16 * 1024 * 1024;
+    if (file.size > maxBytes) {
+      alert('O arquivo deve ter no máximo 16MB.');
+      return;
+    }
+    setSelectedStatusFile(file);
+    setStatusUploadError('');
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      if (typeof reader.result === 'string') {
+        setUploadedMediaPreview(reader.result);
+      }
+    };
+    reader.onerror = () => {
+      setStatusUploadError('Erro ao ler o arquivo.');
+    };
+    reader.readAsDataURL(file);
+  };
 
   // ── Fetch statuses list ──
   const fetchStatuses = async () => {
@@ -1130,17 +1161,21 @@ export default function ChatPage() {
                               style={{ flex: 1, padding: '0.45rem', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', background: postType === 'image' ? C.green : '#222e35', color: postType === 'image' ? '#111b21' : 'white', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}>
                               Imagem com Legenda
                             </button>
+                            <button type="button" onClick={() => setPostType('video')}
+                              style={{ flex: 1, padding: '0.45rem', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', background: postType === 'video' ? C.green : '#222e35', color: postType === 'video' ? '#111b21' : 'white', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}>
+                              Vídeo com Legenda
+                            </button>
                           </div>
                         </div>
 
                         <div>
                           <label style={{ fontSize: '0.68rem', color: C.green, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 6 }}>
-                            {postType === 'text' ? 'Texto do Status' : 'Legenda da Imagem'}
+                            {postType === 'text' ? 'Texto do Status' : postType === 'image' ? 'Legenda da Imagem' : 'Legenda do Vídeo'}
                           </label>
                           <textarea
                             value={postContent}
                             onChange={e => setPostContent(e.target.value)}
-                            placeholder={postType === 'text' ? 'O que você está pensando hoje?' : 'Insira a legenda que acompanhará a foto...'}
+                            placeholder={postType === 'text' ? 'O que você está pensando hoje?' : postType === 'image' ? 'Insira a legenda que acompanhará a foto...' : 'Insira a legenda que acompanhará o vídeo...'}
                             maxLength={postType === 'text' ? 240 : 1000}
                             style={{
                               width: '100%', height: '100px', padding: '0.65rem 0.8rem', background: '#222e35',
@@ -1150,22 +1185,60 @@ export default function ChatPage() {
                           />
                         </div>
 
-                        {postType === 'image' && (
+                        {(postType === 'image' || postType === 'video') && (
                           <div>
                             <label style={{ fontSize: '0.68rem', color: C.green, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 6 }}>
-                              URL da Imagem
+                              Arquivo de {postType === 'image' ? 'Imagem' : 'Vídeo'}
                             </label>
-                            <input
-                              type="text"
-                              value={postMediaUrl}
-                              onChange={e => setPostMediaUrl(e.target.value)}
-                              placeholder="https://exemplo.com/foto.jpg"
-                              style={{
-                                width: '100%', padding: '0.55rem 0.8rem', background: '#222e35',
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                              <input
+                                type="file"
+                                accept={postType === 'image' ? 'image/*' : 'video/*'}
+                                onChange={handleStatusFileChange}
+                                style={{ display: 'none' }}
+                                id="status-file-upload"
+                              />
+                              <label htmlFor="status-file-upload" style={{
+                                width: '100%', padding: '0.65rem 0.8rem', background: '#222e35',
                                 border: '1px solid rgba(255,255,255,0.06)', borderRadius: 8, color: 'white',
-                                fontSize: '0.82rem', outline: 'none'
-                              }}
-                            />
+                                fontSize: '0.82rem', outline: 'none', cursor: 'pointer', textAlign: 'center',
+                                display: 'block', fontWeight: 600
+                              }}>
+                                📁 {selectedStatusFile ? `Selecionado: ${selectedStatusFile.name}` : `Selecionar arquivo de ${postType === 'image' ? 'imagem' : 'vídeo'}`}
+                              </label>
+
+                              {uploadedMediaPreview && (
+                                <div style={{ display: 'flex', justifyContent: 'center', margin: '10px 0', border: '1px dashed rgba(255,255,255,0.1)', borderRadius: 8, padding: 8 }}>
+                                  {postType === 'image' ? (
+                                    <img src={uploadedMediaPreview} alt="Preview" style={{ maxWidth: '100%', maxHeight: 120, borderRadius: 6, objectFit: 'contain' }} />
+                                  ) : (
+                                    <video src={uploadedMediaPreview} controls style={{ maxWidth: '100%', maxHeight: 120, borderRadius: 6 }} />
+                                  )}
+                                </div>
+                              )}
+
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'rgba(255,255,255,0.2)', fontSize: '0.72rem', margin: '4px 0' }}>
+                                <div style={{ height: 1, flex: 1, background: 'rgba(255,255,255,0.05)' }} />
+                                <span>OU usar URL</span>
+                                <div style={{ height: 1, flex: 1, background: 'rgba(255,255,255,0.05)' }} />
+                              </div>
+
+                              <input
+                                type="text"
+                                value={postMediaUrl}
+                                onChange={e => {
+                                  setPostMediaUrl(e.target.value);
+                                  setSelectedStatusFile(null);
+                                  setUploadedMediaPreview('');
+                                }}
+                                placeholder={postType === 'image' ? 'https://exemplo.com/foto.jpg' : 'https://exemplo.com/video.mp4'}
+                                style={{
+                                  width: '100%', padding: '0.55rem 0.8rem', background: '#222e35',
+                                  border: '1px solid rgba(255,255,255,0.06)', borderRadius: 8, color: 'white',
+                                  fontSize: '0.82rem', outline: 'none'
+                                }}
+                              />
+                            </div>
                           </div>
                         )}
                       </div>
@@ -1177,7 +1250,7 @@ export default function ChatPage() {
                         Cancelar
                       </button>
                       <button type="button"
-                        disabled={postingStatus || !postContent.trim() || (postType === 'image' && !postMediaUrl.trim())}
+                        disabled={postingStatus || !postContent.trim() || ((postType === 'image' || postType === 'video') && !postMediaUrl.trim() && !uploadedMediaPreview)}
                         onClick={async () => {
                           try {
                             setPostingStatus(true);
@@ -1188,12 +1261,14 @@ export default function ChatPage() {
                                 instanceName: selInstance,
                                 type: postType,
                                 content: postContent,
-                                mediaUrl: postType === 'image' ? postMediaUrl : undefined,
+                                mediaUrl: (postType === 'image' || postType === 'video') ? (uploadedMediaPreview || postMediaUrl) : undefined,
                               }),
                             });
                             if (res.ok) {
                               setPostContent('');
                               setPostMediaUrl('');
+                              setSelectedStatusFile(null);
+                              setUploadedMediaPreview('');
                               fetchStatuses();
                               setSelectedContactJid(null);
                             }
@@ -1266,6 +1341,24 @@ export default function ChatPage() {
                           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', width: '100%', position: 'relative' }}>
                             <img src={activeStory.mediaUrl} alt="Status"
                               style={{ maxWidth: '100%', maxHeight: '310px', objectFit: 'contain', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)' }} />
+                            {activeStory.content && (
+                              <div style={{
+                                position: 'absolute', bottom: 10, left: 10, right: 10,
+                                background: 'rgba(0,0,0,0.6)', padding: '6px 12px', borderRadius: 8,
+                                color: 'white', fontSize: '0.81rem', textAlign: 'center',
+                                backdropFilter: 'blur(4px)', border: '1px solid rgba(255,255,255,0.05)'
+                              }}>
+                                {activeStory.content}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Video Status */}
+                        {activeStory.mediaType === 'video' && (
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', width: '100%', position: 'relative' }}>
+                            <video src={activeStory.mediaUrl} controls autoPlay
+                              style={{ maxWidth: '100%', maxHeight: '310px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)', background: '#000' }} />
                             {activeStory.content && (
                               <div style={{
                                 position: 'absolute', bottom: 10, left: 10, right: 10,

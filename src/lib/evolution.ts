@@ -359,10 +359,10 @@ export const evolutionApi = {
   },
 
   /**
-   * Posta um Story/Status de texto ou imagem.
+   * Posta um Story/Status de texto, imagem ou vídeo.
    * CORREÇÃO: statusJidList deve conter JIDs completos com @s.whatsapp.net.
    */
-  async sendStatusUpdate(instanceName: string, text: string, statusType: 'text' | 'image' = 'text', targetPhone?: string, mediaUrl?: string): Promise<any> {
+  async sendStatusUpdate(instanceName: string, text: string, statusType: 'text' | 'image' | 'video' = 'text', targetPhone?: string, mediaUrl?: string): Promise<any> {
     try {
       const cleanPhone = targetPhone ? targetPhone.replace(/\D/g, '') : '';
       // JID completo obrigatório: número + @s.whatsapp.net

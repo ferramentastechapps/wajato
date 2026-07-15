@@ -105,8 +105,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Campos obrigatórios ausentes (instanceName, type, content)' }, { status: 400 });
     }
 
-    if (type !== 'text' && type !== 'image') {
-      return NextResponse.json({ error: 'Tipo inválido. Deve ser "text" ou "image"' }, { status: 400 });
+    if (type !== 'text' && type !== 'image' && type !== 'video') {
+      return NextResponse.json({ error: 'Tipo inválido. Deve ser "text", "image" ou "video"' }, { status: 400 });
     }
 
     // 1. Envia o status para a Evolution API
