@@ -74,6 +74,52 @@ type MessageAction = 'TEXT' | 'EMOJI' | 'REACTION' | 'STICKER' | 'AUDIO' | 'STAT
  * - Contact Card: 1% (enviar contato)
  * - Status/Stories: 1% (postagem social)
  */
+function detectGenderFromName(name: string): 'M' | 'F' {
+  const cleanName = name.trim().toLowerCase();
+  
+  const maleExceptions = [
+    'felipe', 'henrique', 'alexandre', 'guilherme', 'andre', 'andré', 
+    'lucas', 'mateus', 'matheus', 'jonas', 'gabriel', 'rafael', 'miguel', 
+    'samuel', 'daniel', 'misael', 'israel', 'santos', 'sousa', 'silva', 
+    'alan', 'caio', 'bernardo', 'marcelo', 'bruno', 'joao', 'joão', 'pedro',
+    'rodrigo', 'thiago', 'tiago', 'gustavo', 'lucio', 'lúcio', 'otavio', 'otávio'
+  ];
+  
+  const femaleExceptions = [
+    'beatriz', 'alice', 'irene', 'inete', 'elisabeth', 'elisabete', 
+    'ruth', 'raquel', 'ester', 'helen', 'yasmin', 'iasmin', 'miriam',
+    'carol', 'caroline', 'aline', 'gisele', 'michele', 'solange', 'rose'
+  ];
+
+  if (maleExceptions.some(ex => cleanName === ex || cleanName.startsWith(ex + ' ') || cleanName.endsWith(' ' + ex))) {
+    return 'M';
+  }
+  if (femaleExceptions.some(ex => cleanName === ex || cleanName.startsWith(ex + ' ') || cleanName.endsWith(' ' + ex))) {
+    return 'F';
+  }
+
+  if (cleanName.endsWith('a') || cleanName.endsWith('as')) {
+    return 'F';
+  }
+  
+  return 'M';
+}
+
+function getGenderPromptRefinements(sourceInstName: string, targetInstName?: string | null): string {
+  if (!targetInstName) return '';
+  
+  const genderA = detectGenderFromName(sourceInstName);
+  const genderB = detectGenderFromName(targetInstName);
+  
+  if (genderA === 'M' && genderB === 'M') {
+    return '\n\nCONVENÇÃO DE GÊNERO: A conversa é entre dois homens brasileiros que são amigos. Use gírias e termos típicos de amizade masculina brasileira (como "mano", "cara", "véi", "velho", "parça", "brother"). Foque em assuntos comuns desse grupo (futebol, games, memes zueira, etc.).';
+  } else if (genderA === 'F' && genderB === 'F') {
+    return '\n\nCONVENÇÃO DE GÊNERO: A conversa é entre duas mulheres brasileiras que são amigas. Use termos e gírias típicas de amizade feminina (como "miga", "amiga", "mulher", "linda", "fofa"). Foque em assuntos comuns de rotina, fofocas leves, trabalho, etc.';
+  } else {
+    return '\n\nCONVENÇÃO DE GÊNERO: A conversa é entre um homem e uma mulher que são amigos próximos (amizade platônica). Mantenha um tom casual, respeitoso e amigável, sem segundas intenções. Use gírias neutras e termos amigáveis.';
+  }
+}
+
 function chooseCampaignMessageAction(campaign: any): MessageAction {
   const isNamoro = 
     (campaign.name?.toLowerCase().includes('namoro') || 
@@ -322,9 +368,19 @@ export const warmupWorker = new Worker(
       let typingDelay = 1500;
 
       // Contexto da persona customizado ou padrão
-      const personaContext = campaign.customContext
+      let personaContext = campaign.customContext
         ? `${campaign.customContext}. Dia ${campaign.currentDay} de conversa. Assunto: ${topic}`
         : `Você é ${sourceInstance}. Dia ${campaign.currentDay} de conversa. Assunto: ${topic}`;
+
+      // Detecção de gênero para campanhas de Amizade Casual
+      const isAmizade = campaign.customContext?.includes('amigos brasileiros') || 
+                        campaign.name?.toLowerCase().includes('amizade') ||
+                        campaign.customContext?.toLowerCase().includes('amizade casual');
+                        
+      if (isAmizade && campaign.targetInstance) {
+        const refinements = getGenderPromptRefinements(sourceInstance, campaign.targetInstance);
+        personaContext += refinements;
+      }
 
       console.log(`[Warmup Worker] Ação escolhida: ${action} para campanha ${campaignId}`);
 
