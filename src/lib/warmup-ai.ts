@@ -319,7 +319,11 @@ RETORNE APENAS A MENSAGEM, sem aspas, sem prefixos, sem explicações.`;
       if (!response.ok) {
         throw new Error(data.error?.message || `Erro na chamada da API (${response.status})`);
       }
-      return data.choices[0].message.content.trim();
+      const content = data.choices?.[0]?.message?.content;
+      if (!content) {
+        throw new Error(JSON.stringify(data.error || data) || 'Resposta vazia do OpenRouter/Groq.');
+      }
+      return content.trim();
     } else {
       // Fluxo original Gemini
       const ai = new GoogleGenerativeAI(apiKey);
@@ -345,8 +349,12 @@ RETORNE APENAS A MENSAGEM, sem aspas, sem prefixos, sem explicações.`;
             : 'Responda de forma casual e curta à última mensagem, ou mude o assunto naturalmente.');
 
       const result = await chat.sendMessage(prompt);
-      const response = await result.response;
-      return response.text().trim();
+      const responseObj = await result.response;
+      const text = responseObj.text();
+      if (!text) {
+        throw new Error('Resposta vazia da API do Gemini.');
+      }
+      return text.trim();
     }
   } catch (error) {
     console.error('Erro ao gerar mensagem de warmup via Gemini:', error);

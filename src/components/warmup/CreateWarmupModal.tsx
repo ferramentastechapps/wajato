@@ -69,7 +69,7 @@ const CONTEXT_PRESETS: Record<ContextPreset, { label: string; description: strin
 export default function CreateWarmupModal({ initialSourceInstance, onClose, onCreated }: Props) {
   const [step, setStep] = useState<1 | 2>(1);
   const [loading, setLoading] = useState(false);
-  const [instances, setInstances] = useState<{ name: string; status: string }[]>([]);
+  const [instances, setInstances] = useState<{ name: string; status: string; phone?: string | null }[]>([]);
 
   // Form fields
   const [name, setName] = useState('');
@@ -150,12 +150,22 @@ export default function CreateWarmupModal({ initialSourceInstance, onClose, onCr
       return;
     }
 
-    if (!enableChat && !enableGroup && !enableStatus) {
+    if (!enableChat && !enableGroup && !enableStatus && !targetInstance) {
       setError('Selecione pelo menos um modo de aquecimento.');
       return;
     }
 
     let phonesList: string[] = [];
+
+    if (targetInstance) {
+      const targetInstObj = instances.find(i => i.name === targetInstance);
+      if (targetInstObj?.phone) {
+        phonesList.push(targetInstObj.phone);
+      } else {
+        setError('A instância de resposta selecionada não possui um número de telefone registrado.');
+        return;
+      }
+    }
 
     if (enableChat) {
       // Processa e limpa os telefones de destino (aceita quebras de linha, espaços, vírgulas ou ponto e vírgula como separadores)
@@ -164,7 +174,7 @@ export default function CreateWarmupModal({ initialSourceInstance, onClose, onCr
         .map(p => p.replace(/\D/g, ''))
         .filter(Boolean);
 
-      if (chatPhones.length === 0) {
+      if (chatPhones.length === 0 && !targetInstance) {
         setError('Insira pelo menos um telefone de destino válido.');
         return;
       }
@@ -548,7 +558,7 @@ export default function CreateWarmupModal({ initialSourceInstance, onClose, onCr
                     setError('Selecione a instância de origem.');
                     return;
                   }
-                  if (!enableChat && !enableGroup && !enableStatus) {
+                  if (!enableChat && !enableGroup && !enableStatus && !targetInstance) {
                     setError('Selecione pelo menos um modo de aquecimento.');
                     return;
                   }
