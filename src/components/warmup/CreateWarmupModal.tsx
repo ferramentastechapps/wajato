@@ -49,13 +49,13 @@ const CONTEXT_PRESETS: Record<ContextPreset, { label: string; description: strin
   sales: {
     label: 'Comercial / Vendas',
     description: 'Simula um cliente perguntando sobre produtos, preços, descontos e formas de pagamento.',
-    prompt: 'Você está simulando um potencial cliente interessado em comprar um produto ou serviço. Faça perguntas sobre preços, frete, desconto no Pix, garantias e tire dúvidas comuns de compra de forma natural.',
+    prompt: 'Simule uma conversa entre um cliente e uma empresa brasileira pelo WhatsApp de forma totalmente natural.\n\nCaracterísticas da conversa:\n- O cliente demonstra interesse em produtos ou serviços, faz perguntas, pede preços, descontos, formas de pagamento, garantia, prazo de entrega ou disponibilidade.\n- O vendedor responde de forma educada, prestativa e profissional, tentando entender a necessidade do cliente antes de oferecer soluções.\n- Inclua negociações ocasionais sobre descontos, parcelamento, PIX, frete ou brindes.\n- O cliente pode comparar produtos, pedir recomendações ou dizer que vai pensar antes de comprar.\n- Utilize linguagem informal e comum do WhatsApp.\n- Use abreviações como vc, pq, blz, kkk, rs, tranquilo, fechou, combinado.\n- Utilize emojis ocasionalmente (😊👍📦💰🔥), sem exagerar.\n- As mensagens devem variar entre curtas e longas.\n- Faça perguntas naturais para manter a conversa fluindo.\n- Evite respostas automáticas ou repetitivas.\n- O objetivo é parecer uma conversa real entre um vendedor e um cliente durante vários dias, incluindo retornos do cliente após algumas horas ou dias para concluir a compra.',
     icon: <Briefcase size={20} />,
   },
   support: {
     label: 'Suporte Técnico',
     description: 'Simula um cliente pedindo ajuda com problemas em um serviço ou produto de pós-venda.',
-    prompt: 'Você está simulando um cliente com problemas técnicos. Peça suporte sobre um erro, tire dúvidas de uso de um produto, mostre dúvidas sobre o funcionamento e agradeça pelas instruções de forma realista.',
+    prompt: 'Simule uma conversa entre um cliente e o suporte técnico de uma empresa pelo WhatsApp.\n\nCaracterísticas da conversa:\n- O cliente relata dúvidas, dificuldades ou problemas reais relacionados a um produto ou serviço.\n- O atendente responde de forma educada, paciente and objetiva, fazendo perguntas para entender o problema antes de sugerir soluções.\n- O cliente pode enviar informações como modelo do aparelho, prints, fotos ou vídeos (descreva apenas como "[print da tela]" ou "[foto do erro]").\n- Inclua mensagens como "já reiniciei", "continua igual", "agora funcionou", "obrigado", etc.\n- Utilize linguagem natural do WhatsApp.\n- Use abreviações como vc, pq, blz, rs, kkk quando fizer sentido.\n- Utilize emojis discretamente (👍😊🔧📱).\n- Alterne mensagens curtas e detalhadas.\n- Evite repetir problemas ou soluções.\n- O suporte nunca responde de forma robótica; sempre demonstra empatia e procura ajudar.\n- O objetivo é simular um atendimento humano e realista até a resolução do problema.',
     icon: <HelpCircle size={20} />,
   },
   love: {
@@ -67,7 +67,7 @@ const CONTEXT_PRESETS: Record<ContextPreset, { label: string; description: strin
   custom: {
     label: 'Personalizado',
     description: 'Escreva seu próprio prompt para definir exatamente o comportamento da Inteligência Artificial.',
-    prompt: '',
+    prompt: 'Você é responsável por simular conversas extremamente humanas entre duas pessoas no WhatsApp.\n\nSiga exatamente as instruções abaixo para definir o comportamento da conversa.\n\nPERSONAS:\n[Descreva quem são os participantes.]\n\nOBJETIVO DA CONVERSA:\n[Explique qual é o contexto da conversa.]\n\nESTILO:\n- Natural e espontâneo.\n- Linguagem brasileira.\n- Mensagens variadas.\n- Uso moderado de gírias.\n- Emojis ocasionais.\n- Perguntas naturais.\n- Sem parecer uma IA.\n\nCOMPORTAMENTO:\n- Nem todas as mensagens precisam receber resposta imediata.\n- Alterne mensagens curtas e longas.\n- Inclua pausas naturais entre as conversas.\n- Evite repetir frases.\n- Os participantes podem enviar áudios, fotos, figurinhas e GIFs (descrevendo apenas como "[áudio]", "[foto]", "[figurinha]" ou "[GIF]").\n- Os assuntos devem evoluir naturalmente.\n- Nunca gere mensagens idênticas ou padronizadas.\n- Faça a conversa parecer uma troca real entre duas pessoas durante dias ou semanas.',
     icon: <Settings size={20} />,
   },
 };
@@ -94,7 +94,9 @@ export default function CreateWarmupModal({ initialSourceInstance, onClose, onCr
   const [targetGroupInput, setTargetGroupInput] = useState('');
 
   const [contextPreset, setContextPreset] = useState<ContextPreset>('friend');
-  const [customContextInput, setCustomContextInput] = useState('');
+  const [customContextInput, setCustomContextInput] = useState(
+    'Você é responsável por simular conversas extremamente humanas entre duas pessoas no WhatsApp.\n\nSiga exatamente as instruções abaixo para definir o comportamento da conversa.\n\nPERSONAS:\n[Descreva quem são os participantes.]\n\nOBJETIVO DA CONVERSA:\n[Explique qual é o contexto da conversa.]\n\nESTILO:\n- Natural e espontâneo.\n- Linguagem brasileira.\n- Mensagens variadas.\n- Uso moderado de gírias.\n- Emojis ocasionais.\n- Perguntas naturais.\n- Sem parecer uma IA.\n\nCOMPORTAMENTO:\n- Nem todas as mensagens precisam receber resposta imediata.\n- Alterne mensagens curtas e longas.\n- Inclua pausas naturais entre as conversas.\n- Evite repetir frases.\n- Os participantes podem enviar áudios, fotos, figurinhas e GIFs (descrevendo apenas como "[áudio]", "[foto]", "[figurinha]" ou "[GIF]").\n- Os assuntos devem evoluir naturalmente.\n- Nunca gere mensagens idênticas ou padronizadas.\n- Faça a conversa parecer uma troca real entre duas pessoas durante dias ou semanas.'
+  );
   const [intensity, setIntensity] = useState<Intensity>('soft');
   const [startHour, setStartHour] = useState(8);
   const [endHour, setEndHour] = useState(22);
