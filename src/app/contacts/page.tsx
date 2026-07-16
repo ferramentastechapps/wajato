@@ -80,6 +80,10 @@ export default function ContactsPage() {
   const [waError, setWaError] = useState('');
   const [waResult, setWaResult] = useState<{ imported: number; updated: number; total: number } | null>(null);
 
+  // Edit contact states
+  const [editingContact, setEditingContact] = useState<Contact | null>(null);
+  const [showEditContact, setShowEditContact] = useState(false);
+
   // Form inputs
   const [newContact, setNewContact] = useState({ name: '', phone: '', tags: '', groupId: '' });
   const [newGroup, setNewGroup] = useState({ name: '', description: '' });
@@ -198,6 +202,39 @@ export default function ContactsPage() {
       if (response.ok) {
         setNewContact({ name: '', phone: '', tags: '', groupId: '' });
         setShowAddContact(false);
+        fetchData();
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleEditContactSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingContact || !editingContact.phone) return;
+    setIsSubmitting(true);
+
+    try {
+      const tagsArray = Array.isArray(editingContact.tags)
+        ? editingContact.tags.map((t) => t.trim()).filter((t) => t !== '')
+        : (editingContact.tags as string).split(',').map((t) => t.trim()).filter((t) => t !== '');
+
+      const response = await fetch('/api/contacts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: editingContact.name,
+          phone: editingContact.phone,
+          tags: tagsArray,
+          groupId: editingContact.groupId || null,
+        }),
+      });
+
+      if (response.ok) {
+        setShowEditContact(false);
+        setEditingContact(null);
         fetchData();
       }
     } catch (err) {
@@ -763,13 +800,25 @@ export default function ContactsPage() {
                       </div>
                     </td>
                     <td style={{ textAlign: 'center' }}>
-                      <button
-                        onClick={() => handleDeleteContact(contact.id)}
-                        style={{ color: '#ef4444', cursor: 'pointer', padding: '0.25rem' }}
-                        title="Excluir Contato"
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                      <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
+                        <button
+                          onClick={() => {
+                            setEditingContact(contact);
+                            setShowEditContact(true);
+                          }}
+                          style={{ color: '#3b82f6', cursor: 'pointer', padding: '0.25rem', background: 'none', border: 'none' }}
+                          title="Editar Contato"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-pencil"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+                        </button>
+                        <button
+                          onClick={() => handleDeleteContact(contact.id)}
+                          style={{ color: '#ef4444', cursor: 'pointer', padding: '0.25rem', background: 'none', border: 'none' }}
+                          title="Excluir Contato"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -916,6 +965,79 @@ export default function ContactsPage() {
                 </button>
                 <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
                   {isSubmitting ? 'Salvando...' : 'Salvar Contato'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Editar Contato */}
+      {showEditContact && editingContact && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h3 className="modal-title">Editar Contato</h3>
+              <X className="modal-close" onClick={() => { setShowEditContact(false); setEditingContact(null); }} />
+            </div>
+            <form onSubmit={handleEditContactSubmit}>
+              <div className="modal-body">
+                <div className="form-group">
+                  <label className="form-label">Nome (Opcional)</label>
+                  <input
+                    type="text"
+                    className="input-control"
+                    placeholder="Nome do cliente"
+                    value={editingContact.name || ''}
+                    onChange={(e) => setEditingContact({ ...editingContact, name: e.target.value })}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Telefone (Obrigatório)</label>
+                  <input
+                    type="text"
+                    className="input-control"
+                    placeholder="DDI + DDD + Número (ex: 5511999999999)"
+                    value={editingContact.phone}
+                    onChange={(e) => setEditingContact({ ...editingContact, phone: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Grupo</label>
+                  <select
+                    className="input-control"
+                    value={editingContact.groupId || ''}
+                    onChange={(e) => setEditingContact({ ...editingContact, groupId: e.target.value || null })}
+                  >
+                    <option value="">Sem grupo</option>
+                    {groups.map((g) => (
+                      <option key={g.id} value={g.id}>{g.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Tags (Separadas por vírgula)</label>
+                  <input
+                    type="text"
+                    className="input-control"
+                    placeholder="promocoes, vip, novos"
+                    value={editingContact.tags ? (Array.isArray(editingContact.tags) ? editingContact.tags.join(', ') : editingContact.tags) : ''}
+                    onChange={(e) => setEditingContact({ ...editingContact, tags: e.target.value.split(',').map(t => t.trim()) })}
+                  />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button 
+                  type="button" 
+                  className="btn btn-secondary" 
+                  onClick={() => { setShowEditContact(false); setEditingContact(null); }}
+                  disabled={isSubmitting}
+                >
+                  Cancelar
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
+                  {isSubmitting ? 'Salvando...' : 'Salvar Alterações'}
                 </button>
               </div>
             </form>

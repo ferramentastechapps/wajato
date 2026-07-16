@@ -412,7 +412,8 @@ export const evolutionApi = {
       return response.data;
     } catch (error: any) {
       console.error(`Erro ao postar status para ${instanceName}:`, error?.response?.data || error.message);
-      return null;
+      const errMsg = error?.response?.data?.response?.message?.[0] || error?.response?.data?.message || error.message;
+      throw new Error(errMsg);
     }
   },
 

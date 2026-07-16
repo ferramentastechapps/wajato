@@ -40,7 +40,7 @@ async function saveBase64File(base64Data: string, type: 'image' | 'video'): Prom
   fs.writeFileSync(filePath, fileBuffer);
 
   const appUrl = process.env.APP_URL || 'http://localhost:3000';
-  return `${appUrl}/uploads/${filename}`;
+  return `${appUrl}/api/uploads/${filename}`;
 }
 
 // ── GET: Listar Statuses dos contatos das últimas 24h ─────────────────────

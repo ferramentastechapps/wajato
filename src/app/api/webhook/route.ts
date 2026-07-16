@@ -78,8 +78,11 @@ export async function POST(request: Request) {
         const isStatusUpdate = remoteJid === 'status@broadcast';
 
         if (!fromMe && remoteJid && (isDirectMessage || isGroupMessage || isStatusUpdate) && instanceName) {
-          // Para grupo e status, o JID identifica o chat. Mas o remetente real é o participant.
-          const senderJid = (isGroupMessage || isStatusUpdate) ? (messageData?.key?.participant || remoteJid) : remoteJid;
+          // Se for mensagem direta e tiver altJid (LID), prefere o altJid para obter o número real em vez do ID interno
+          const altJid = messageData?.key?.remoteJidAlt || messageData?.key?.participantAlt;
+          const senderJid = (isGroupMessage || isStatusUpdate)
+            ? (messageData?.key?.participant || remoteJid)
+            : (altJid && altJid.includes('@s.whatsapp.net') ? altJid : remoteJid);
           const phone = normalizePhone(senderJid.split('@')[0]);
 
           // Zera o contador de mensagens consecutivas sem resposta da instância

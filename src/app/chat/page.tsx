@@ -6,7 +6,7 @@ import {
   MessageSquare, Send, User, Users, Loader2, AlertCircle, Search,
   Paperclip, Smile, MoreVertical, Phone, Video as VideoIcon,
   CheckCheck, FileText, Play, Pause, Download, Volume2, X,
-  ChevronDown, Reply, Copy, Star, Forward, Info, CircleDot, Plus,
+  ChevronDown, Reply, Copy, Star, Forward, Info, CircleDot, Plus, UserPlus,
 } from 'lucide-react';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -262,6 +262,103 @@ export default function ChatPage() {
   const [selectedStatusFile, setSelectedStatusFile] = useState<File | null>(null);
   const [uploadedMediaPreview, setUploadedMediaPreview] = useState<string>('');
   const [statusUploadError, setStatusUploadError] = useState<string>('');
+
+  // ── CRM / Contact Editing states ──
+  const [showEditContactModal, setShowEditContactModal] = useState(false);
+  const [editingContact, setEditingContact] = useState({ phone: '', name: '', tags: '', groupId: '' });
+  const [contactGroups, setContactGroups] = useState<any[]>([]);
+  const [savingContact, setSavingContact] = useState(false);
+
+  const fetchContactGroups = async () => {
+    try {
+      const response = await fetch('/api/contacts/groups');
+      if (response.ok) {
+        const data = await response.json();
+        setContactGroups(data.groups || []);
+      }
+    } catch (err) {
+      console.error('Erro ao buscar grupos de contatos:', err);
+    }
+  };
+
+  const loadDbContact = async (phone: string) => {
+    try {
+      const cleanPhone = phone.replace(/\D/g, '');
+      const response = await fetch(`/api/contacts?search=${cleanPhone}`);
+      if (response.ok) {
+        const data = await response.json();
+        const found = data.contacts?.find((c: any) => c.phone.replace(/\D/g, '') === cleanPhone);
+        if (found) {
+          setEditingContact({
+            phone: found.phone,
+            name: found.name || '',
+            tags: found.tags ? found.tags.join(', ') : '',
+            groupId: found.groupId || '',
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao carregar detalhes do contato:', err);
+    }
+  };
+
+  const handleSaveContact = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingContact(true);
+    try {
+      const tagsArray = editingContact.tags
+        ? editingContact.tags.split(',').map((t) => t.trim()).filter((t) => t !== '')
+        : [];
+
+      const response = await fetch('/api/contacts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: editingContact.name,
+          phone: editingContact.phone,
+          tags: tagsArray,
+          groupId: editingContact.groupId || null,
+        }),
+      });
+
+      if (response.ok) {
+        setShowEditContactModal(false);
+        // Atualiza o chat selecionado localmente
+        if (selChat) {
+          setSelChat({
+            ...selChat,
+            name: editingContact.name || selChat.name,
+          });
+        }
+        // Recarrega lista de chats para atualizar o nome
+        const r = await fetch(`/api/chat/chats?instanceName=${selInstance}`);
+        if (r.ok) {
+          const d = await r.json();
+          setChats(d);
+        }
+      } else {
+        const data = await response.json();
+        alert(data.message || 'Erro ao salvar contato.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Erro de conexão ao salvar contato.');
+    } finally {
+      setSavingContact(false);
+    }
+  };
+
+  const openEditContactModal = (phone: string, name: string) => {
+    setEditingContact({
+      phone,
+      name,
+      tags: '',
+      groupId: '',
+    });
+    fetchContactGroups();
+    loadDbContact(phone);
+    setShowEditContactModal(true);
+  };
 
   useEffect(() => {
     setSelectedStatusFile(null);
@@ -1029,6 +1126,28 @@ export default function ChatPage() {
                     </div>
                   ))}
                 </div>
+
+                {/* Editar / Salvar Contato no CRM */}
+                {!isGroup && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const numberOnly = selChat.phoneNumber || selChat.id.split('@')[0];
+                      const initialName = selChat.name && !selChat.name.includes('@') ? selChat.name : '';
+                      openEditContactModal(numberOnly, initialName);
+                    }}
+                    style={{
+                      width: '100%', marginTop: '1.25rem', padding: '0.65rem',
+                      borderRadius: 8, background: 'rgba(37,211,102,0.1)',
+                      border: '1px solid rgba(37,211,102,0.2)', color: C.green,
+                      fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6
+                    }}
+                  >
+                    <UserPlus size={14} />
+                    Editar / Salvar no CRM
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -1414,6 +1533,114 @@ export default function ChatPage() {
                   </div>
                 )}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* ════ MODAL: SALVAR / EDITAR CONTATO NO CRM ════ */}
+        {showEditContactModal && (
+          <div style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(11, 20, 26, 0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 1100, backdropFilter: 'blur(8px)'
+          }} onClick={() => setShowEditContactModal(false)}>
+            <div style={{
+              width: '420px', background: '#222e35',
+              borderRadius: 16, border: '1px solid rgba(255,255,255,0.08)',
+              padding: '1.5rem',
+              boxShadow: '0 24px 48px rgba(0,0,0,0.5)',
+              color: 'white'
+            }} onClick={e => e.stopPropagation()}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                <h3 style={{ fontSize: '1rem', fontWeight: 600, margin: 0 }}>Editar / Salvar no CRM</h3>
+                <button type="button" onClick={() => setShowEditContactModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.45)', display: 'flex', alignItems: 'center' }}><X size={17} /></button>
+              </div>
+
+              <form onSubmit={handleSaveContact} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <label style={{ fontSize: '0.78rem', color: C.green, fontWeight: 700, textTransform: 'uppercase' }}>Telefone (Apenas leitura)</label>
+                  <input
+                    type="text"
+                    disabled
+                    value={editingContact.phone}
+                    style={{
+                      padding: '0.55rem 0.75rem', borderRadius: 8, background: 'rgba(255,255,255,0.05)',
+                      border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)', fontSize: '0.85rem', outline: 'none'
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <label style={{ fontSize: '0.78rem', color: C.green, fontWeight: 700, textTransform: 'uppercase' }}>Nome</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Nome do contato"
+                    value={editingContact.name}
+                    onChange={(e) => setEditingContact({ ...editingContact, name: e.target.value })}
+                    style={{
+                      padding: '0.55rem 0.75rem', borderRadius: 8, background: '#2a3942',
+                      border: '1px solid rgba(255,255,255,0.08)', color: 'white', fontSize: '0.85rem', outline: 'none'
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <label style={{ fontSize: '0.78rem', color: C.green, fontWeight: 700, textTransform: 'uppercase' }}>Grupo de Contatos</label>
+                  <select
+                    value={editingContact.groupId}
+                    onChange={(e) => setEditingContact({ ...editingContact, groupId: e.target.value })}
+                    style={{
+                      padding: '0.55rem 0.75rem', borderRadius: 8, background: '#2a3942',
+                      border: '1px solid rgba(255,255,255,0.08)', color: 'white', fontSize: '0.85rem', outline: 'none', cursor: 'pointer'
+                    }}
+                  >
+                    <option value="" style={{ background: '#222e35' }}>Sem grupo (Avulso)</option>
+                    {contactGroups.map((g) => (
+                      <option key={g.id} value={g.id} style={{ background: '#222e35' }}>{g.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <label style={{ fontSize: '0.78rem', color: C.green, fontWeight: 700, textTransform: 'uppercase' }}>Tags (Separadas por vírgula)</label>
+                  <input
+                    type="text"
+                    placeholder="ex: vip, interesse, lead"
+                    value={editingContact.tags}
+                    onChange={(e) => setEditingContact({ ...editingContact, tags: e.target.value })}
+                    style={{
+                      padding: '0.55rem 0.75rem', borderRadius: 8, background: '#2a3942',
+                      border: '1px solid rgba(255,255,255,0.08)', color: 'white', fontSize: '0.85rem', outline: 'none'
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowEditContactModal(false)}
+                    style={{
+                      flex: 1, padding: '0.55rem', borderRadius: 8, background: 'transparent',
+                      border: '1px solid rgba(255,255,255,0.1)', color: 'white', fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer'
+                    }}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingContact}
+                    style={{
+                      flex: 1, padding: '0.55rem', borderRadius: 8, background: C.green,
+                      border: 'none', color: '#111b21', fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6
+                    }}
+                  >
+                    {savingContact ? <Loader2 size={14} className="animate-spin" /> : null}
+                    {savingContact ? 'Salvando...' : 'Salvar'}
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         )}
