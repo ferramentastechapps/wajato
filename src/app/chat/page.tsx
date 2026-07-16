@@ -660,6 +660,28 @@ export default function ChatPage() {
     return `/api/chat/media?instanceName=${instName}&messageId=${msg.key.id}&fromMe=${msg.key.fromMe}&remoteJid=${selChat?.id}`;
   };
 
+  const renderTextWithLinks = (text: string) => {
+    const urlRegex = /(https?:\/\/[^\s]+)/gi;
+    const parts = text.split(urlRegex);
+    return parts.map((part, i) => {
+      if (part.match(urlRegex)) {
+        return (
+          <a 
+            key={i} 
+            href={part} 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            style={{ color: '#53bdeb', textDecoration: 'underline', wordBreak: 'break-all' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {part}
+          </a>
+        );
+      }
+      return part;
+    });
+  };
+
   const renderContent = (msg: Message) => {
     let messageObj = msg.message;
     let isViewOnce = false;
@@ -680,7 +702,7 @@ export default function ChatPage() {
       return (
         <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.45 }}>
           {isViewOnce && <span style={{ color: '#ffb300', fontWeight: 600, marginRight: 5 }}>[Visualização Única]</span>}
-          {txt}
+          {renderTextWithLinks(txt)}
         </div>
       );
     }
@@ -736,13 +758,36 @@ export default function ChatPage() {
           phone = telMatch[1].trim();
         }
       }
+      const cleanPhone = phone.replace(/\D/g, '');
       return (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(255,255,255,0.06)', padding: '10px 14px', borderRadius: 8, minWidth: 210 }}>
+        <div 
+          onClick={() => cleanPhone && openDirectChat(cleanPhone, displayName)}
+          title={cleanPhone ? "Iniciar conversa privada" : undefined}
+          style={{ 
+            display: 'flex', alignItems: 'center', gap: 10, 
+            background: 'rgba(255,255,255,0.06)', padding: '10px 14px', 
+            borderRadius: 8, minWidth: 210, cursor: cleanPhone ? 'pointer' : 'default',
+            transition: 'background 0.15s'
+          }}
+          onMouseEnter={e => cleanPhone && (e.currentTarget.style.background = 'rgba(37,211,102,0.1)')}
+          onMouseLeave={e => cleanPhone && (e.currentTarget.style.background = 'rgba(255,255,255,0.06)')}
+        >
           <User size={22} color="#25d366" />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: '0.84rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayName}</div>
             {phone && <div style={{ fontSize: '0.67rem', color: 'rgba(255,255,255,0.38)' }}>{phone}</div>}
           </div>
+          {cleanPhone && (
+            <div
+              style={{
+                background: 'rgba(255,255,255,0.06)',
+                width: 26, height: 26, borderRadius: '50%', display: 'flex',
+                alignItems: 'center', justifyContent: 'center', color: 'white'
+              }}
+            >
+              <MessageSquare size={13} />
+            </div>
+          )}
         </div>
       );
     }
