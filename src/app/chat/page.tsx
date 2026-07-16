@@ -25,7 +25,7 @@ interface Chat {
 }
 
 interface Message {
-  key: { id: string; fromMe: boolean; remoteJid: string };
+  key: { id: string; fromMe: boolean; remoteJid: string; participant?: string };
   message?: {
     conversation?: string;
     extendedTextMessage?: { text?: string };
@@ -43,6 +43,7 @@ interface Message {
   text?: string;
   messageTimestamp?: number;
   pushName?: string;
+  participant?: string;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -269,6 +270,49 @@ export default function ChatPage() {
   const [contactGroups, setContactGroups] = useState<any[]>([]);
   const [savingContact, setSavingContact] = useState(false);
 
+  // ── Group Members states ──
+  const [groupMembers, setGroupMembers] = useState<any[]>([]);
+  const [loadingMembers, setLoadingMembers] = useState(false);
+
+  const fetchGroupMembers = async (jid: string, instanceName: string) => {
+    try {
+      setLoadingMembers(true);
+      setGroupMembers([]);
+      const response = await fetch(`/api/chat/groups/participants?instanceName=${instanceName}&groupJid=${jid}`);
+      if (response.ok) {
+        const data = await response.json();
+        setGroupMembers(data.participants || []);
+      }
+    } catch (err) {
+      console.error('Erro ao buscar membros do grupo:', err);
+    } finally {
+      setLoadingMembers(false);
+    }
+  };
+
+  const openDirectChat = (phone: string, name: string) => {
+    const jid = phone.includes('@') ? phone : `${phone}@s.whatsapp.net`;
+    const numberOnly = jid.split('@')[0];
+    const mockChat: Chat = {
+      id: jid,
+      name: name && !name.includes('@') ? name : `+${numberOnly}`,
+      phoneNumber: numberOnly,
+      unreadCount: 0,
+      conversationTimestamp: Math.floor(Date.now() / 1000),
+      lastMessage: '',
+      instanceName: selChat?.instanceName || selInstance
+    };
+    
+    // Adiciona o chat na lista de chats temporariamente se ele não existir
+    setChats(prev => {
+      if (prev.some(c => c.id === jid)) return prev;
+      return [mockChat, ...prev];
+    });
+    
+    setSelChat(mockChat);
+    setShowInfo(false);
+  };
+
   const fetchContactGroups = async () => {
     try {
       const response = await fetch('/api/contacts/groups');
@@ -489,6 +533,14 @@ export default function ChatPage() {
     const iv = setInterval(() => load(), 4000);
     return () => clearInterval(iv);
   }, [selInstance, selChat]);
+
+  // ── Group Members Fetch ──
+  useEffect(() => {
+    if (showInfo && selChat && selChat.id.endsWith('@g.us')) {
+      const instName = selChat.instanceName || selInstance;
+      fetchGroupMembers(selChat.id, instName);
+    }
+  }, [showInfo, selChat]);
 
   // ── Auto-scroll ──
   useEffect(() => {
@@ -939,15 +991,40 @@ export default function ChatPage() {
                               onMouseLeave={() => setHoverMsg(null)}
                               onContextMenu={e => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, msg }); }}>
 
-                              {isGroup && !fromMe && !samePrev && msg.pushName && (
-                                <span style={{ fontSize: '0.63rem', color: avatarColor(msg.pushName), marginLeft: 34, marginBottom: 2, fontWeight: 600 }}>
-                                  {msg.pushName}
+                              {isGroup && !fromMe && !samePrev && (
+                                <span 
+                                  onClick={() => openDirectChat(msg.key.participant || msg.participant || '', msg.pushName || '')}
+                                  title="Conversar no privado"
+                                  style={{ 
+                                    fontSize: '0.63rem', 
+                                    color: avatarColor(msg.pushName || (msg.key.participant || msg.participant || '')?.split('@')[0] || 'Desconhecido'), 
+                                    marginLeft: 34, 
+                                    marginBottom: 2, 
+                                    fontWeight: 600, 
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px'
+                                  }}
+                                  onMouseEnter={e => e.currentTarget.style.textDecoration = 'underline'}
+                                  onMouseLeave={e => e.currentTarget.style.textDecoration = 'none'}
+                                >
+                                  {msg.pushName || (msg.key.participant || msg.participant || '')?.split('@')[0] || 'Desconhecido'}
+                                  <span style={{ fontSize: '0.55rem', opacity: 0.5, fontWeight: 400 }}>(chamar privado)</span>
                                 </span>
                               )}
 
                               <div style={{ display: 'flex', alignItems: 'flex-end', gap: 5, flexDirection: fromMe ? 'row-reverse' : 'row', maxWidth: '67%' }}>
                                 {/* Group avatar */}
-                                {isGroup && !fromMe && !sameNext && <Avatar name={msg.pushName || '?'} size={24} />}
+                                {isGroup && !fromMe && !sameNext && (
+                                  <div 
+                                    onClick={() => openDirectChat(msg.key.participant || msg.participant || '', msg.pushName || '')}
+                                    title="Conversar no privado"
+                                    style={{ cursor: 'pointer' }}
+                                  >
+                                    <Avatar name={msg.pushName || (msg.key.participant || msg.participant || '')?.split('@')[0] || 'Desconhecido'} size={24} />
+                                  </div>
+                                )}
                                 {isGroup && !fromMe && sameNext && <div style={{ width: 24, flexShrink: 0 }} />}
 
                                 {/* Bubble */}
@@ -1147,6 +1224,76 @@ export default function ChatPage() {
                     <UserPlus size={14} />
                     Editar / Salvar no CRM
                   </button>
+                )}
+
+                {/* Membros do Grupo (caso seja grupo) */}
+                {isGroup && (
+                  <div style={{ marginTop: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    <div style={{ fontSize: '0.7rem', color: C.green, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Membros do Grupo ({groupMembers.length})
+                    </div>
+                    {loadingMembers ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'rgba(255,255,255,0.38)', fontSize: '0.78rem', padding: '0.5rem 0' }}>
+                        <Loader2 className="animate-spin" size={14} style={{ color: C.green }} />
+                        Carregando membros...
+                      </div>
+                    ) : groupMembers.length === 0 ? (
+                      <div style={{ fontSize: '0.76rem', color: 'rgba(255,255,255,0.38)', fontStyle: 'italic' }}>
+                        Nenhum membro encontrado.
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '310px', overflowY: 'auto', paddingRight: '4px' }}>
+                        {groupMembers.map((member, i) => {
+                          const name = member.name || member.id.split('@')[0];
+                          const isAdmin = member.admin === 'admin' || member.admin === 'superadmin';
+                          return (
+                            <div 
+                              key={i} 
+                              style={{ 
+                                display: 'flex', alignItems: 'center', justifyContent: 'space-between', 
+                                padding: '0.5rem 0.6rem', background: 'rgba(255,255,255,0.03)', 
+                                borderRadius: 8, border: '1px solid rgba(255,255,255,0.04)' 
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0, flex: 1 }}>
+                                <Avatar name={name} size={28} />
+                                <div style={{ minWidth: 0, flex: 1 }}>
+                                  <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'white', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {name}
+                                  </div>
+                                  <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.35)' }}>
+                                    {member.id.split('@')[0]}
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                {isAdmin && (
+                                  <span style={{ fontSize: '0.55rem', padding: '1px 5px', background: 'rgba(37,211,102,0.15)', color: C.green, borderRadius: 4, fontWeight: 700 }}>
+                                    Admin
+                                  </span>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => openDirectChat(member.id, member.name || '')}
+                                  title="Conversar no privado"
+                                  style={{
+                                    background: 'rgba(255,255,255,0.06)', border: 'none', cursor: 'pointer',
+                                    width: 26, height: 26, borderRadius: '50%', display: 'flex',
+                                    alignItems: 'center', justifyContent: 'center', color: 'white',
+                                    transition: 'background 0.15s'
+                                  }}
+                                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(37,211,102,0.2)'}
+                                  onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+                                >
+                                  <MessageSquare size={13} />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
