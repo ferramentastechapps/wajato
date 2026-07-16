@@ -691,6 +691,12 @@ export const warmupWorker = new Worker(
           if (sourceInst?.phone) {
             // Se quem enviou agora foi a origem da campanha, a resposta deve vir do destino
             if (sourceInstance === campaign.sourceInstance) {
+              // Origem enviou para destino. Zera mensagens sem resposta do destino (para o destino não achar que foi ignorado)
+              await prisma.whatsAppInstance.updateMany({
+                where: { name: campaign.targetInstance },
+                data: { unrepliedMsgCount: 0 }
+              });
+
               await queueWarmupMessage({
                 campaignId,
                 sourceInstance: campaign.targetInstance,
@@ -699,6 +705,12 @@ export const warmupWorker = new Worker(
                 currentTopic: topic,
               });
             } else {
+              // Destino enviou para origem. Zera mensagens sem resposta da origem (confirmando que a origem obteve resposta)
+              await prisma.whatsAppInstance.updateMany({
+                where: { name: campaign.sourceInstance },
+                data: { unrepliedMsgCount: 0 }
+              });
+
               // Se quem enviou foi o destino, o ciclo completo A -> B -> A acabou.
               // Agora a origem A inicia nova conversa com o PRÓXIMO telefone da lista (se houver múltiplos).
               let nextPhone = campaign.targetPhone;
