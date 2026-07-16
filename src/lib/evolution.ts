@@ -207,12 +207,10 @@ export const evolutionApi = {
 
       const response = await evolutionClient.post(`/message/sendMedia/${instanceName}`, {
         number: formattedPhone,
-        mediaMessage: {
-          mediatype: mediaType,
-          media: mediaUrl,
-          caption: caption || '',
-          fileName: fileName
-        }
+        mediatype: mediaType,
+        media: mediaUrl,
+        caption: caption || '',
+        fileName: fileName
       });
       return response.data;
     } catch (error: any) {
@@ -323,13 +321,11 @@ export const evolutionApi = {
         const formattedPhone = this.formatPhone(phone);
         const response = await evolutionClient.post(`/message/sendMedia/${instanceName}`, {
           number: formattedPhone,
-          mediaMessage: {
-            mediatype: 'audio',
-            media: audioUrl,
-            mimetype: 'audio/ogg; codecs=opus',
-            ptt: true,
-          },
-          options: { presence: 'recording', delay: 1500 },
+          mediatype: 'audio',
+          media: audioUrl,
+          mimetype: 'audio/ogg; codecs=opus',
+          ptt: true,
+          options: { presence: 'recording', delay: 1500 }
         });
         return response.data;
       } catch (fallbackError: any) {
