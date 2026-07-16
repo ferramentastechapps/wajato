@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, Flame, Clock, TrendingUp, Zap, MessageSquare, Briefcase, HelpCircle, Settings } from 'lucide-react';
+import { X, Flame, Clock, TrendingUp, Zap, MessageSquare, Briefcase, HelpCircle, Settings, Heart } from 'lucide-react';
 
 interface Props {
   initialSourceInstance?: string;
@@ -10,7 +10,7 @@ interface Props {
 }
 
 type Intensity = 'soft' | 'moderate' | 'aggressive';
-type ContextPreset = 'friend' | 'sales' | 'support' | 'custom';
+type ContextPreset = 'friend' | 'sales' | 'support' | 'love' | 'custom';
 
 const INTENSITY_CONFIG: Record<Intensity, { label: string; initial: number; max: number; days: number; description: string; icon: string }> = {
   soft: {
@@ -57,6 +57,12 @@ const CONTEXT_PRESETS: Record<ContextPreset, { label: string; description: strin
     description: 'Simula um cliente pedindo ajuda com problemas em um serviço ou produto de pós-venda.',
     prompt: 'Você está simulando um cliente com problemas técnicos. Peça suporte sobre um erro, tire dúvidas de uso de um produto, mostre dúvidas sobre o funcionamento e agradeça pelas instruções de forma realista.',
     icon: <HelpCircle size={20} />,
+  },
+  love: {
+    label: 'Namorados',
+    description: 'Simula um casal trocando mensagens do dia a dia, com termos de carinho e gírias de forma natural.',
+    prompt: 'Simule uma conversa entre dois namorados brasileiros que já estão juntos há algum tempo. As mensagens devem parecer totalmente naturais, espontâneas e humanas.\n\nCaracterísticas da conversa:\n- Assuntos do dia a dia (trabalho, estudos, comida, séries, filmes, música, memes, família, pets, planos para o fim de semana, viagens, academia, sono, compras etc.).\n- Demonstrações de carinho como "amor", "vida", "mozão", "lindo(a)", "saudade", "bom dia", "boa noite", "dorme bem", "te amo", mas sem exagerar.\n- Às vezes um responde rápido, outras demora alguns minutos ou horas.\n- Algumas mensagens curtas ("kkk", "sério?", "mds", "tô indo", "já já"), outras mais longas.\n- Use gírias brasileiras e abreviações comuns do WhatsApp (vc, pq, tbm, né, kkk, rs, mds, aff).\n- Inclua emojis ocasionalmente (❤️🥰😂😘🤍😊), mas não em todas as mensagens.\n- Faça perguntas naturais para manter a conversa fluindo.\n- Evite repetir assuntos ou padrões.\n- Às vezes um manda foto (descreva apenas como "[foto do almoço]" ou "[selfie sorrindo]"), áudio ("[áudio de 18 segundos]") ou figurinha ("[figurinha rindo]").\n- O casal nunca fala de política, golpes, apostas ou temas sensíveis.\n- O objetivo é parecer uma conversa real entre um casal apaixonado vivendo a rotina normal.\n\nA conversa deve evoluir naturalmente ao longo dos dias, alternando horários (manhã, tarde e noite), mantendo continuidade entre os assuntos e sem parecer roteirizada. Importante:\n- Nunca envie muitas mensagens seguidas sem resposta.\n- Alterne quem inicia a conversa.\n- Em alguns dias converse bastante e em outros apenas algumas mensagens.\n- Crie pausas naturais entre as mensagens.\n- Não reutilize frases prontas.\n- Faça parecer que duas pessoas reais estão usando o WhatsApp normalmente.',
+    icon: <Heart size={20} />,
   },
   custom: {
     label: 'Personalizado',
