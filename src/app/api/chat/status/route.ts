@@ -160,10 +160,19 @@ export async function POST(req: Request) {
     }
 
     // 1. Envia o status para a Evolution API
-    const response = await evolutionApi.sendStatusUpdate(instanceName, content, type, undefined, finalMediaUrl);
-
-    if (!response) {
-      return NextResponse.json({ error: 'Erro ao postar status no gateway Evolution' }, { status: 500 });
+    try {
+      await evolutionApi.sendStatusUpdate(instanceName, content, type, undefined, finalMediaUrl);
+    } catch (err: any) {
+      console.error('Erro na rota de status:', err);
+      let friendlyError = 'Erro ao postar status no gateway Evolution';
+      if (err.message && err.message.includes('Contacts not found')) {
+        friendlyError = 'Nenhum contato ou conversa ativa foi encontrado nesta instância do WhatsApp. Para publicar um status, o chip precisa ter pelo menos uma conversa iniciada ou contato sincronizado.';
+      } else if (err.message && err.message.includes('Failed to fetch stream')) {
+        friendlyError = 'Não foi possível baixar o arquivo de mídia enviado. Tente novamente.';
+      } else {
+        friendlyError = `Erro da Evolution API: ${err.message}`;
+      }
+      return NextResponse.json({ error: friendlyError }, { status: 400 });
     }
 
     // 2. Busca informações do próprio chip para salvar no banco

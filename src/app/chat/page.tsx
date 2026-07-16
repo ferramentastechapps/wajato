@@ -1271,6 +1271,9 @@ export default function ChatPage() {
                               setUploadedMediaPreview('');
                               fetchStatuses();
                               setSelectedContactJid(null);
+                            } else {
+                              const data = await res.json();
+                              alert(data.error || 'Erro ao publicar status.');
                             }
                           } catch (err) {
                             console.error('Erro ao postar status:', err);
