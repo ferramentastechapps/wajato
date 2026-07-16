@@ -323,7 +323,11 @@ RETORNE APENAS A MENSAGEM, sem aspas, sem prefixos, sem explicações.`;
       if (!content) {
         throw new Error(JSON.stringify(data.error || data) || 'Resposta vazia do OpenRouter/Groq.');
       }
-      return content.trim();
+      let cleanedContent = content.replace(/\[[^\]]+\]/g, '').replace(/\s+/g, ' ').trim();
+      if (!cleanedContent) {
+        throw new Error('Mensagem vazia após remoção de placeholders.');
+      }
+      return cleanedContent;
     } else {
       // Fluxo original Gemini
       const ai = new GoogleGenerativeAI(apiKey);
@@ -354,7 +358,11 @@ RETORNE APENAS A MENSAGEM, sem aspas, sem prefixos, sem explicações.`;
       if (!text) {
         throw new Error('Resposta vazia da API do Gemini.');
       }
-      return text.trim();
+      let cleanedText = text.replace(/\[[^\]]+\]/g, '').replace(/\s+/g, ' ').trim();
+      if (!cleanedText) {
+        throw new Error('Mensagem vazia após remoção de placeholders.');
+      }
+      return cleanedText;
     }
   } catch (error) {
     console.error('Erro ao gerar mensagem de warmup via Gemini:', error);
