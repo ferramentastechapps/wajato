@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { handleChatbotIncoming } from '@/lib/chatbot-processor';
 import { queueWarmupMessage, cancelCampaignWarmupJobs } from '@/lib/warmup-queue';
+import { lidResolver } from '@/lib/lid-resolver';
 
 /**
  * Normaliza um número de telefone removendo DDI duplicado, + e espaços.
@@ -75,15 +76,21 @@ export async function POST(request: Request) {
 
         const isGroupMessage = remoteJid.endsWith('@g.us');
         const isDirectMessage = remoteJid.endsWith('@s.whatsapp.net');
+        const isLidMessage = remoteJid.endsWith('@lid');
         const isStatusUpdate = remoteJid === 'status@broadcast';
 
-        if (!fromMe && remoteJid && (isDirectMessage || isGroupMessage || isStatusUpdate) && instanceName) {
+        if (!fromMe && remoteJid && (isDirectMessage || isLidMessage || isGroupMessage || isStatusUpdate) && instanceName) {
           // Se for mensagem direta e tiver altJid (LID), prefere o altJid para obter o número real em vez do ID interno
           const altJid = messageData?.key?.remoteJidAlt || messageData?.key?.participantAlt;
           const senderJid = (isGroupMessage || isStatusUpdate)
             ? (messageData?.key?.participant || remoteJid)
             : (altJid && altJid.includes('@s.whatsapp.net') ? altJid : remoteJid);
           const phone = normalizePhone(senderJid.split('@')[0]);
+
+          // Registrar mapeamento de LID se aplicável
+          if (isLidMessage && altJid) {
+            lidResolver.addMapping(remoteJid, altJid);
+          }
 
           // Zera o contador de mensagens consecutivas sem resposta da instância
           try {
@@ -150,7 +157,7 @@ export async function POST(request: Request) {
           }
 
           // Salva ou atualiza o contato no banco de dados local com o nome de perfil do WhatsApp
-          if (isDirectMessage && phone && pushName && !pushName.includes('@')) {
+          if ((isDirectMessage || isLidMessage) && phone && pushName && !pushName.includes('@')) {
             try {
               const contact = await prisma.contact.findUnique({ where: { phone } });
               if (!contact) {
@@ -231,7 +238,7 @@ export async function POST(request: Request) {
                 60000, // média 60s
                 20000  // desvio 20s
               );
-            } else if (!warmupCampaign && messageText && isDirectMessage) {
+            } else if (!warmupCampaign && messageText && (isDirectMessage || isLidMessage)) {
               // Chatbot normal apenas para mensagens diretas fora de campanhas
               handleChatbotIncoming(phone, messageText, instanceName).catch((err) => {
                 console.error('[Webhook] Erro no processamento do chatbot:', err);

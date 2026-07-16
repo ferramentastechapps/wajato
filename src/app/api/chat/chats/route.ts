@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { evolutionApi } from '@/lib/evolution';
 import { prisma } from '@/lib/prisma';
+import { lidResolver } from '@/lib/lid-resolver';
 
 export async function GET(req: Request) {
   try {
@@ -63,8 +64,12 @@ export async function GET(req: Request) {
         const altJid = chat.lastMessage?.key?.remoteJidAlt || chat.lastMessage?.key?.participantAlt;
         if (altJid?.endsWith('@s.whatsapp.net')) {
           phoneNumber = altJid.split('@')[0];
+          if (chat.remoteJid?.includes('@lid')) {
+            lidResolver.addMapping(chat.remoteJid, altJid);
+          }
         } else {
-          phoneNumber = chat.remoteJid?.split('@')[0] || '';
+          const savedPhone = chat.remoteJid?.includes('@lid') ? lidResolver.getPhone(chat.remoteJid) : null;
+          phoneNumber = savedPhone || chat.remoteJid?.split('@')[0] || '';
         }
       }
 
