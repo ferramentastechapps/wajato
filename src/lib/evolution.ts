@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { prisma } from './prisma';
 
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://localhost:8080';
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || '';
@@ -365,17 +366,49 @@ export const evolutionApi = {
   async sendStatusUpdate(instanceName: string, text: string, statusType: 'text' | 'image' | 'video' = 'text', targetPhone?: string, mediaUrl?: string): Promise<any> {
     try {
       const cleanPhone = targetPhone ? targetPhone.replace(/\D/g, '') : '';
-      // JID completo obrigatório: número + @s.whatsapp.net
-      const statusJidList = cleanPhone ? [`${cleanPhone}@s.whatsapp.net`] : [];
-      const response = await evolutionClient.post(`/message/sendStatus/${instanceName}`, {
+      
+      let statusJidList: string[] = [];
+      if (cleanPhone) {
+        statusJidList = [cleanPhone];
+      } else {
+        // Tentar obter pelo menos um contato real da lista de conversas da instância
+        const chats = await this.findChats(instanceName);
+        const realChat = chats.find(c => c.remoteJid && c.remoteJid !== '0@s.whatsapp.net' && !c.remoteJid.includes('@g.us'));
+        if (realChat) {
+          statusJidList = [realChat.remoteJid.split('@')[0]];
+        } else {
+          // Fallback: Tentar buscar qualquer contato importado no banco local
+          const dbContact = await prisma.contact.findFirst({
+            where: { phone: { not: '' } }
+          });
+          if (dbContact) {
+            statusJidList = [dbContact.phone.replace(/\D/g, '')];
+          }
+        }
+      }
+
+      // Fallback final para garantir tamanho mínimo de 1 no schema de validação
+      if (statusJidList.length === 0) {
+        statusJidList = ['5511999999999'];
+      }
+
+      // Payload dinâmico de acordo com as exigências da Evolution API v2 para mídias
+      const payload: any = {
         type: statusType,
-        content: text,
-        media: mediaUrl || '',
         backgroundColor: '#128C7E',
         font: 2,
         statusJidList,
-        allContacts: !cleanPhone, // se não houver telefone específico, envia para todos
-      });
+        allContacts: !cleanPhone,
+      };
+
+      if (statusType === 'text') {
+        payload.content = text;
+      } else {
+        payload.content = mediaUrl || '';
+        payload.caption = text;
+      }
+
+      const response = await evolutionClient.post(`/message/sendStatus/${instanceName}`, payload);
       return response.data;
     } catch (error: any) {
       console.error(`Erro ao postar status para ${instanceName}:`, error?.response?.data || error.message);
