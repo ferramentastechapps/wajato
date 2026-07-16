@@ -175,8 +175,8 @@ export const warmupWorker = new Worker(
       }
     }
 
-    const sourceInstance = campaign.sourceInstance;
-    const targetPhone = campaign.targetPhone;
+    const sourceInstance = job.data.sourceInstance || campaign.sourceInstance;
+    const targetPhone = job.data.targetPhone || campaign.targetPhone;
 
     console.log(`[Warmup Worker] Job recebido | Campanha: ${campaignId} | Instância: ${sourceInstance} | Destinatário: ${targetPhone}`);
 
