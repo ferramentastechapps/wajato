@@ -74,8 +74,27 @@ type MessageAction = 'TEXT' | 'EMOJI' | 'REACTION' | 'STICKER' | 'AUDIO' | 'STAT
  * - Contact Card: 1% (enviar contato)
  * - Status/Stories: 1% (postagem social)
  */
-function chooseMessageAction(): MessageAction {
+function chooseCampaignMessageAction(campaign: any): MessageAction {
+  const isNamoro = 
+    (campaign.name?.toLowerCase().includes('namoro') || 
+     campaign.name?.toLowerCase().includes('namorado') ||
+     campaign.customContext?.toLowerCase().includes('namorado') ||
+     campaign.customContext?.toLowerCase().includes('namoro') ||
+     campaign.customContext?.toLowerCase().includes('relacionamento'));
+
   const rand = Math.random() * 100;
+  
+  if (isNamoro) {
+    // Apenas ações naturais de casal: Texto (55%), Emoji (15%), Reação (12%), Sticker (8%), Áudio (6%), Imagem (4%)
+    if (rand < 55) return 'TEXT';
+    if (rand < 70) return 'EMOJI';
+    if (rand < 82) return 'REACTION';
+    if (rand < 90) return 'STICKER';
+    if (rand < 96) return 'AUDIO';
+    return 'IMAGE';
+  }
+  
+  // Fallback padrão para outras campanhas
   if (rand < 48) return 'TEXT';
   if (rand < 61) return 'EMOJI';
   if (rand < 71) return 'REACTION';
@@ -297,7 +316,7 @@ export const warmupWorker = new Worker(
       }));
 
       // ── 9. Escolher tipo de ação desta mensagem ─────────────────────────────────
-      const action = chooseMessageAction();
+      const action = chooseCampaignMessageAction(campaign);
       let messageText = '';
       let messageType: 'TEXT' | 'EMOJI' | 'REACTION' | 'STICKER' | 'AUDIO' = 'TEXT';
       let typingDelay = 1500;

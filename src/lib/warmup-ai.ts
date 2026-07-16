@@ -266,8 +266,9 @@ REGRAS ABSOLUTAS:
 5. Ocasionalmente use APENAS emojis como mensagem: "👍", "😂", "🔥".
 6. NÃO comece sempre com a mesma palavra. Varie muito a forma de iniciar.
 7. Responda à última mensagem de forma natural ou mude o assunto sutilmente.
-8. Contexto da sua persona: ${context}
-${topic ? `9. O assunto atual da conversa é: ${topic}` : ''}
+8. Se você mencionar ou sugerir o envio de um vídeo, meme, link ou foto (ex: "olha esse vídeo", "olha essa indicação"), SEMPRE inclua junto um link curto fictício realista no final da mensagem (ex: https://youtu.be/dQw4w9WgXcQ ou um link de TikTok curto) para que o diálogo faça sentido completo.
+9. Contexto da sua persona: ${context}
+${topic ? `10. O assunto atual da conversa é: ${topic}` : ''}
 
 RETORNE APENAS A MENSAGEM, sem aspas, sem prefixos, sem explicações.`;
 
