@@ -3,6 +3,7 @@ import { evolutionApi } from './evolution';
 import { isWithinBusinessHours } from './warmup-schedule';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { logger } from './logger';
+import { lidResolver } from './lid-resolver';
 
 /**
  * Processa mensagens recebidas do webhook e executa a lógica do chatbot auto-responder.
@@ -11,6 +12,15 @@ export async function handleChatbotIncoming(phone: string, text: string, instanc
   try {
     const cleanText = text.trim().toLowerCase();
     if (!cleanText) return;
+
+    // Verificar se o chatbot está temporariamente pausado para o contato devido a resposta manual
+    const contact = await prisma.contact.findUnique({
+      where: { phone }
+    });
+    if (contact?.chatbotPausedUntil && contact.chatbotPausedUntil > new Date()) {
+      logger.info('Chatbot ignorado para contato porque está pausado temporariamente', { phone, pausedUntil: contact.chatbotPausedUntil });
+      return;
+    }
 
     // 1. Obter ou criar configuração global do chatbot
     let config = await prisma.chatbotConfig.findUnique({
@@ -98,18 +108,73 @@ export async function handleChatbotIncoming(phone: string, text: string, instanc
         return;
       }
 
-      // Buscar histórico recente de chat para dar contexto à IA
-      const recentLogs = await prisma.chatbotLog.findMany({
-        where: { phone },
-        orderBy: { createdAt: 'desc' },
-        take: 6,
-      });
-
-      // Formatar o histórico (do mais antigo para o mais recente)
-      const historyPrompt = recentLogs
-        .reverse()
-        .map((l) => `Cliente: ${l.messageIn}\nVocê: ${l.messageOut}`)
-        .join('\n');
+      // Buscar histórico recente de chat real diretamente da Evolution API (unificando JID e LID se houver)
+      let historyPrompt = '';
+      try {
+        const jid = phone.includes('@') ? phone : `${phone}@s.whatsapp.net`;
+        
+        // Buscar mensagens do JID primário
+        const messages = await evolutionApi.findMessages(instanceName, jid, 10);
+        let finalMessages = Array.isArray(messages) ? messages : [];
+        
+        // Tentar obter JID secundário (LID) se aplicável
+        let otherJid = null;
+        if (jid.endsWith('@s.whatsapp.net')) {
+          const phoneNum = jid.split('@')[0];
+          const lid = lidResolver.getLid(phoneNum);
+          if (lid) otherJid = lid;
+        }
+        
+        if (otherJid) {
+          try {
+            const otherMessages = await evolutionApi.findMessages(instanceName, otherJid, 10);
+            if (Array.isArray(otherMessages) && otherMessages.length > 0) {
+              const merged = [...finalMessages, ...otherMessages];
+              const unique = new Map<string, any>();
+              for (const msg of merged) {
+                const id = msg.key?.id;
+                if (id) {
+                  if (!unique.has(id) || (msg.messageTimestamp && !unique.get(id).messageTimestamp)) {
+                    unique.set(id, msg);
+                  }
+                }
+              }
+              finalMessages = Array.from(unique.values());
+            }
+          } catch (err) {
+            console.error('[Chatbot Processor] Erro ao buscar JID secundário para histórico:', err);
+          }
+        }
+        
+        // Ordena as mensagens por timestamp crescente para o prompt da IA (do mais antigo para o mais recente)
+        const sortedMessages = finalMessages.sort((a: any, b: any) => {
+          const tsA = Number(a.messageTimestamp || 0);
+          const tsB = Number(b.messageTimestamp || 0);
+          return tsA - tsB;
+        });
+        
+        historyPrompt = sortedMessages
+          .map((m: any) => {
+            const fromMe = m.key?.fromMe;
+            const msgText = m.message?.conversation || m.message?.extendedTextMessage?.text || m.text || '';
+            if (!msgText.trim()) return null;
+            return fromMe ? `Você: ${msgText}` : `Cliente: ${msgText}`;
+          })
+          .filter(Boolean)
+          .join('\n');
+      } catch (err) {
+        console.error('[Chatbot Processor] Erro ao buscar histórico da Evolution API, usando backup do ChatbotLog:', err);
+        // Fallback para o comportamento antigo caso falhe
+        const recentLogs = await prisma.chatbotLog.findMany({
+          where: { phone },
+          orderBy: { createdAt: 'desc' },
+          take: 6,
+        });
+        historyPrompt = recentLogs
+          .reverse()
+          .map((l) => `Cliente: ${l.messageIn}\nVocê: ${l.messageOut}`)
+          .join('\n');
+      }
 
       const systemContext = config.aiContext;
       

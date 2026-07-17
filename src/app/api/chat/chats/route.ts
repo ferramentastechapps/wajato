@@ -86,11 +86,43 @@ export async function GET(req: Request) {
         conversationTimestamp: timestamp,
         lastMessage: lastMessageText,
         phoneNumber: phoneNumber || undefined,
+        pushName: chat.pushName || null,
+        profilePicUrl: chat.profilePicUrl || null,
+        remoteJid: chat.remoteJid || chat.id,
       };
     });
 
+    // Deduplicar chats por número de telefone para evitar duplicidade de LID e s.whatsapp.net
+    const deduplicatedMap = new Map<string, any>();
+    for (const chat of mappedChats) {
+      const key = chat.phoneNumber || chat.id;
+      if (!deduplicatedMap.has(key)) {
+        deduplicatedMap.set(key, chat);
+      } else {
+        const existing = deduplicatedMap.get(key);
+        // Soma as mensagens não lidas de ambos
+        existing.unreadCount = (existing.unreadCount || 0) + (chat.unreadCount || 0);
+
+        // Prefere o JID de telefone (@s.whatsapp.net) ao JID de LID (@lid) para o ID final do chat
+        const existingIsLid = existing.id.endsWith('@lid');
+        const currentIsLid = chat.id.endsWith('@lid');
+        if (existingIsLid && !currentIsLid) {
+          existing.id = chat.id;
+        }
+
+        // Mantém a última mensagem com maior timestamp
+        const existingTs = existing.conversationTimestamp || 0;
+        const currentTs = chat.conversationTimestamp || 0;
+        if (currentTs > existingTs) {
+          existing.conversationTimestamp = currentTs;
+          existing.lastMessage = chat.lastMessage;
+        }
+      }
+    }
+    const uniqueMappedChats = Array.from(deduplicatedMap.values());
+
     // Buscar nomes dos contatos salvos no banco local (CRM) para substituir na exibição
-    const phoneNumbers = mappedChats
+    const phoneNumbers = uniqueMappedChats
       .map((c: any) => c.phoneNumber)
       .filter(Boolean) as string[];
 
@@ -118,16 +150,14 @@ export async function GET(req: Request) {
 
     // Salvar contatos não cadastrados ou sem nome usando o pushName do WhatsApp
     const contactsToUpsert = [];
-    for (let i = 0; i < mappedChats.length; i++) {
-      const c = mappedChats[i];
-      const chat = chats[i];
-      if (c.phoneNumber && chat.pushName && !chat.pushName.includes('@') && !chat.remoteJid?.endsWith('@g.us')) {
+    for (const c of uniqueMappedChats) {
+      if (c.phoneNumber && c.pushName && !c.pushName.includes('@') && !c.remoteJid?.endsWith('@g.us')) {
         const dbName = contactMap.get(c.phoneNumber) || 
                        contactMap.get(c.phoneNumber.startsWith('55') ? c.phoneNumber.slice(2) : `55${c.phoneNumber}`);
         if (!dbName) {
           contactsToUpsert.push({
             phone: c.phoneNumber,
-            name: chat.pushName,
+            name: c.pushName,
           });
         }
       }
@@ -149,8 +179,7 @@ export async function GET(req: Request) {
       }
     }
 
-    const finalChats = mappedChats.map((c: any, index: number) => {
-      const chat = chats[index];
+    const finalChats = uniqueMappedChats.map((c: any) => {
       let finalName = c.name;
       if (c.phoneNumber) {
         const dbName = contactMap.get(c.phoneNumber) || 
@@ -160,9 +189,13 @@ export async function GET(req: Request) {
         }
       }
       return {
-        ...c,
+        id: c.id,
         name: finalName,
-        profilePicUrl: chat.profilePicUrl || null,
+        unreadCount: c.unreadCount,
+        conversationTimestamp: c.conversationTimestamp,
+        lastMessage: c.lastMessage,
+        phoneNumber: c.phoneNumber,
+        profilePicUrl: c.profilePicUrl,
       };
     });
 

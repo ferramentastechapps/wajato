@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { handleChatbotIncoming } from '@/lib/chatbot-processor';
 import { queueWarmupMessage, cancelCampaignWarmupJobs } from '@/lib/warmup-queue';
 import { lidResolver } from '@/lib/lid-resolver';
+import { sentMessagesCache } from '@/lib/sent-messages-cache';
 
 /**
  * Normaliza um número de telefone removendo DDI duplicado, + e espaços.
@@ -85,7 +86,14 @@ export async function POST(request: Request) {
           const senderJid = (isGroupMessage || isStatusUpdate)
             ? (messageData?.key?.participant || remoteJid)
             : (altJid && altJid.includes('@s.whatsapp.net') ? altJid : remoteJid);
-          const phone = normalizePhone(senderJid.split('@')[0]);
+          
+          let phone = normalizePhone(senderJid.split('@')[0]);
+          if (senderJid.endsWith('@lid')) {
+            const resolved = lidResolver.getPhone(senderJid);
+            if (resolved) {
+              phone = resolved;
+            }
+          }
 
           // Registrar mapeamento de LID se aplicável
           if (isLidMessage && altJid) {
@@ -244,6 +252,37 @@ export async function POST(request: Request) {
                 console.error('[Webhook] Erro no processamento do chatbot:', err);
               });
             }
+          }
+        } else if (fromMe && remoteJid && (isDirectMessage || isLidMessage) && instanceName) {
+          // Mensagem enviada a partir da nossa própria instância
+          const altJid = messageData?.key?.remoteJidAlt || messageData?.key?.participantAlt;
+          const senderJid = altJid && altJid.includes('@s.whatsapp.net') ? altJid : remoteJid;
+          let phone = normalizePhone(senderJid.split('@')[0]);
+          if (senderJid.endsWith('@lid')) {
+            const resolved = lidResolver.getPhone(senderJid);
+            if (resolved) {
+              phone = resolved;
+            }
+          }
+
+          // Checa se a mensagem foi enviada pelo sistema de forma automática
+          const isSystem = await sentMessagesCache.has(incomingMessageId);
+          if (!isSystem) {
+            // Foi uma interação manual feita pelo usuário (no app do celular ou web UI do Wajato)
+            const pausedUntil = new Date(Date.now() + 30 * 60 * 1000); // 30 minutos
+            try {
+              await prisma.contact.upsert({
+                where: { phone },
+                update: { chatbotPausedUntil: pausedUntil },
+                create: { phone, name: `+${phone}`, chatbotPausedUntil: pausedUntil },
+              });
+              console.log(`[Webhook] Chatbot pausado para ${phone} até ${pausedUntil.toISOString()} devido a resposta manual.`);
+            } catch (err: any) {
+              console.error(`[Webhook] Erro ao pausar chatbot para ${phone}:`, err.message);
+            }
+          } else {
+            // Deleta do cache do Redis para não acumular
+            await sentMessagesCache.delete(incomingMessageId);
           }
         }
       }

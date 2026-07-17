@@ -33,7 +33,7 @@ import {
 import { redisConnection } from '../redis';
 
 // Alias tipado para facilitar o uso dos mocks
-const redisMock = redisConnection as Record<string, ReturnType<typeof vi.fn>>;
+const redisMock = (redisConnection as unknown) as Record<string, ReturnType<typeof vi.fn>>;
 
 describe('warmup-rate-limiter', () => {
   beforeEach(() => {

@@ -26,6 +26,16 @@ export const lidResolver = {
     return memoryMappings[cleanLid] || null;
   },
 
+  getLid(phone: string): string | null {
+    const cleanPhone = phone.replace(/\D/g, '');
+    for (const [lid, ph] of Object.entries(memoryMappings)) {
+      if (ph === cleanPhone) {
+        return `${lid}@lid`;
+      }
+    }
+    return null;
+  },
+
   addMapping(lid: string, phone: string) {
     const cleanLid = lid.split('@')[0];
     const cleanPhone = phone.split('@')[0].replace(/\D/g, '');

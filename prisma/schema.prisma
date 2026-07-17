@@ -45,17 +45,18 @@ model User {
 
 
 model Contact {
-  id        String       @id @default(uuid())
-  name      String?
-  phone     String       @unique
-  tags      String[]     @default([])
-  groupId   String?
-  group     ContactGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
-  stageId   String?
-  stage     CrmStage?    @relation(fields: [stageId], references: [id], onDelete: SetNull)
-  logs      MessageLog[]
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  id                 String        @id @default(uuid())
+  name               String?
+  phone              String        @unique
+  tags               String[]      @default([])
+  groupId            String?
+  group              ContactGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  stageId            String?
+  stage              CrmStage?     @relation(fields: [stageId], references: [id], onDelete: SetNull)
+  logs               MessageLog[]
+  chatbotPausedUntil DateTime?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
 }
 
 model CrmStage {

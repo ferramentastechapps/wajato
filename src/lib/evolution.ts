@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { prisma } from './prisma';
+import { sentMessagesCache } from './sent-messages-cache';
 
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://localhost:8080';
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || '';
@@ -47,6 +48,21 @@ export interface ConnectionStateResponse {
     instanceName: string;
     state: 'open' | 'connecting' | 'close';
   };
+}
+
+async function registerSentMessage(data: any) {
+  try {
+    if (!data) return;
+    const messages = Array.isArray(data) ? data : [data];
+    for (const m of messages) {
+      const id = m?.key?.id || m?.id;
+      if (id) {
+        await sentMessagesCache.add(id);
+      }
+    }
+  } catch (err) {
+    console.error('[Evolution API] Erro ao registrar mensagem enviada:', err);
+  }
 }
 
 export const evolutionApi = {
@@ -178,6 +194,7 @@ export const evolutionApi = {
           presence: 'composing',
         },
       });
+      await registerSentMessage(response.data);
       return response.data;
     } catch (error: any) {
       console.error(`Erro ao enviar mensagem de texto para ${phone}:`, error?.response?.data || error.message);
@@ -212,6 +229,7 @@ export const evolutionApi = {
         caption: caption || '',
         fileName: fileName
       });
+      await registerSentMessage(response.data);
       return response.data;
     } catch (error: any) {
       console.error(`Erro ao enviar mensagem de mídia para ${phone}:`, error?.response?.data || error.message);
@@ -314,6 +332,7 @@ export const evolutionApi = {
           delay: 1000,
         },
       });
+      await registerSentMessage(response.data);
       return response.data;
     } catch (error: any) {
       // Fallback: sendMedia com mimetype opus (método antigo)
@@ -327,6 +346,7 @@ export const evolutionApi = {
           ptt: true,
           options: { presence: 'recording', delay: 1500 }
         });
+        await registerSentMessage(response.data);
         return response.data;
       } catch (fallbackError: any) {
         console.error(`Erro ao enviar áudio PTT para ${phone}:`, fallbackError?.response?.data || fallbackError.message);
@@ -347,6 +367,7 @@ export const evolutionApi = {
           image: stickerUrl,
         },
       });
+      await registerSentMessage(response.data);
       return response.data;
     } catch (error: any) {
       console.error(`Erro ao enviar sticker para ${phone}:`, error?.response?.data || error.message);
@@ -405,6 +426,7 @@ export const evolutionApi = {
       }
 
       const response = await evolutionClient.post(`/message/sendStatus/${instanceName}`, payload);
+      await registerSentMessage(response.data);
       return response.data;
     } catch (error: any) {
       console.error(`Erro ao postar status para ${instanceName}:`, error?.response?.data || error.message);
@@ -470,6 +492,7 @@ export const evolutionApi = {
           presence: 'composing',
         },
       });
+      await registerSentMessage(response.data);
       return response.data;
     } catch (error: any) {
       console.error(`Erro ao enviar enquete para ${phone}:`, error?.response?.data || error.message);
@@ -494,6 +517,7 @@ export const evolutionApi = {
         ],
         options: { delay: 800 },
       });
+      await registerSentMessage(response.data);
       return response.data;
     } catch (error: any) {
       console.error(`Erro ao enviar contato para ${phone}:`, error?.response?.data || error.message);
@@ -515,6 +539,7 @@ export const evolutionApi = {
         address,
         options: { delay: 1200 },
       });
+      await registerSentMessage(response.data);
       return response.data;
     } catch (error: any) {
       console.error(`Erro ao enviar localização para ${phone}:`, error?.response?.data || error.message);
