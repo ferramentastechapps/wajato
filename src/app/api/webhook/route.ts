@@ -187,14 +187,12 @@ export async function POST(request: Request) {
 
           if (messageText || isGroupMessage) {
             // Verifica se o remetente é uma de nossas instâncias locais (para evitar loop bidirecional)
-            const isLocalInstance = await prisma.whatsAppInstance.findFirst({
-              where: {
-                OR: [
-                  { phone: phone },
-                  { phone: phone.replace(/^55/, '') }, // sem DDI
-                ],
-              },
+            const instances = await prisma.whatsAppInstance.findMany({
+              select: { phone: true },
             });
+            const isLocalInstance = instances.some(
+              (inst) => inst.phone && matchBrazilianPhone(phone, inst.phone)
+            );
 
             // Busca todas as campanhas ativas para esta instância no banco
             const runningCampaigns = !isLocalInstance
@@ -246,7 +244,7 @@ export async function POST(request: Request) {
                 60000, // média 60s
                 20000  // desvio 20s
               );
-            } else if (!warmupCampaign && messageText && (isDirectMessage || isLidMessage)) {
+            } else if (!warmupCampaign && !isLocalInstance && messageText && (isDirectMessage || isLidMessage)) {
               // Chatbot normal apenas para mensagens diretas fora de campanhas
               handleChatbotIncoming(phone, messageText, instanceName).catch((err) => {
                 console.error('[Webhook] Erro no processamento do chatbot:', err);

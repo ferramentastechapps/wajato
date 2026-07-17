@@ -9,6 +9,9 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 vi.mock('../prisma', () => {
   return {
     prisma: {
+      contact: {
+        findUnique: vi.fn(),
+      },
       chatbotConfig: {
         findUnique: vi.fn(),
         create: vi.fn(),
@@ -64,6 +67,7 @@ vi.mock('@google/generative-ai', () => {
 describe('Chatbot Processor Unit Tests', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(prisma.contact.findUnique).mockResolvedValue(null);
   });
 
   it('deve ignorar mensagem se estiver fora do horário comercial', async () => {
@@ -181,7 +185,7 @@ describe('Chatbot Processor Unit Tests', () => {
     await handleChatbotIncoming('5511999999999', 'Olá, tudo bem?', 'instancia-teste');
 
     expect(GoogleGenerativeAI).toHaveBeenCalled();
-    expect(evolutionApi.sendTextMessage).toHaveBeenCalledWith('instancia-teste', '5511999999999', 'Olá, sou a IA!');
+    expect(evolutionApi.sendTextMessage).toHaveBeenCalledWith('instancia-teste', '5511999999999', 'Olá, sou a IA!', 1500);
     expect(prisma.chatbotLog.create).toHaveBeenCalledWith({
       data: {
         phone: '5511999999999',
@@ -215,6 +219,6 @@ describe('Chatbot Processor Unit Tests', () => {
 
     // Verifica se instanciou o GoogleGenerativeAI com a chave individual do banco
     expect(GoogleGenerativeAI).toHaveBeenCalledWith('individual-client-key');
-    expect(evolutionApi.sendTextMessage).toHaveBeenCalledWith('instancia-teste', '5511999999999', 'Olá, sou a IA!');
+    expect(evolutionApi.sendTextMessage).toHaveBeenCalledWith('instancia-teste', '5511999999999', 'Olá, sou a IA!', 1500);
   });
 });
