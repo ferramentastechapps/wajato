@@ -294,7 +294,13 @@ export async function POST(request: Request) {
       const updatedMessageId = data?.key?.id || messageData?.key?.id;
 
       if (remoteJid && status) {
-        const phone = normalizePhone(remoteJid.split('@')[0]);
+        let phone = normalizePhone(remoteJid.split('@')[0]);
+        if (remoteJid.endsWith('@lid')) {
+          const resolved = lidResolver.getPhone(remoteJid);
+          if (resolved) {
+            phone = resolved;
+          }
+        }
 
         console.log(`[Webhook] Status update para ${phone}: ${status} | msgId: ${updatedMessageId}`);
 

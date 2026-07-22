@@ -14,12 +14,19 @@ export async function handleChatbotIncoming(phone: string, text: string, instanc
     if (!cleanText) return;
 
     // Verificar se o chatbot está temporariamente pausado para o contato devido a resposta manual
-    const contact = await prisma.contact.findUnique({
-      where: { phone }
-    });
-    if (contact?.chatbotPausedUntil && contact.chatbotPausedUntil > new Date()) {
-      logger.info('Chatbot ignorado para contato porque está pausado temporariamente', { phone, pausedUntil: contact.chatbotPausedUntil });
-      return;
+    // Wrapped in try/catch to tolerate stale Prisma client builds where the column may not yet be known
+    try {
+      const contact = await prisma.contact.findUnique({
+        where: { phone }
+      });
+      if (contact?.chatbotPausedUntil && contact.chatbotPausedUntil > new Date()) {
+        logger.info('Chatbot ignorado para contato porque está pausado temporariamente', { phone, pausedUntil: contact.chatbotPausedUntil });
+        return;
+      }
+    } catch (pauseCheckErr: any) {
+      // Se a coluna chatbotPausedUntil não existir no schema compilado, continua normalmente
+      // Isso pode ocorrer quando o Prisma client não foi regenerado após uma migração
+      logger.warn?.('[Chatbot] Aviso: falha ao verificar chatbotPausedUntil, continuando sem pausa', { phone, error: pauseCheckErr?.message });
     }
 
     // 1. Obter ou criar configuração global do chatbot

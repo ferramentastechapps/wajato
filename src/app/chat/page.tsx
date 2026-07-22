@@ -5,7 +5,7 @@ import AppLayout from '@/components/layout/AppLayout';
 import {
   MessageSquare, Send, User, Users, Loader2, AlertCircle, Search,
   Paperclip, Smile, MoreVertical, Phone, Video as VideoIcon,
-  CheckCheck, FileText, Play, Pause, Download, Volume2, X,
+  CheckCheck, Check, Clock, FileText, Play, Pause, Download, Volume2, X,
   ChevronDown, Reply, Copy, Star, Forward, Info, CircleDot, Plus, UserPlus,
 } from 'lucide-react';
 
@@ -44,6 +44,7 @@ interface Message {
   messageTimestamp?: number;
   pushName?: string;
   participant?: string;
+  status?: string | number;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -90,6 +91,46 @@ function playPing() {
     g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
     o.start(ctx.currentTime); o.stop(ctx.currentTime + 0.35);
   } catch {}
+}
+
+function renderMessageStatus(msg: Message) {
+  const st = msg.status;
+  const isTemp = msg.key.id && msg.key.id.length < 15; // mensagens locais temporárias têm ID curto gerado por Math.random()
+  
+  if (isTemp || st === 'PENDING' || st === 0) {
+    return (
+      <span title="Enviando/Pendente..." style={{ display: 'inline-flex' }}>
+        <Clock size={10} color="rgba(255,255,255,0.35)" />
+      </span>
+    );
+  }
+  if (st === 'SERVER_ACK' || st === 1) {
+    return (
+      <span title="Enviado ao servidor" style={{ display: 'inline-flex' }}>
+        <Check size={10} color="rgba(255,255,255,0.45)" />
+      </span>
+    );
+  }
+  if (st === 'DELIVERY_ACK' || st === 2) {
+    return (
+      <span title="Entregue" style={{ display: 'inline-flex' }}>
+        <CheckCheck size={10} color="rgba(255,255,255,0.45)" />
+      </span>
+    );
+  }
+  if (st === 'READ' || st === 3) {
+    return (
+      <span title="Lido" style={{ display: 'inline-flex' }}>
+        <CheckCheck size={10} color="#53bdeb" />
+      </span>
+    );
+  }
+  // Fallback padrão se não tiver status reconhecido
+  return (
+    <span title="Enviado" style={{ display: 'inline-flex' }}>
+      <CheckCheck size={10} color="rgba(255,255,255,0.45)" />
+    </span>
+  );
 }
 
 // ─── Emojis ─────────────────────────────────────────────────────────────────
