@@ -88,15 +88,23 @@ export async function reportChipFailure(instanceName: string, errorMsg: string):
     });
 
     if (instance) {
-      // Reduz o score de saúde substancialmente na falha
-      const newScore = Math.max(0, instance.healthScore - 20);
+      // Diferencia falha de rede/API temporária de desconexão real do chip
+      const isRealDisconnection = 
+        errorMsg.toLowerCase().includes('disconnected') || 
+        errorMsg.toLowerCase().includes('401') || 
+        errorMsg.toLowerCase().includes('unauthorized') || 
+        errorMsg.toLowerCase().includes('session closed') || 
+        errorMsg.toLowerCase().includes('logout');
+
+      const penalty = isRealDisconnection ? 20 : 4; // penalidade leve (4%) para erros genéricos, pesada (20%) para queda real
+      const newScore = Math.max(0, instance.healthScore - penalty);
       
       await prisma.whatsAppInstance.update({
         where: { name: instanceName },
         data: {
           healthScore: newScore,
-          // Se a saúde cair demais ou o erro indicar desconexão, atualiza status
-          status: newScore <= 20 || errorMsg.toLowerCase().includes('disconnected') || errorMsg.toLowerCase().includes('401')
+          // Somente desconecta se a saúde zerar totalmente ou for erro de sessão explícito
+          status: (newScore <= 0 || isRealDisconnection)
             ? 'DISCONNECTED'
             : instance.status,
         },

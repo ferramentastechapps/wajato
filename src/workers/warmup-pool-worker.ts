@@ -52,17 +52,18 @@ import {
 } from '../lib/chip-router';
 
 const WARMUP_POOL_QUEUE_NAME = 'warmup-pool-queue';
-type MessageAction = 'TEXT' | 'EMOJI' | 'REACTION' | 'STICKER' | 'AUDIO' | 'LOCATION' | 'POLL' | 'CONTACT';
+type MessageAction = 'TEXT' | 'REACTION' | 'STICKER' | 'AUDIO' | 'LOCATION' | 'POLL' | 'CONTACT';
 
 function chooseMessageAction(): MessageAction {
+  // EMOJI eliminado — emoji sozinho sem frase é sem nexo e destrói a naturalidade
+  // A IA já inclui emojis dentro do texto quando relevante
   const rand = Math.random() * 100;
-  if (rand < 48) return 'TEXT';
-  if (rand < 61) return 'EMOJI';
-  if (rand < 71) return 'REACTION';
-  if (rand < 76) return 'STICKER';
-  if (rand < 86) return 'AUDIO';
-  if (rand < 90) return 'LOCATION';
+  if (rand < 80) return 'TEXT';
+  if (rand < 88) return 'REACTION';
+  if (rand < 93) return 'AUDIO';
+  if (rand < 96) return 'STICKER';
   if (rand < 98) return 'POLL';
+  if (rand < 99) return 'LOCATION';
   return 'CONTACT';
 }
 
@@ -243,7 +244,7 @@ export const warmupPoolWorker = new Worker(
         take: 10,
       });
 
-      const history: ChatMessage[] = pairLogs.reverse().map(l => ({
+      const history: ChatMessage[] = [...pairLogs].reverse().map(l => ({
         role: l.fromInstance === finalSender ? 'model' : 'user',
         parts: [{ text: l.message }],
       }));
@@ -261,17 +262,7 @@ export const warmupPoolWorker = new Worker(
       const topic = selectConversationTopic(recentTopics);
 
       // ── 10. Executar Ação ──────────────────────────────────────────────────
-      if (action === 'EMOJI') {
-        messageText = QUICK_EMOJI_RESPONSES[Math.floor(Math.random() * QUICK_EMOJI_RESPONSES.length)];
-        messageType = 'EMOJI';
-        typingDelay = 1000 + Math.random() * 1000;
-        await new Promise(r => setTimeout(r, typingDelay));
-        try {
-          const res = await evolutionApi.sendTextMessage(finalSender, targetPhone, messageText);
-          sentMessageId = res?.key?.id || null;
-        } catch { status = 'FAILED'; }
-
-      } else if (action === 'REACTION' && pairLogs.length > 0) {
+      if (action === 'REACTION' && pairLogs.length > 0) {
         messageType = 'REACTION';
         const reaction = WARMUP_REACTIONS[Math.floor(Math.random() * WARMUP_REACTIONS.length)];
         messageText = reaction;
@@ -297,7 +288,12 @@ export const warmupPoolWorker = new Worker(
         const ok = await evolutionApi.sendSticker(finalSender, targetPhone, stickerUrl);
         if (!ok) {
           try {
-            await evolutionApi.sendTextMessage(finalSender, targetPhone, '🔥');
+            messageType = 'TEXT';
+            const context = `Você é ${finalSender} conversando no WhatsApp com seu amigo ${finalReceiver}. Assunto: ${topic}`;
+            messageText = await generateNextWarmupMessage(context, history, topic);
+            typingDelay = calculateTypingDelay(messageText);
+            await new Promise(r => setTimeout(r, typingDelay));
+            await evolutionApi.sendTextMessage(finalSender, targetPhone, messageText);
           } catch { status = 'FAILED'; }
         }
 

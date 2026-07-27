@@ -83,13 +83,13 @@ export async function GET(request: Request) {
 
     // 3. Buscar usuário no banco de dados local
     // 3.1 Tenta encontrar pelo ID único do Google
-    let user = await prisma.user.findUnique({
+    let user = await prisma.user.findFirst({
       where: { googleId },
     });
 
     // 3.2 Se não encontrar, tenta encontrar pelo e-mail
     if (!user) {
-      user = await prisma.user.findUnique({
+      user = await prisma.user.findFirst({
         where: { email },
       });
 

@@ -19,6 +19,7 @@ import { prisma } from '../lib/prisma';
 import { evolutionApi } from '../lib/evolution';
 import {
   generateNextWarmupMessage,
+  generateContextualEmoji,
   calculateTypingDelay,
   selectConversationTopic,
   QUICK_EMOJI_RESPONSES,
@@ -131,26 +132,24 @@ function chooseCampaignMessageAction(campaign: any): MessageAction {
   const rand = Math.random() * 100;
   
   if (isNamoro) {
-    // Apenas ações naturais de casal: Texto (55%), Emoji (15%), Reação (12%), Sticker (8%), Áudio (6%), Imagem (4%)
-    if (rand < 55) return 'TEXT';
-    if (rand < 70) return 'EMOJI';
-    if (rand < 82) return 'REACTION';
-    if (rand < 90) return 'STICKER';
+    // Conversa de namorados: foco em texto real (80%), reação ocasional (10%), áudio (6%), sticker (3%), imagem (1%)
+    // EMOJI eliminado — emoji sem contexto destrói a naturalidade da conversa
+    if (rand < 80) return 'TEXT';
+    if (rand < 90) return 'REACTION';
     if (rand < 96) return 'AUDIO';
+    if (rand < 99) return 'STICKER';
     return 'IMAGE';
   }
   
-  // Fallback padrão para outras campanhas
-  if (rand < 48) return 'TEXT';
-  if (rand < 61) return 'EMOJI';
-  if (rand < 71) return 'REACTION';
-  if (rand < 76) return 'STICKER';
-  if (rand < 84) return 'AUDIO';
-  if (rand < 89) return 'IMAGE';
-  if (rand < 93) return 'LOCATION';
-  if (rand < 98) return 'POLL';
-  if (rand < 99) return 'CONTACT';
-  return 'STATUS';
+  // Outras campanhas (amizade, comercial etc): TEXT dominante (75%), mídias ocasionais
+  if (rand < 75) return 'TEXT';
+  if (rand < 83) return 'REACTION';
+  if (rand < 89) return 'AUDIO';
+  if (rand < 93) return 'IMAGE';
+  if (rand < 95) return 'STICKER';
+  if (rand < 97) return 'POLL';
+  if (rand < 99) return 'LOCATION';
+  return 'CONTACT';
 }
 
 /**
@@ -356,7 +355,7 @@ export const warmupWorker = new Worker(
         return;
       }
 
-      const history: ChatMessage[] = logs.reverse().map(log => ({
+      const history: ChatMessage[] = [...logs].reverse().map(log => ({
         role: log.fromInstance === sourceInstance ? 'model' : 'user',
         parts: [{ text: log.message }],
       }));
@@ -367,10 +366,26 @@ export const warmupWorker = new Worker(
       let messageType: 'TEXT' | 'EMOJI' | 'REACTION' | 'STICKER' | 'AUDIO' = 'TEXT';
       let typingDelay = 1500;
 
-      // Contexto da persona customizado ou padrão
-      let personaContext = campaign.customContext
-        ? `${campaign.customContext}. Dia ${campaign.currentDay} de conversa. Assunto: ${topic}`
-        : `Você é ${sourceInstance}. Dia ${campaign.currentDay} de conversa. Assunto: ${topic}`;
+      // Contexto da persona customizado ou padrão. Identifica EXPLICITAMENTE quem a IA representa no diálogo.
+      const targetName = campaign.targetInstance || 'seu parceiro(a)';
+      let personaContext = `Você está controlando a persona da instância "${sourceInstance}".
+Você está conversando com a pessoa/instância "${targetName}".
+Mantenha a consistência da persona: você é "${sourceInstance}" e está enviando a mensagem na primeira pessoa para "${targetName}".
+
+Contexto geral da conversa:
+${campaign.customContext || `Você é ${sourceInstance}.`}
+Dia ${campaign.currentDay} de conversa. Assunto: ${topic}`;
+
+      const isNamoro = 
+        (campaign.name?.toLowerCase().includes('namoro') || 
+         campaign.name?.toLowerCase().includes('namorado') ||
+         campaign.customContext?.toLowerCase().includes('namorado') ||
+         campaign.customContext?.toLowerCase().includes('namoro') ||
+         campaign.customContext?.toLowerCase().includes('relacionamento'));
+
+      if (isNamoro) {
+        personaContext += '\n\nCONVENÇÃO DE NAMORO: Esta conversa é entre um casal de namorados em um relacionamento carinhoso. Responda afetuosamente com termos como "amor", "vida", "morem". NUNCA use gírias brutas como "mano", "véi" ou "cara".';
+      }
 
       // Detecção de gênero para campanhas de Amizade Casual
       const isAmizade = campaign.customContext?.includes('amigos brasileiros') || 
@@ -390,10 +405,13 @@ export const warmupWorker = new Worker(
       let sentMessageId: string | null = null;
 
       if (action === 'EMOJI') {
-        // Resposta rápida com emoji
-        messageText = QUICK_EMOJI_RESPONSES[Math.floor(Math.random() * QUICK_EMOJI_RESPONSES.length)];
+        // Resposta rápida com emoji contextual (gerado pela IA com base na última mensagem)
         messageType = 'EMOJI';
         typingDelay = 800 + Math.random() * 1200; // 0.8-2s para emoji
+
+        const lastLog = logs[0]; // log mais recente
+        const lastMsgText = lastLog?.message || '';
+        messageText = await generateContextualEmoji(lastMsgText, isNamoro ?? false);
         
         await new Promise(r => setTimeout(r, typingDelay));
         
@@ -447,9 +465,12 @@ export const warmupWorker = new Worker(
         
         const stickerResult = await evolutionApi.sendSticker(sourceInstance, targetPhone, stickerUrl);
         if (!stickerResult) {
-          // Fallback para emoji se sticker falhar
-          messageText = '😄';
+          // Fallback para texto gerado pela IA se sticker falhar
           try {
+            messageType = 'TEXT';
+            messageText = await generateNextWarmupMessage(personaContext, history, topic);
+            typingDelay = calculateTypingDelay(messageText);
+            await new Promise(r => setTimeout(r, typingDelay));
             const res = await evolutionApi.sendTextMessage(sourceInstance, targetPhone, messageText);
             sentMessageId = res?.key?.id || res?.id || null;
           } catch (err) {

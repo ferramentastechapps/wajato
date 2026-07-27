@@ -434,8 +434,8 @@ export default function WarmupChatViewer({ campaignId, onClose, onStatusChange }
                           alignItems: 'center',
                           gap: 4,
                         }}>
-                          {typeIcon && <span>{typeIcon}</span>}
-                          <span>{isSent ? (campaign?.name || sourceInstance) : senderName}</span>
+                          {typeIcon && log.messageType !== 'REACTION' && <span>{typeIcon}</span>}
+                          <span>{isSent ? log.fromInstance : senderName}</span>
                         </div>
 
                         {/* Mensagem */}

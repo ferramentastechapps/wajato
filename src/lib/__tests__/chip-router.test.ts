@@ -121,7 +121,7 @@ describe('Chip Router Unit Tests', () => {
   });
 
   describe('reportChipFailure', () => {
-    it('deve rebaixar a saúde do chip em 20 pontos', async () => {
+    it('deve rebaixar a saúde do chip em 4 pontos para erro genérico (timeout)', async () => {
       vi.mocked(prisma.whatsAppInstance.findUnique).mockResolvedValueOnce(
         makeInstance({ name: 'chip-1', healthScore: 80 })
       );
@@ -130,20 +130,20 @@ describe('Chip Router Unit Tests', () => {
 
       expect(prisma.whatsAppInstance.update).toHaveBeenCalledWith({
         where: { name: 'chip-1' },
-        data: { healthScore: 60, status: 'CONNECTED' },
+        data: { healthScore: 76, status: 'CONNECTED' },
       });
     });
 
-    it('deve desconectar o chip se a saúde cair para 20 ou menos', async () => {
+    it('deve desconectar o chip se a saúde zerar devido a erros genéricos repetidos', async () => {
       vi.mocked(prisma.whatsAppInstance.findUnique).mockResolvedValueOnce(
-        makeInstance({ name: 'chip-1', healthScore: 35 })
+        makeInstance({ name: 'chip-1', healthScore: 3 })
       );
 
       await reportChipFailure('chip-1', 'Falha no envio');
 
       expect(prisma.whatsAppInstance.update).toHaveBeenCalledWith({
         where: { name: 'chip-1' },
-        data: { healthScore: 15, status: 'DISCONNECTED' },
+        data: { healthScore: 0, status: 'DISCONNECTED' },
       });
     });
 

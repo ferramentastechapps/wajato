@@ -110,10 +110,18 @@ export async function POST(request: Request) {
             console.error(`[Webhook] Erro ao resetar unrepliedMsgCount para ${instanceName}:`, err.message);
           }
 
+          const isReaction = !!messageData?.message?.reactionMessage;
+          const isSticker = !!messageData?.message?.stickerMessage;
+          const isAudio = !!messageData?.message?.audioMessage;
+
           const messageText =
             messageData?.message?.conversation ||
             messageData?.message?.extendedTextMessage?.text ||
             messageData?.message?.imageMessage?.caption ||
+            messageData?.message?.videoMessage?.caption ||
+            messageData?.message?.reactionMessage?.text ||
+            (isSticker ? '[sticker]' : '') ||
+            (isAudio ? '[audio]' : '') ||
             messageData?.text || '';
 
           // Nome do contato/grupo recebido pelo webhook
@@ -224,7 +232,7 @@ export async function POST(request: Request) {
                   fromInstance: isGroupMessage ? phone : warmupCampaign.targetPhone,
                   toPhone: instanceName,
                   message: messageText,
-                  messageType: 'TEXT',
+                  messageType: isReaction ? 'REACTION' : isSticker ? 'STICKER' : isAudio ? 'AUDIO' : 'TEXT',
                   status: 'READ',
                   delayUsed: 0,
                   messageId: incomingMessageId || null,

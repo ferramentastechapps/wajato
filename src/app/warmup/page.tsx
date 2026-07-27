@@ -415,7 +415,7 @@ export default function WarmupPage() {
           <div style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.5)' }}>Carregando dados...</div>
         </div>
       ) : activeTab === 'single' ? (
-        /* --- CHIPS INDIVIDUAIS — agrupado por chip --- */
+        /* --- CHIPS INDIVIDUAIS --- */
         instances.length === 0 ? (
           <div className="card" style={{ textAlign: 'center', padding: '4rem 2rem' }}>
             <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📱</div>
@@ -426,6 +426,25 @@ export default function WarmupPage() {
             <a href="/connections" className="btn btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
               Ir para Conexões
             </a>
+          </div>
+        ) : campaigns.length === 0 ? (
+          <div className="card" style={{ textAlign: 'center', padding: '4rem 2rem' }}>
+            <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🔥</div>
+            <h3 style={{ margin: '0 0 0.5rem', color: 'rgba(255,255,255,0.8)' }}>Nenhum ciclo de aquecimento individual</h3>
+            <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.9rem', margin: '0 0 1.5rem' }}>
+              Crie o primeiro ciclo individual para começar.
+            </p>
+            <button
+              className="btn btn-primary"
+              style={{ background: 'linear-gradient(135deg, #10b981, #059669)', padding: '0.75rem 1.5rem', fontWeight: 700, margin: '0 auto', display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+              onClick={() => {
+                setSelectedInstanceForNewCampaign(null);
+                setIsModalOpen(true);
+              }}
+            >
+              <Plus size={18} />
+              <span>Iniciar Aquecimento</span>
+            </button>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>

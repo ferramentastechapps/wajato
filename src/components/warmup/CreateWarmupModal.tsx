@@ -406,15 +406,17 @@ export default function CreateWarmupModal({ initialSourceInstance, onClose, onCr
                     {enableChat && (
                       <div style={{ marginTop: '0.75rem' }}>
                         <label style={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.6)', marginBottom: '0.3rem', display: 'block' }}>
-                          Lista de números de destino (um por linha com DDI, ex: 5511999999999)
+                          {targetInstance
+                            ? `Lista de números adicionais de destino (opcional — o número de ${targetInstance} é usado automaticamente)`
+                            : 'Lista de números de destino (um por linha com DDI, ex: 5511999999999)'}
                         </label>
                         <textarea
                           className="form-input"
-                          required={enableChat}
+                          required={enableChat && !targetInstance}
                           rows={3}
                           value={targetPhonesInput}
                           onChange={e => setTargetPhonesInput(e.target.value)}
-                          placeholder="5511999999999&#10;5511888888888&#10;5511777777777"
+                          placeholder={targetInstance ? `O número registrado em "${targetInstance}" será usado no diálogo bidirecional.` : "5511999999999\n5511888888888\n5511777777777"}
                           style={{ width: '100%', padding: '0.65rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '8px', color: '#fff', outline: 'none', fontFamily: 'monospace', resize: 'vertical', fontSize: '0.82rem' }}
                         />
                       </div>
@@ -570,7 +572,7 @@ export default function CreateWarmupModal({ initialSourceInstance, onClose, onCr
                     setError('Selecione pelo menos um modo de aquecimento.');
                     return;
                   }
-                  if (enableChat && !targetPhonesInput.trim()) {
+                  if (enableChat && !targetPhonesInput.trim() && !targetInstance) {
                     setError('Informe os telefones de destino.');
                     return;
                   }

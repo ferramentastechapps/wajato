@@ -212,7 +212,7 @@ Gere uma resposta curta, educada, prestativa e muito natural para o WhatsApp do 
 
       if (isGroq || isOpenRouter) {
         const url = isGroq ? 'https://api.groq.com/openai/v1/chat/completions' : 'https://openrouter.ai/api/v1/chat/completions';
-        const modelName = isGroq ? 'llama-3.1-8b-instant' : 'tencent/hy3:free';
+        const modelName = isGroq ? 'llama-3.1-8b-instant' : 'google/gemini-2.5-flash';
 
         const headers: Record<string, string> = {
           'Authorization': `Bearer ${apiKey}`,

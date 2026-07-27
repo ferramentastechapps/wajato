@@ -65,7 +65,7 @@ export async function POST(request: Request) {
     }
 
     // 6. Comparar senhas
-    const passwordMatch = await comparePassword(password, user.password);
+    const passwordMatch = await comparePassword(password, user.password || '');
 
     if (!passwordMatch) {
       return NextResponse.json(

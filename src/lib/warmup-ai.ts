@@ -233,6 +233,105 @@ export function mergeConsecutiveRoles(history: ChatMessage[]): ChatMessage[] {
 }
 
 /**
+ * Gera um emoji contextual baseado na última mensagem recebida.
+ * Usa a IA para escolher um emoji que faça sentido como reação rápida,
+ * em vez de sortear aleatoriamente da lista estática.
+ */
+export async function generateContextualEmoji(
+  lastMessage: string,
+  isNamoroContext: boolean
+): Promise<string> {
+  try {
+    let apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      const config = await prisma.chatbotConfig.findUnique({ where: { id: 'global' } });
+      apiKey = config?.geminiApiKey || '';
+    }
+    if (!apiKey) throw new Error('Sem chave de API');
+
+    const prompt = isNamoroContext
+      ? `Você recebeu esta mensagem do seu namorado(a) no WhatsApp: "${lastMessage}"\nResponda com APENAS UM EMOJI que faz sentido como reação carinhosa a essa mensagem. Sem texto, sem explicação — apenas o emoji.`
+      : `Você recebeu esta mensagem de um amigo no WhatsApp: "${lastMessage}"\nResponda com APENAS UM EMOJI que faz sentido como reação rápida a essa mensagem. Sem texto, sem explicação — apenas o emoji.`;
+
+    const isGroq = apiKey.startsWith('gsk_');
+    const isOpenRouter = apiKey.startsWith('sk-or-');
+
+    if (isGroq || isOpenRouter) {
+      const url = isGroq ? 'https://api.groq.com/openai/v1/chat/completions' : 'https://openrouter.ai/api/v1/chat/completions';
+      const model = isGroq ? 'llama-3.1-8b-instant' : 'google/gemini-2.5-flash';
+      const headers: Record<string, string> = {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      };
+      if (isOpenRouter) {
+        headers['HTTP-Referer'] = 'https://wajato.ftech-apps.com.br';
+        headers['X-Title'] = 'WaJato';
+      }
+      const res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], temperature: 0.7, max_tokens: 10 }),
+      });
+      const data = await res.json();
+      const raw = String(data.choices?.[0]?.message?.content || '').trim();
+      // Valida que retornou só emoji(s) — se vier texto, cai no fallback
+      if (raw && raw.length <= 8 && !/[a-zA-Z0-9]/.test(raw)) return raw;
+    } else {
+      const { GoogleGenerativeAI } = await import('@google/generative-ai');
+      const ai = new GoogleGenerativeAI(apiKey);
+      const model = ai.getGenerativeModel({ model: 'gemini-2.0-flash' });
+      const result = await model.generateContent(prompt);
+      const raw = String(result.response.text() || '').trim();
+      if (raw && raw.length <= 8 && !/[a-zA-Z0-9]/.test(raw)) return raw;
+    }
+  } catch (_) {
+    // fallback silencioso
+  }
+  // Fallback: emoji contextual simples aleatório, mas separado por namoro/amigo
+  const namoroEmojis = ['❤️', '😍', '🥰', '😘', '😂', '💕', '😊', '🔥'];
+  const friendEmojis = ['😂', '👍', '🔥', '💯', '😮', '🤣', '😅', '👏'];
+  const pool = isNamoroContext ? namoroEmojis : friendEmojis;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+/**
+ * Remove TODOS os artefatos HTML, Markdown e formatação estrutural da resposta da IA.
+ * Garante que a mensagem chegue ao WhatsApp como texto puro.
+ */
+function sanitizeAIMessage(text: string, historyHasFeriado: boolean): string {
+  let clean = text;
+
+  // 1. Remove tags HTML (ex: </blockquote>, <b>, <i>, <p>, etc.)
+  clean = clean.replace(/<[^>]*>/g, '');
+
+  // 2. Remove marcadores de citação Markdown (> linha de blockquote)
+  clean = clean.replace(/^>\s?.*/gm, '');
+
+  // 3. Remove formatação Markdown: **negrito**, _itálico_, `código`, ~~tachado~~
+  clean = clean.replace(/\*\*([^*]+)\*\*/g, '$1');
+  clean = clean.replace(/__([^_]+)__/g, '$1');
+  clean = clean.replace(/`([^`]+)`/g, '$1');
+  clean = clean.replace(/~~([^~]+)~~/g, '$1');
+
+  // 4. Remove citações do tipo [cite_start]...[cite_end] ou [1] [2] etc.
+  clean = clean.replace(/\[cite[^\]]*\]/g, '');
+  clean = clean.replace(/\[\d+\]/g, '');
+  clean = clean.replace(/\[[^\]]+\]/g, '');
+
+  // 5. Bloqueia "feriado" se o histórico não menciona feriado
+  //    Substitui por "final de semana" para manter contexto natural
+  if (!historyHasFeriado) {
+    clean = clean.replace(/\bferiado\b/gi, 'final de semana');
+  }
+
+  // 6. Remove linhas em branco múltiplas e normaliza espaços
+  clean = clean.replace(/\n{2,}/g, '\n');
+  clean = clean.replace(/\s{2,}/g, ' ');
+
+  return clean.trim();
+}
+
+/**
  * Gera a próxima mensagem de texto para o aquecimento via Gemini AI.
  * Inclui contexto de persona rica, tópico dinâmico e instruções anti-detectabilidade.
  */
@@ -255,38 +354,72 @@ export async function generateNextWarmupMessage(
       throw new Error('Nenhuma chave de API configurada.');
     }
 
-    const systemInstruction = `Você está simulando uma conversa de WhatsApp casual e autêntica entre dois amigos brasileiros.
+    const isNamoro = context.toLowerCase().includes('namoro') || context.toLowerCase().includes('namorado') || context.toLowerCase().includes('relacionamento') || context.toLowerCase().includes('casal');
+
+    // Verifica se o histórico já contém "feriado" (para não censurar se foi o humano que mencionou)
+    const historyText = mergedHistory.map(h => h.parts[0]?.text || '').join(' ').toLowerCase();
+    const historyHasFeriado = historyText.includes('feriado');
+
+    // Sanitiza o histórico antes de passar para a IA (remove HTML/markdown que possa ter vazado)
+    const sanitizedHistory = mergedHistory.map(h => ({
+      ...h,
+      parts: [{ text: sanitizeAIMessage(h.parts[0]?.text || '', true) }],
+    }));
+
+    // Determina horário real no Brasil (BRT = UTC-3)
+    const nowBRT = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    const hourBRT = nowBRT.getUTCHours();
+    const weekDayPT = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'][nowBRT.getUTCDay()];
+    const isWeekend = nowBRT.getUTCDay() === 0 || nowBRT.getUTCDay() === 6;
+    const periodoBRT = hourBRT >= 5 && hourBRT < 12 ? 'manhã' : hourBRT >= 12 && hourBRT < 18 ? 'tarde' : 'noite';
+    const saudacaoBRT = hourBRT >= 5 && hourBRT < 12 ? 'Bom dia' : hourBRT >= 12 && hourBRT < 18 ? 'Boa tarde' : 'Boa noite';
+
+    // Tópicos adequados para cada período do dia
+    const topicsByPeriod = periodoBRT === 'manhã'
+      ? 'café, trabalho, academia, planos do dia, trânsito, notícias'
+      : periodoBRT === 'tarde'
+      ? 'almoço, trabalho, reunião, cansaço, tempo, esporte'
+      : 'série, filme, jantar, sono, saudade, planos de amanhã, relaxar';
+
+    const systemInstruction = `FORMATO OBRIGATÓRIO: Texto puro apenas. ZERO tags HTML (proibido: <blockquote>, <b>, <p>, qualquer tag). ZERO Markdown (proibido: **, __, \`código\`, > citação). ZERO colchetes de citação ([1], [cite]). Se você usar qualquer desses formatos, a mensagem será bloqueada.
+
+Você está simulando uma conversa de WhatsApp casual e autêntica entre ${isNamoro ? 'um casal de namorados brasileiros em um relacionamento carinhoso' : 'dois amigos brasileiros'}.
 Seu objetivo é fazer o algoritmo do WhatsApp acreditar que isso é uma conversa REAL entre pessoas.
 
-REGRAS ABSOLUTAS:
-1. Seja EXTREMAMENTE casual. Use: "kkk", "rsrs", "haha", "mano", "cara", "véi", "pô", "oxe", "eita", "né", "tbm", "vc", "tá", "cmg".
-2. NUNCA escreva mais de 2-3 frases por mensagem. Mensagens longas parecem robô.
-3. Cometa ERROS ORTOGRÁFICOS propositais ocasionalmente: "tambem" sem acento, "vou" como "vou", "não" como "nao", "está" como "ta".
-4. Varie MUITO o comprimento: às vezes 1 palavra, às vezes 2 frases curtas.
-5. Ocasionalmente use APENAS emojis como mensagem: "👍", "😂", "🔥".
-6. NÃO comece sempre com a mesma palavra. Varie muito a forma de iniciar.
-7. Responda à última mensagem de forma natural ou mude o assunto sutilmente.
-8. Se você mencionar ou sugerir o envio de um vídeo, meme, link ou foto (ex: "olha esse vídeo", "olha essa indicação"), SEMPRE inclua junto um link curto fictício realista no final da mensagem (ex: https://youtu.be/dQw4w9WgXcQ ou um link de TikTok curto) para que o diálogo faça sentido completo.
-9. Contexto da sua persona: ${context}
-${topic ? `10. O assunto atual da conversa é: ${topic}` : ''}
+CONTEXTO TEMPORAL REAL — OBRIGATÓRIO:
+- Hoje é ${weekDayPT}${isWeekend ? ' (fim de semana)' : ' (dia útil)'}.
+- Agora são ${hourBRT}h (${periodoBRT}) no Brasil.
+- Saudação correta agora: "${saudacaoBRT}". JAMAIS use "Bom dia" à noite ou "Boa noite" de manhã.
+- PROIBIDO mencionar "feriado"${historyHasFeriado ? '' : ' — não existe feriado hoje'}.
+- Assuntos naturais para este horário: ${topicsByPeriod}.
 
-RETORNE APENAS A MENSAGEM, sem aspas, sem prefixos, sem explicações.`;
+REGRAS DE ESTILO:
+1. ${isNamoro ? 'Seja carinhoso(a) como namorado(a). Use: "amor", "vida", "morem", "amorzão". NUNCA: "mano", "véi", "cara".' : 'Seja casual como amigo. Use: "kkk", "mano", "cara", "né", "tbm", "vc", "tá", "pô".'}
+2. Máximo 2 frases curtas por mensagem. Nunca escreva parágrafos.
+3. Às vezes erre propositalmente: "tambem", "nao", "ta", "vc" sem acento.
+4. Emojis: apenas em ~30% das mensagens, SEMPRE junto de uma frase. Exemplos: "saudade ❤️", "kkk 😂". NUNCA emoji sozinho.
+5. Varie o início da mensagem. Não comece sempre com "Oi" ou "Amor".
+6. Responda de forma coerente com o que foi dito antes. Não mude de assunto abruptamente.
+7. Persona: ${context}
+${topic ? `8. Assunto da conversa: ${topic}` : ''}
+
+RETORNE APENAS A MENSAGEM. Sem aspas, sem prefixo, sem explicação, sem HTML.`;
 
     const isGroq = apiKey.startsWith('gsk_');
     const isOpenRouter = apiKey.startsWith('sk-or-');
 
-    const lastMessage = mergedHistory[mergedHistory.length - 1];
+    const lastMessage = sanitizedHistory[sanitizedHistory.length - 1];
     const isModelLast = lastMessage?.role === 'model';
 
     if (isGroq || isOpenRouter) {
-      const prompt = mergedHistory.length === 0
-        ? (topic ? `Inicie uma conversa casual sobre ${topic}. Uma saudação curta e informal.` : 'Inicie a conversa com uma saudação muito casual.')
+      const prompt = sanitizedHistory.length === 0
+        ? (topic ? `Inicie uma conversa casual sobre ${topic}. Saudação curta e informal, máximo 1 frase.` : `Inicie a conversa com uma saudação muito casual para a ${periodoBRT}. Máximo 1 frase.`)
         : (isModelLast
-            ? 'Continue a conversa de forma casual como você mesmo (sem simular o outro e sem responder a si mesmo). Diga algo novo ou mude o assunto naturalmente.'
-            : 'Responda de forma casual e curta à última mensagem, ou mude o assunto naturalmente.');
+            ? `Continue a conversa. Diga algo novo relacionado ao horário atual (${periodoBRT}). Máximo 2 frases.`
+            : `Responda à última mensagem de forma casual e curta. Máximo 2 frases.`);
 
       const url = isGroq ? 'https://api.groq.com/openai/v1/chat/completions' : 'https://openrouter.ai/api/v1/chat/completions';
-      const modelName = isGroq ? 'llama-3.1-8b-instant' : 'tencent/hy3:free';
+      const modelName = isGroq ? 'llama-3.1-8b-instant' : 'google/gemini-2.5-flash';
 
       const headers: Record<string, string> = {
         'Authorization': `Bearer ${apiKey}`,
@@ -305,14 +438,14 @@ RETORNE APENAS A MENSAGEM, sem aspas, sem prefixos, sem explicações.`;
           model: modelName,
           messages: [
             { role: 'system', content: systemInstruction },
-            ...mergedHistory.map(h => ({
+            ...sanitizedHistory.map(h => ({
               role: h.role === 'model' ? 'assistant' : 'user',
               content: h.parts[0].text,
             })),
             { role: 'user', content: prompt }
           ],
-          temperature: 0.95,
-          max_tokens: isOpenRouter ? 1000 : 80,
+          temperature: 0.9,
+          max_tokens: 80, // Fixado em 80 para evitar respostas longas com HTML/markdown
         }),
       });
 
@@ -324,9 +457,9 @@ RETORNE APENAS A MENSAGEM, sem aspas, sem prefixos, sem explicações.`;
       if (!content) {
         throw new Error(JSON.stringify(data.error || data) || 'Resposta vazia do OpenRouter/Groq.');
       }
-      let cleanedContent = content.replace(/\[[^\]]+\]/g, '').replace(/\s+/g, ' ').trim();
+      const cleanedContent = sanitizeAIMessage(String(content), historyHasFeriado);
       if (!cleanedContent) {
-        throw new Error('Mensagem vazia após remoção de placeholders.');
+        throw new Error('Mensagem vazia após sanitização.');
       }
       return cleanedContent;
     } else {
@@ -338,74 +471,99 @@ RETORNE APENAS A MENSAGEM, sem aspas, sem prefixos, sem explicações.`;
       });
 
       const chat = model.startChat({
-        history: mergedHistory,
+        history: sanitizedHistory,
         generationConfig: {
-          temperature: 0.95,
+          temperature: 0.9,
           maxOutputTokens: 80,
           topP: 0.9,
           topK: 40,
         },
       });
 
-      const prompt = mergedHistory.length === 0
-        ? (topic ? `Inicie uma conversa casual sobre ${topic}. Uma saudação curta e informal.` : 'Inicie a conversa com uma saudação muito casual, como se fossem amigos.')
+      const isNamoroContext = isNamoro;
+
+      const prompt = sanitizedHistory.length === 0
+        ? (topic ? `Inicie uma conversa casual sobre ${topic}. Saudação curta, máximo 1 frase.` : (isNamoroContext ? `Inicie com uma saudação carinhosa de ${periodoBRT}. Máximo 1 frase.` : `Inicie com uma saudação casual para a ${periodoBRT}. Máximo 1 frase.`))
         : (isModelLast
-            ? 'Continue a conversa de forma casual como você mesmo (sem simular o outro e sem responder a si mesmo). Diga algo novo ou mude o assunto naturalmente.'
-            : 'Responda de forma casual e curta à última mensagem, ou mude o assunto naturalmente.');
+            ? `Continue a conversa. Diga algo relacionado ao horário atual (${periodoBRT}). Máximo 2 frases.`
+            : 'Responda de forma casual e curta à última mensagem. Máximo 2 frases.');
 
       const result = await chat.sendMessage(prompt);
       const responseObj = await result.response;
-      const text = responseObj.text();
+      let text = '';
+      try {
+        text = responseObj ? responseObj.text() : '';
+      } catch (e) {
+        text = '';
+      }
       if (!text) {
         throw new Error('Resposta vazia da API do Gemini.');
       }
-      let cleanedText = text.replace(/\[[^\]]+\]/g, '').replace(/\s+/g, ' ').trim();
+      const cleanedText = sanitizeAIMessage(String(text), historyHasFeriado);
       if (!cleanedText) {
-        throw new Error('Mensagem vazia após remoção de placeholders.');
+        throw new Error('Mensagem vazia após sanitização.');
       }
       return cleanedText;
     }
   } catch (error) {
     console.error('Erro ao gerar mensagem de warmup via Gemini:', error);
-    // Fallback inteligente com Spintax para máxima variedade de acordo com o estado do chat
+    // Fallback inteligente com Spintax — usa horário real
     const mergedHistory = mergeConsecutiveRoles(history);
     const isModelLast = mergedHistory[mergedHistory.length - 1]?.role === 'model';
+    const isNamoroFallback = context.toLowerCase().includes('namoro') ||
+                             context.toLowerCase().includes('namorado') ||
+                             context.toLowerCase().includes('relacionamento') ||
+                             context.toLowerCase().includes('casal');
+
+    // Saudação correta para o fallback também usa horário real
+    const nowFallback = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    const hFallback = nowFallback.getUTCHours();
+    const saudacaoFallback = hFallback >= 5 && hFallback < 12 ? '{Bom dia|Bom diaaa}' : hFallback >= 12 && hFallback < 18 ? '{Boa tarde|Boa tardee}' : '{Boa noite|Boa noitee}';
+    const periodoFallback = hFallback >= 5 && hFallback < 12 ? 'manhã' : hFallback >= 12 && hFallback < 18 ? 'tarde' : 'noite';
+
     let templates: string[];
-    if (mergedHistory.length === 0) {
-      templates = [
-        '{E aí|Oi|Olá|Salve} {mano|cara|véi|amigo}, {tudo bem?|tudo certo?|como você tá?}',
-        '{Bom dia|Boa tarde|Boa noite}! {Tudo bem por aí?|Como estão as coisas?|Tudo tranquilo?}',
-        '{Ei|Opa|Oi}, {como você está?|tudo bem?|tá por aí?}',
-        '{Fala|Diz aí|E aí} {mano|cara|véi}, {tranquilo?|na paz?|beleza?}',
-        '{E aí|Opa}! {Como tá o dia?|Tudo na paz?|Como vão as coisas?}',
-        '{Oi|Olá}! {Faz tempo que não nos falamos.|Como você tem passado?|Tudo bem por aí?}',
-        '{Fala|Opa} {mano|cara}, {tranquilo?|tá ocupado?|beleza?}',
-      ];
-    } else if (isModelLast) {
-      templates = [
-        'E por aí, como {tão as coisas?|tá o dia?|tá o tempo?}',
-        'Correria por aqui hoje kkk',
-        'Depois me fala se {conseguiu ver aquilo|deu certo lá|vai dar certo o esquema}.',
-        'Mas enfim, {depois nos falamos|mais tarde a gente conversa|qualquer coisa me avisa}.',
-        'E o {trabalho|trampo|dia|fds} por aí, como {tá?|estão as coisas?}',
-        'Bora trabalhar né kkk',
-        'Qualquer coisa {dá um grito|me avisa|me chama por aqui}.',
-      ];
+    if (isNamoroFallback) {
+      if (mergedHistory.length === 0) {
+        templates = [
+          `{Oii|Oi|Opa} {amor|vida|morem}, {tudo bem?|como vc tá?|como foi o dia?}`,
+          `${saudacaoFallback} {amor|vida|morem}! {Tudo certo por aí?|Saudade de vc!}`,
+          `{Oi|Oii} {amor|lindo(a)}, {tá ocupado(a)?|tudo tranquilo?}`,
+        ];
+      } else if (isModelLast) {
+        templates = [
+          `E por aí {amor|vida}, como {tão as coisas?|tá a ${periodoFallback}?}`,
+          'Correria por aqui kkk',
+          'Te amo {amor|vida|morem}! Qualquer coisa me avisa.',
+          'Um beijo {amor|lindo(a)}! Se cuida ❤️',
+        ];
+      } else {
+        templates = [
+          '{Tudo ótimo|Tudo certo|Aqui tá bom} {amor|vida}. {E com você?|E por aí?}',
+          '{Kkkk|Rsrs} {verdade amor|é isso mesmo vida}.',
+          '{Que bom|Que massa} {amor|vida}! Te amo ❤️',
+        ];
+      }
     } else {
-      templates = [
-        '{Tranquilo|Tá ótimo|Aqui tá bom|Tudo certo} por aqui. {E com você?|E por aí?|E tu?}',
-        '{Pode crer|Com certeza|Com certeza mano|Exato}, {concordo plenamente|faz sentido|é isso mesmo}.',
-        '{Show|Boa|Top|Massa} {de bola|demais|hein}! {Que bom|Excelente}.',
-        '{Kkkk|Rsrs|Haha|Kkkkk} {verdade|demais|engraçado|é bem isso}.',
-        '{Depois|Logo mais|Mais tarde} a gente {se fala|conversa|dá uma conversada} então, {um abraço|valeu|té mais}.',
-        '{Verdade|Exato|Pois é|É mesmo}... {complicado isso|correria demais}.',
-        '{Como|Como tá|E} o {trabalho|trampo|dia|fds|tempo} por aí?',
-        '{Que legal|Muito bom|Interessante}! {Não sabia disso.|Bom saber.}',
-        '{Kkkk|Rsrs} {complicado|acontece|fazer o que né}',
-        'Ah sim, {entendi|entendi perfeitamente|faz sentido}.',
-        'Pode deixar, {aviso sim|combinado|qualquer coisa te falo}.',
-        '{Beleza|Combinado|Fechado}! {Abraço|Valeu|Até}.',
-      ];
+      if (mergedHistory.length === 0) {
+        templates = [
+          `{E aí|Oi|Salve} {mano|cara|véi}, {tudo bem?|tudo certo?|como vc tá?}`,
+          `${saudacaoFallback}! {Tudo bem por aí?|Tudo tranquilo?}`,
+          `{Fala|Diz aí|E aí} {mano|cara}, {tranquilo?|na paz?|beleza?}`,
+        ];
+      } else if (isModelLast) {
+        templates = [
+          `E por aí, como {tá a ${periodoFallback}?|tão as coisas?}`,
+          'Correria por aqui hoje kkk',
+          'Qualquer coisa {dá um grito|me avisa|me chama}.',
+        ];
+      } else {
+        templates = [
+          '{Tranquilo|Tá ótimo|Aqui tá bom} por aqui. {E com você?|E por aí?}',
+          '{Kkkk|Rsrs} {verdade|demais|engraçado}.',
+          '{Show|Boa|Top|Massa}! {Que bom|Excelente}.',
+          '{Verdade|Exato|Pois é}... {complicado isso|correria demais}.',
+        ];
+      }
     }
     const template = templates[Math.floor(Math.random() * templates.length)];
     return processSpintax(template);
