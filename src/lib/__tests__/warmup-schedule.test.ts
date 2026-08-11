@@ -4,6 +4,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
+  isSameCalendarDayInBRT,
   isWithinBusinessHours,
   getMsUntilNextBusinessWindow,
   isWeekend,
@@ -12,6 +13,25 @@ import {
   shouldTakeRestPeriod,
   getRestPeriodDurationMs,
 } from '../warmup-schedule';
+
+// ─── isSameCalendarDayInBRT ──────────────────────────────────────────────────
+describe('isSameCalendarDayInBRT', () => {
+  it('deve identificar como dias diferentes quando timestamp UTC 00:00 (21h BRT dia anterior) é comparado a 13:00 UTC (10h BRT dia atual)', () => {
+    // 2026-08-11 00:00:00 UTC = 2026-08-10 21:00:00 BRT (Dia 10)
+    const nightBefore = new Date('2026-08-11T00:00:00.837Z');
+    // 2026-08-11 13:00:00 UTC = 2026-08-11 10:00:00 BRT (Dia 11)
+    const nextMorning = new Date('2026-08-11T13:00:00.000Z');
+
+    expect(isSameCalendarDayInBRT(nightBefore, nextMorning)).toBe(false);
+  });
+
+  it('deve identificar como mesmo dia quando ambos caem no mesmo dia em BRT', () => {
+    const morning = new Date('2026-08-11T11:00:00.000Z'); // 8h BRT
+    const afternoon = new Date('2026-08-11T18:00:00.000Z'); // 15h BRT
+
+    expect(isSameCalendarDayInBRT(morning, afternoon)).toBe(true);
+  });
+});
 
 // ─── isWithinBusinessHours ───────────────────────────────────────────────────
 describe('isWithinBusinessHours', () => {

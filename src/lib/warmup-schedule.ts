@@ -6,6 +6,17 @@
  */
 
 /**
+ * Verifica se duas datas caem no mesmo dia de calendário no fuso horário de Brasília (America/Sao_Paulo / UTC-3).
+ * Evita falsos positivos/negativos em servidores rodando em UTC onde horários entre 21h e 00h BRT
+ * pertencem ao dia anterior em BRT mas ao dia seguinte em UTC.
+ */
+export function isSameCalendarDayInBRT(date1: Date, date2: Date): boolean {
+  const d1 = date1.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  const d2 = date2.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  return d1 === d2;
+}
+
+/**
  * Verifica se o horário atual está dentro da janela permitida.
  * Leva em conta o fuso horário de Brasília (UTC-3).
  */

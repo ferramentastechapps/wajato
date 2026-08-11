@@ -43,6 +43,7 @@ import {
   calculateHeatScore,
   shouldTakeRestPeriod,
   getRestPeriodDurationMs,
+  isSameCalendarDayInBRT,
 } from '../lib/warmup-schedule';
 import {
   acquireInstanceSlot,
@@ -209,10 +210,7 @@ export const warmupWorker = new Worker(
       const lastSentDate = new Date(campaign.lastMessageAt);
       const today = new Date();
       
-      const isNewCalendarDay = 
-        today.getDate() !== lastSentDate.getDate() ||
-        today.getMonth() !== lastSentDate.getMonth() ||
-        today.getFullYear() !== lastSentDate.getFullYear();
+      const isNewCalendarDay = !isSameCalendarDayInBRT(today, lastSentDate);
         
       if (isNewCalendarDay) {
         console.log(`[Warmup Worker] Mudança de dia do calendário detectada para campanha ${campaignId}. Reiniciando contadores.`);

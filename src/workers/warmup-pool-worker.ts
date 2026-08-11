@@ -38,6 +38,7 @@ import {
   calculateHeatScore,
   shouldTakeRestPeriod,
   getRestPeriodDurationMs,
+  isSameCalendarDayInBRT,
 } from '../lib/warmup-schedule';
 import {
   acquireInstanceSlot,
@@ -104,10 +105,7 @@ export const warmupPoolWorker = new Worker(
       const lastSentDate = new Date(pool.lastMessageAt);
       const today = new Date();
       
-      const isNewCalendarDay = 
-        today.getDate() !== lastSentDate.getDate() ||
-        today.getMonth() !== lastSentDate.getMonth() ||
-        today.getFullYear() !== lastSentDate.getFullYear();
+      const isNewCalendarDay = !isSameCalendarDayInBRT(today, lastSentDate);
         
       if (isNewCalendarDay) {
         console.log(`[Warmup Pool Worker] Mudança de dia do calendário detectada para pool ${poolId}. Reiniciando contadores.`);

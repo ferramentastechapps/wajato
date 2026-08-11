@@ -9,6 +9,7 @@ import { messageQueue } from '../lib/queue';
 import { resolveContactsForSegment } from '../lib/segment-resolver';
 import { logger } from '../lib/logger';
 import { runProxySelfHealer } from '../lib/proxy-healer';
+import { isSameCalendarDayInBRT, getRampUpTarget, isWeekend } from '../lib/warmup-schedule';
 
 logger.info('Worker de agendamento de campanhas (Scheduler) iniciado.');
 
@@ -201,9 +202,28 @@ async function healStuckWarmupCampaigns() {
     // Obtém todos os jobs ativos, agendados e aguardando da fila
     const delayedJobs = await warmupQueue.getJobs(['delayed', 'waiting', 'active']);
     const activeCampaignIds = new Set(delayedJobs.map(j => j.data?.campaignId).filter(Boolean));
+    const now = new Date();
 
-    for (const campaign of runningCampaigns) {
-      if (!activeCampaignIds.has(campaign.id)) {
+    for (let campaign of runningCampaigns) {
+      // Se mudou o dia no fuso BRT e a cota do dia anterior ainda está travando a campanha
+      if (campaign.lastMessageAt && !isSameCalendarDayInBRT(now, campaign.lastMessageAt)) {
+        if (campaign.msgsSentToday >= campaign.targetMsgsToday) {
+          logger.info(`[Scheduler] 🌅 Reset de novo dia detectado para campanha ${campaign.name || campaign.id}. Atualizando contadores...`);
+          const nextDay = campaign.currentDay + 1;
+          const nextTarget = getRampUpTarget(nextDay, campaign.initialMsgsPerDay, campaign.maxMsgsPerDay, isWeekend());
+          campaign = await prisma.warmupCampaign.update({
+            where: { id: campaign.id },
+            data: {
+              currentDay: nextDay,
+              msgsSentToday: 0,
+              targetMsgsToday: nextTarget,
+              status: nextDay > campaign.totalDays ? 'COMPLETED' : 'RUNNING',
+            }
+          });
+        }
+      }
+
+      if (!activeCampaignIds.has(campaign.id) && campaign.msgsSentToday < campaign.targetMsgsToday) {
         logger.info(`[Scheduler] 🩹 Detectada campanha de aquecimento travada: ${campaign.name || campaign.id}. Recuperando...`);
         
         await queueWarmupMessage(
@@ -211,10 +231,10 @@ async function healStuckWarmupCampaigns() {
             campaignId: campaign.id,
             sourceInstance: campaign.sourceInstance,
             targetPhone: campaign.targetPhone,
-            isFirstMessageOfDay: false,
+            isFirstMessageOfDay: true,
           },
-          45000, // 45s de média para iniciar rápido
-          15000
+          15000,
+          5000
         );
       }
     }
