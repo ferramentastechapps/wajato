@@ -1,51 +1,33 @@
 import { PrismaClient } from '@prisma/client';
-import { Queue } from 'bullmq';
-import { redisConnection } from './src/lib/redis';
+import { queueWarmupMessage } from './src/lib/warmup-queue';
 
 const prisma = new PrismaClient();
 
 async function main() {
-  const campaigns = await prisma.warmupCampaign.findMany({
-    select: {
-      id: true,
-      name: true,
-      status: true,
-      sourceInstance: true,
-      targetPhone: true,
-      endHour: true,
+  const vitoriaCampaign = await prisma.warmupCampaign.update({
+    where: { id: 'b29b9b87-36ff-458d-a63e-7a11d988642e' },
+    data: {
+      msgsSentToday: 0,
+      currentDay: 2,
+      targetMsgsToday: 8,
     }
   });
-  console.log('--- WARMUP CAMPAIGNS ---');
-  console.log(JSON.stringify(campaigns, null, 2));
 
-  const logs = await prisma.warmupLog.findMany({
-    take: 15,
-    orderBy: { createdAt: 'desc' }
-  });
-  console.log('--- WARMUP LOGS ---');
-  console.log(JSON.stringify(logs, null, 2));
+  console.log('Campaign updated:', vitoriaCampaign);
 
-  const queue = new Queue('warmup-queue', { connection: redisConnection as any });
-  try {
-    const jobs = await queue.getJobs(['waiting', 'delayed', 'active', 'failed', 'completed']);
-    console.log('--- WARMUP QUEUE JOBS ---');
-    console.log(JSON.stringify(
-      jobs.map(j => ({
-        id: j.id,
-        name: j.name,
-        data: j.data,
-        delay: j.opts.delay,
-        timestamp: new Date(j.timestamp),
-        nextRun: new Date(j.timestamp + (j.opts.delay || 0))
-      })),
-      null,
-      2
-    ));
-  } catch (err: any) {
-    console.error('Error querying BullMQ:', err.message);
-  } finally {
-    await queue.close();
-  }
+  // Enfileira mensagem para a vitoria iniciar o aquecimento hoje
+  await queueWarmupMessage(
+    {
+      campaignId: vitoriaCampaign.id,
+      sourceInstance: vitoriaCampaign.sourceInstance,
+      targetPhone: vitoriaCampaign.targetPhone,
+      isFirstMessageOfDay: true,
+    },
+    15000,
+    5000
+  );
+
+  console.log('Mensagem de aquecimento para vitoria enfileirada com sucesso!');
 }
 
 main().catch(console.error).finally(() => prisma.$disconnect());
