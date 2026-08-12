@@ -1374,15 +1374,18 @@ export default function ConnectionsPage() {
                           <div style={{
                             fontSize: '0.63rem',
                             color: '#f59e0b',
-                            lineHeight: '1.25',
+                            lineHeight: '1.3',
                             background: 'rgba(245,158,11,0.08)',
                             border: '1px solid rgba(245,158,11,0.2)',
-                            padding: '0.4rem 0.5rem',
+                            padding: '0.5rem',
                             borderRadius: '6px',
                             textAlign: 'left',
                             width: '100%'
                           }}>
-                            ⚠️ <strong>Deu código incorreto?</strong> No Brasil, muitas contas do WhatsApp estão registradas na Meta <u>sem o 9º dígito</u>. Se o WhatsApp recusar, clique abaixo para tentar sem o 9º dígito (ou com o 9).
+                            ⚠️ <strong>&quot;Não foi possível associar o dispositivo&quot;?</strong><br />
+                            • No celular, vá em <em>Aparelhos conectados</em> e desconecte dispositivos antigos.<br />
+                            • Verifique o 9º dígito: tente sem o 9 (ex: 551682099178) ou com o 9.<br />
+                            • Ou alterne para a aba <strong>QR Code</strong> acima — a leitura por câmera conecta 100% dos chips sem restrição da Meta.
                           </div>
 
                           <button
