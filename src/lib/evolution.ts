@@ -122,14 +122,27 @@ export const evolutionApi = {
       const response = await evolutionClient.get(`/instance/connect/${instanceName}`, {
         params: { number: formattedPhone },
       });
-      const pairingCode = response.data?.pairingCode || response.data?.code || response.data?.qrcode?.pairingCode || response.data?.qrcode?.code;
-      if (!pairingCode) {
-        throw new Error('Evolution API não retornou o pairingCode no formato esperado.');
+
+      // Busca um código de pareamento legítimo (ex: 8-10 caracteres, ex: ABCD-1234 ou 12345678)
+      // NUNCA aceita a string 'code' do QR Code que é um Base64 longo (ex: hVluBG4t5Fy...)
+      const rawCandidates = [
+        response.data?.pairingCode,
+        response.data?.qrcode?.pairingCode,
+        response.data?.pairing_code,
+      ];
+
+      const validCode = rawCandidates.find(
+        (c) => typeof c === 'string' && c.trim().length >= 6 && c.trim().length <= 12 && !c.includes('+') && !c.includes('/') && !c.includes('@')
+      );
+
+      if (!validCode) {
+        throw new Error('Evolution API não retornou um pairingCode válido (apenas QR Code base64 disponível)');
       }
-      return { code: pairingCode };
+
+      return { code: validCode.trim() };
     } catch (error: any) {
       console.error(`Erro ao buscar Pairing Code para ${instanceName}:`, error?.response?.data || error.message);
-      throw new Error(error?.response?.data?.message || 'Falha ao obter código de pareamento');
+      throw new Error(error?.response?.data?.message || error.message || 'Falha ao obter código de pareamento');
     }
   },
 
