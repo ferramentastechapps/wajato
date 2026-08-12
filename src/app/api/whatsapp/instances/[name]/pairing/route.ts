@@ -35,43 +35,51 @@ export async function POST(req: Request, { params }: Params) {
       return NextResponse.json({ error: 'Instância não encontrada no banco' }, { status: 404 });
     }
 
-    // 2. Garante que a instância está em estado limpo (close) para receber pairing code.
-    // O pairing code SÓ é retornado pela Evolution API quando a instância está desconectada (close).
-    // Se a instância está em estado 'open' (mesmo que fantasma), o logout simples pode falhar.
-    // Por isso, deletamos e recriamos a instância para garantir estado limpo.
+    // 2. Tenta primeiro obter o código de pareamento diretamente da Evolution API
+    let pairingData: { code: string } | null = null;
     try {
-      await evolutionApi.logoutInstance(name);
-    } catch {
-      // Se logout falhou (ex: instância em estado inválido), força delete + recreate
+      pairingData = await evolutionApi.getPairingCode(name, formattedPhone);
+    } catch (directErr: any) {
+      console.log(`[Pairing] Primeira tentativa direta falhou para '${name}': ${directErr?.message}. Tentando resetar sessão na Evolution API...`);
+
+      // Se falhou (ex: instância em estado inválido ou não inicializada), tenta deslogar / recriar com tratamento de erro seguro
+      try {
+        await evolutionApi.logoutInstance(name);
+      } catch { /* ignora erro de logout */ }
+
       try {
         await evolutionApi.deleteInstance(name);
-      } catch { /* ignora */ }
+      } catch { /* ignora erro de delete */ }
 
-      // Recria a instância SEM QR code (modo pairing code)
-      await evolutionApi.createInstance(name, false);
+      try {
+        // Tenta recriar em modo pairing code (qrcode: false)
+        await evolutionApi.createInstance(name, false);
+      } catch (createErr: any) {
+        console.log(`[Pairing] Aviso ao criar instância '${name}':`, createErr?.message || createErr);
+        // Não relança o erro se a instância já existir ou dar erro secundário
+      }
 
-      // Reconfigura webhook
+      // Reconfigura webhook e proxy se necessário
       const appUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
       try {
         await evolutionApi.setWebhook(name, `${appUrl}/api/webhook`);
       } catch { /* não crítico */ }
 
-      // Reconfigura proxy se havia
       if (dbInst.proxy) {
         try {
           await evolutionApi.setInstanceProxy(name, dbInst.proxy);
         } catch { /* não crítico */ }
       }
-    }
 
-    // 3. Chama o Evolution API para gerar o código de pareamento
-    const pairingData = await evolutionApi.getPairingCode(name, formattedPhone);
+      // Segunda tentativa de obter o código
+      pairingData = await evolutionApi.getPairingCode(name, formattedPhone);
+    }
 
     if (!pairingData || !pairingData.code) {
-      return NextResponse.json({ error: 'O gateway Evolution não retornou um código de pareamento válido' }, { status: 500 });
+      return NextResponse.json({ error: 'O gateway Evolution não retornou um código de pareamento válido.' }, { status: 500 });
     }
 
-    // 4. Salva o telefone informado na instância e marca como INITIALIZING
+    // 3. Salva o telefone informado na instância e marca como INITIALIZING
     await prisma.whatsAppInstance.update({
       where: { name },
       data: {
@@ -87,6 +95,6 @@ export async function POST(req: Request, { params }: Params) {
     });
   } catch (error: any) {
     console.error(`Erro ao gerar código de pareamento:`, error);
-    return NextResponse.json({ error: error.message || 'Erro interno' }, { status: 500 });
+    return NextResponse.json({ error: error.message || 'Erro interno ao obter código de pareamento' }, { status: 500 });
   }
 }

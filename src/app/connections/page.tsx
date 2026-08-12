@@ -1300,6 +1300,9 @@ export default function ConnectionsPage() {
                               value={pairingPhones[inst.name] || ''}
                               onChange={e => setPairingPhones(prev => ({ ...prev, [inst.name]: e.target.value }))}
                             />
+                            <small style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.4)', marginTop: '4px', display: 'block' }}>
+                              💡 <strong>Dica Brasil:</strong> Se o código der &quot;Incorreto&quot; no WhatsApp, tente digitar o número sem o 9º dígito (ex: 551688887777).
+                            </small>
                           </div>
 
                           {pairError && (
@@ -1341,7 +1344,9 @@ export default function ConnectionsPage() {
                             title="Clique para copiar"
                           >
                             <span style={{ fontSize: '1.4rem', fontWeight: 800, color: '#10b981', letterSpacing: '2px', fontFamily: 'monospace' }}>
-                              {pairingCode}
+                              {pairingCode.length === 8 && !pairingCode.includes('-')
+                                ? `${pairingCode.slice(0, 4)}-${pairingCode.slice(4)}`
+                                : pairingCode}
                             </span>
                             {copiedInstance === inst.name ? (
                               <Check size={16} color="#10b981" />
@@ -1352,17 +1357,32 @@ export default function ConnectionsPage() {
 
                           <div style={{
                             fontSize: '0.65rem',
-                            color: 'rgba(255,255,255,0.5)',
+                            color: 'rgba(255,255,255,0.6)',
                             lineHeight: '1.3',
                             background: 'rgba(0,0,0,0.15)',
                             padding: '0.5rem',
                             borderRadius: '6px',
-                            textAlign: 'left'
+                            textAlign: 'left',
+                            width: '100%'
                           }}>
                             <strong>Como conectar:</strong><br />
                             1. Abra o WhatsApp no celular.<br />
-                            2. Vá em Aparelhos Conectados &gt; Conectar aparelho.<br />
-                            3. Toque em <strong>&quot;Conectar com número de telefone&quot;</strong> e insira o código acima.
+                            2. Vá em <strong>Aparelhos Conectados &gt; Conectar aparelho</strong>.<br />
+                            3. Toque em <strong>&quot;Conectar com número de telefone&quot;</strong> e digite o código acima.
+                          </div>
+
+                          <div style={{
+                            fontSize: '0.63rem',
+                            color: '#f59e0b',
+                            lineHeight: '1.25',
+                            background: 'rgba(245,158,11,0.08)',
+                            border: '1px solid rgba(245,158,11,0.2)',
+                            padding: '0.4rem 0.5rem',
+                            borderRadius: '6px',
+                            textAlign: 'left',
+                            width: '100%'
+                          }}>
+                            ⚠️ <strong>Deu código incorreto?</strong> No Brasil, muitas contas do WhatsApp estão registradas na Meta <u>sem o 9º dígito</u>. Se o WhatsApp recusar, clique abaixo para tentar sem o 9º dígito (ou com o 9).
                           </div>
 
                           <button
@@ -1386,7 +1406,7 @@ export default function ConnectionsPage() {
                               });
                             }}
                           >
-                            <ChevronLeft size={12} /> Voltar/Alterar número
+                            <ChevronLeft size={12} /> Voltar / Alterar número
                           </button>
                         </div>
                       )}

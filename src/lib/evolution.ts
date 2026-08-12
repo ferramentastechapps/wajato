@@ -122,7 +122,7 @@ export const evolutionApi = {
       const response = await evolutionClient.get(`/instance/connect/${instanceName}`, {
         params: { number: formattedPhone },
       });
-      const pairingCode = response.data?.pairingCode;
+      const pairingCode = response.data?.pairingCode || response.data?.code || response.data?.qrcode?.pairingCode || response.data?.qrcode?.code;
       if (!pairingCode) {
         throw new Error('Evolution API não retornou o pairingCode no formato esperado.');
       }
