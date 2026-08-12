@@ -36,13 +36,16 @@ export async function POST(req: Request, { params }: Params) {
     }
 
     // 2. Tenta primeiro obter o código de pareamento diretamente da Evolution API
-    let pairingData: { code: string } | null = null;
+    let pairingCodeStr: string | null = null;
     try {
-      pairingData = await evolutionApi.getPairingCode(name, formattedPhone);
+      const directRes = await evolutionApi.getPairingCode(name, formattedPhone);
+      pairingCodeStr = directRes.code;
     } catch (directErr: any) {
-      console.log(`[Pairing] Primeira tentativa direta falhou para '${name}': ${directErr?.message}. Tentando resetar sessão na Evolution API...`);
+      console.log(`[Pairing] Tentativa direta falhou para '${name}': ${directErr?.message}. Forçando recreação da instância em modo pairing code...`);
+    }
 
-      // Se falhou (ex: instância em estado inválido ou não inicializada), tenta deslogar / recriar com tratamento de erro seguro
+    // 3. Se não obtivemos o código direto (ex: instância estava em modo QR Code), recriamos a instância com qrcode=false
+    if (!pairingCodeStr) {
       try {
         await evolutionApi.logoutInstance(name);
       } catch { /* ignora erro de logout */ }
@@ -51,12 +54,41 @@ export async function POST(req: Request, { params }: Params) {
         await evolutionApi.deleteInstance(name);
       } catch { /* ignora erro de delete */ }
 
+      // Aguarda 1.5s para a Evolution API liberar os recursos da instância
+      await new Promise(res => setTimeout(res, 1500));
+
+      let createRes: any = null;
       try {
-        // Tenta recriar em modo pairing code (qrcode: false)
-        await evolutionApi.createInstance(name, false);
+        createRes = await evolutionApi.createInstance(name, false, formattedPhone);
       } catch (createErr: any) {
-        console.log(`[Pairing] Aviso ao criar instância '${name}':`, createErr?.message || createErr);
-        // Não relança o erro se a instância já existir ou dar erro secundário
+        console.log(`[Pairing] Recriação direta falhou, tentando delete forçado e recriação nova para '${name}'...`);
+        try {
+          await evolutionApi.deleteInstance(name);
+          await new Promise(res => setTimeout(res, 1000));
+          createRes = await evolutionApi.createInstance(name, false, formattedPhone);
+        } catch (innerErr: any) {
+          console.error(`[Pairing] Erro na segunda tentativa de criação para '${name}':`, innerErr?.message || innerErr);
+        }
+      }
+
+      // Tenta extrair o código de pareamento se a própria resposta de criação o trouxe
+      const rawCandidates = [
+        createRes?.pairingCode,
+        createRes?.qrcode?.pairingCode,
+        createRes?.qrcode?.code,
+      ];
+
+      const codeFromCreate = rawCandidates.find(
+        (c) => typeof c === 'string' && c.trim().length >= 6 && c.trim().length <= 12 && !c.includes('+') && !c.includes('/') && !c.includes('@')
+      );
+
+      if (codeFromCreate) {
+        pairingCodeStr = codeFromCreate.trim();
+      } else {
+        // Aguarda 1s e tenta buscar via getPairingCode
+        await new Promise(res => setTimeout(res, 1000));
+        const secondRes = await evolutionApi.getPairingCode(name, formattedPhone);
+        pairingCodeStr = secondRes.code;
       }
 
       // Reconfigura webhook e proxy se necessário
@@ -70,16 +102,13 @@ export async function POST(req: Request, { params }: Params) {
           await evolutionApi.setInstanceProxy(name, dbInst.proxy);
         } catch { /* não crítico */ }
       }
-
-      // Segunda tentativa de obter o código
-      pairingData = await evolutionApi.getPairingCode(name, formattedPhone);
     }
 
-    if (!pairingData || !pairingData.code) {
+    if (!pairingCodeStr) {
       return NextResponse.json({ error: 'O gateway Evolution não retornou um código de pareamento válido.' }, { status: 500 });
     }
 
-    // 3. Salva o telefone informado na instância e marca como INITIALIZING
+    // 4. Salva o telefone informado na instância e marca como INITIALIZING
     await prisma.whatsAppInstance.update({
       where: { name },
       data: {
@@ -91,7 +120,7 @@ export async function POST(req: Request, { params }: Params) {
 
     return NextResponse.json({
       success: true,
-      code: pairingData.code,
+      code: pairingCodeStr,
     });
   } catch (error: any) {
     console.error(`Erro ao gerar código de pareamento:`, error);
