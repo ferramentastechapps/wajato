@@ -47,12 +47,13 @@ npm install --production=false
 
 echo ""
 echo "[5/6] Compilando o Next.js (limpando cache)..."
+pm2 stop wajato-web 2>/dev/null || true
 rm -rf .next
 NODE_ENV=production npm run build
 
 echo ""
 echo "[6/6] Reiniciando os processos no PM2..."
-pm2 restart wajato-web wajato-warmup wajato-warmup-pool wajato-scheduler wajato-worker
+pm2 restart wajato-web wajato-warmup wajato-warmup-pool wajato-scheduler wajato-worker --update-env
 pm2 save
 
 echo ""
