@@ -64,23 +64,29 @@ export function getMsUntilNextBusinessWindow(startHour: number = 8, endHour: num
  */
 export function getMsUntilTomorrowStart(startHour: number = 8): number {
   const now = new Date();
-  
-  // Data/Hora atual em Brasília (UTC-3)
-  const currentBrazilTime = new Date(now.getTime() - 3 * 60 * 60 * 1000);
-  
-  // Cria data de amanhã em Brasília
-  const tomorrowBrazil = new Date(currentBrazilTime);
-  tomorrowBrazil.setDate(tomorrowBrazil.getDate() + 1);
-  
-  // Horário aleatório entre startHour e startHour + 2 horas (para variação humana)
-  const startOffsetMin = Math.floor(Math.random() * 120); // 0 a 120 min
-  tomorrowBrazil.setHours(startHour, startOffsetMin % 60, 0, 0);
-  
-  // Converte a data de amanhã de Brasília de volta para UTC
-  const tomorrowUTC = new Date(tomorrowBrazil.getTime() + 3 * 60 * 60 * 1000);
-  
-  // Retorna a diferença de tempo
-  return Math.max(0, tomorrowUTC.getTime() - now.getTime());
+
+  // Obtém a data atual em Brasília (UTC-3) usando métodos UTC para evitar
+  // dependência do fuso local do servidor.
+  const BRAZIL_OFFSET_MS = 3 * 60 * 60 * 1000; // 3h em ms
+  const brazilNow = new Date(now.getTime() - BRAZIL_OFFSET_MS);
+
+  // "Amanhã às startHour" no horário de Brasília
+  // Usamos UTC* para manipular a data já ajustada como se fosse UTC
+  const startOffsetMin = Math.floor(Math.random() * 120); // 0–119 min de jitter
+  const tomorrowBrazilMs = Date.UTC(
+    brazilNow.getUTCFullYear(),
+    brazilNow.getUTCMonth(),
+    brazilNow.getUTCDate() + 1, // amanhã (em BRT)
+    startHour,
+    startOffsetMin % 60,
+    0,
+    0
+  );
+
+  // Converte de volta para UTC real adicionando o offset de Brasília
+  const tomorrowUTC = tomorrowBrazilMs + BRAZIL_OFFSET_MS;
+
+  return Math.max(0, tomorrowUTC - now.getTime());
 }
 
 /**
