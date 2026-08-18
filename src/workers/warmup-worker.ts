@@ -43,6 +43,7 @@ import {
   calculateHeatScore,
   shouldTakeRestPeriod,
   getRestPeriodDurationMs,
+  isSameCalendarDayInBRT,
 } from '../lib/warmup-schedule';
 import {
   acquireInstanceSlot,
@@ -206,14 +207,10 @@ export const warmupWorker = new Worker(
     // ── 1.1 Verificar mudança de dia do calendário ────────────────────────────
     const weekend = isWeekend();
     if (campaign.lastMessageAt) {
-      const BRAZIL_OFFSET_MS = -3 * 60 * 60 * 1000; // UTC-3
-      const lastSentDate = new Date(new Date(campaign.lastMessageAt).getTime() - BRAZIL_OFFSET_MS);
-      const today = new Date(Date.now() - BRAZIL_OFFSET_MS);
+      const lastSentDate = new Date(campaign.lastMessageAt);
+      const today = new Date();
       
-      const isNewCalendarDay = 
-        today.getUTCDate() !== lastSentDate.getUTCDate() ||
-        today.getUTCMonth() !== lastSentDate.getUTCMonth() ||
-        today.getUTCFullYear() !== lastSentDate.getUTCFullYear();
+      const isNewCalendarDay = !isSameCalendarDayInBRT(today, lastSentDate);
         
       if (isNewCalendarDay) {
         console.log(`[Warmup Worker] Mudança de dia do calendário detectada para campanha ${campaignId}. Reiniciando contadores.`);
@@ -263,7 +260,7 @@ export const warmupWorker = new Worker(
       await queueWarmupMessage(
         { campaignId, sourceInstance, targetPhone, isFirstMessageOfDay: true },
         msUntilWindow + jitter,
-        jitter
+        60 * 1000
       );
       return;
     }
@@ -276,7 +273,7 @@ export const warmupWorker = new Worker(
       await queueWarmupMessage(
         { campaignId, sourceInstance, targetPhone, isFirstMessageOfDay: true },
         delayMs,
-        delayMs * 0.1 + 60000 // 10% de jitter + 1 min base
+        60 * 1000 // Jitter já calculado em getMsUntilTomorrowStart
       );
       return;
     }

@@ -70,15 +70,14 @@ export function getMsUntilTomorrowStart(startHour: number = 8): number {
   const BRAZIL_OFFSET_MS = 3 * 60 * 60 * 1000; // 3h em ms
   const brazilNow = new Date(now.getTime() - BRAZIL_OFFSET_MS);
 
-  // "Amanhã às startHour" no horário de Brasília
-  // Usamos UTC* para manipular a data já ajustada como se fosse UTC
-  const startOffsetMin = Math.floor(Math.random() * 120); // 0–119 min de jitter
+  // "Amanhã às startHour" no horário de Brasília com jitter de 5 a 45 min
+  const startOffsetMin = Math.floor(Math.random() * 40 + 5); // 5 a 45 min
   const tomorrowBrazilMs = Date.UTC(
     brazilNow.getUTCFullYear(),
     brazilNow.getUTCMonth(),
     brazilNow.getUTCDate() + 1, // amanhã (em BRT)
     startHour,
-    startOffsetMin % 60,
+    startOffsetMin,
     0,
     0
   );
