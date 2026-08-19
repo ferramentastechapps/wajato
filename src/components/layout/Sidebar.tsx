@@ -16,6 +16,7 @@ import {
   Bot,
   ListFilter,
   Columns,
+  Building2,
   X
 } from 'lucide-react';
 
@@ -48,6 +49,7 @@ export default function Sidebar({ username = 'Admin', isOpen = false, onClose }:
     { label: 'Contatos', href: '/contacts', icon: Users },
     { label: 'Segmentações', href: '/contacts/segments', icon: ListFilter },
     { label: 'CRM Kanban', href: '/crm', icon: Columns },
+    { label: 'Empresas & IA', href: '/companies', icon: Building2 },
     { label: 'Templates', href: '/templates', icon: FileText },
     { label: 'Campanhas', href: '/campaigns', icon: Send },
     { label: 'Auto-Responder', href: '/chatbot', icon: Bot },

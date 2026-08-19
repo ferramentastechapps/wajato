@@ -20,8 +20,10 @@ interface Campaign {
   messageVariants?: string[];
   groupId?: string | null;
   segmentId?: string | null;
+  companyId?: string | null;
   group?: { id: string; name: string } | null;
   segment?: { id: string; name: string } | null;
+  company?: { id: string; name: string; segment?: string | null } | null;
   template: { id: string; name: string };
   stats: { total: number; sent: number; delivered: number; read: number; failed: number; pending: number; };
   createdAt: string;
@@ -29,6 +31,7 @@ interface Campaign {
 }
 interface Group { id: string; name: string; _count?: { contacts: number }; }
 interface Template { id: string; name: string; body: string; imageUrl?: string | null; }
+interface CompanyOption { id: string; name: string; segment?: string | null; isDefault: boolean; }
 
 const DELAY_PRESETS = [
   { id: 'safe',   label: '🛡️ Muito Seguro', min: 45, max: 120 },
@@ -61,6 +64,7 @@ export default function CampaignsPage() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [segments, setSegments] = useState<any[]>([]);
+  const [companies, setCompanies] = useState<CompanyOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showAddCampaign, setShowAddCampaign] = useState(false);
@@ -69,6 +73,7 @@ export default function CampaignsPage() {
   const [targetType, setTargetType] = useState<'GROUP' | 'SEGMENT'>('GROUP');
   const [groupId, setGroupId] = useState('');
   const [segmentId, setSegmentId] = useState('');
+  const [companyId, setCompanyId] = useState('');
   const [templateId, setTemplateId] = useState('');
   const [delayMin, setDelayMin] = useState(20);
   const [delayMax, setDelayMax] = useState(60);
@@ -91,10 +96,21 @@ export default function CampaignsPage() {
 
   const fetchData = async () => {
     try {
-      const [cr, tr, sr] = await Promise.all([fetch('/api/contacts'), fetch('/api/templates'), fetch('/api/contacts/segments')]);
+      const [cr, tr, sr, cor] = await Promise.all([
+        fetch('/api/contacts'),
+        fetch('/api/templates'),
+        fetch('/api/contacts/segments'),
+        fetch('/api/companies'),
+      ]);
       if (cr.ok) setGroups((await cr.json()).groups || []);
       if (tr.ok) setTemplates((await tr.json()).templates || []);
       if (sr.ok) setSegments((await sr.json()).segments || []);
+      if (cor.ok) {
+        const cos: CompanyOption[] = (await cor.json()).companies || [];
+        setCompanies(cos);
+        const def = cos.find((c) => c.isDefault) || cos[0];
+        if (def) setCompanyId(def.id);
+      }
     } catch (e) { console.error(e); }
   };
 
@@ -131,6 +147,8 @@ export default function CampaignsPage() {
     setName(''); setTargetType('GROUP');
     setGroupId(groups[0]?.id || ''); setSegmentId(segments[0]?.id || '');
     setTemplateId(templates[0]?.id || '');
+    const defComp = companies.find(c => c.isDefault) || companies[0];
+    setCompanyId(defComp?.id || '');
     setDelayMin(20); setDelayMax(60); setDelayPreset('medium');
     setMessageVariants([]); setBatchSize(0); setBatchCooldown(600); setBatchPresetIdx(0);
     setIsScheduled(false); setScheduledAt(''); setPreviewVariantIdx(0); setErrorMsg('');
@@ -155,7 +173,19 @@ export default function CampaignsPage() {
     try {
       const r = await fetch('/api/campaigns', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, groupId: targetType === 'GROUP' ? groupId : null, segmentId: targetType === 'SEGMENT' ? segmentId : null, templateId, delayMin, delayMax, messageVariants: cleanVariants, batchSize, batchCooldown, scheduledAt: isScheduled && scheduledAt ? new Date(scheduledAt).toISOString() : null }),
+        body: JSON.stringify({
+          name,
+          groupId: targetType === 'GROUP' ? groupId : null,
+          segmentId: targetType === 'SEGMENT' ? segmentId : null,
+          companyId: companyId || null,
+          templateId,
+          delayMin,
+          delayMax,
+          messageVariants: cleanVariants,
+          batchSize,
+          batchCooldown,
+          scheduledAt: isScheduled && scheduledAt ? new Date(scheduledAt).toISOString() : null,
+        }),
       });
       if (r.ok) { setShowAddCampaign(false); fetchCampaigns(); }
       else setErrorMsg((await r.json()).message || 'Erro ao criar campanha.');
@@ -225,6 +255,7 @@ export default function CampaignsPage() {
                   <div>
                     <h3 style={{fontSize:'1.25rem',marginBottom:'0.25rem'}}>{camp.name}</h3>
                     <div style={{display:'flex',gap:'1.25rem',flexWrap:'wrap',fontSize:'0.75rem',color:'#9ca3af',alignItems:'center'}}>
+                      {camp.company && <span>Empresa: <strong style={{color:'#38bdf8'}}>{camp.company.name}</strong></span>}
                       <span>Template: <strong>{camp.template.name}</strong></span>
                       {camp.group ? <span>Grupo: <strong>{camp.group.name}</strong></span> : camp.segment ? <span>Segmento: <strong>{camp.segment.name}</strong></span> : null}
                       <span style={{display:'flex',alignItems:'center',gap:'0.25rem'}}><Clock size={12}/>{camp.delayMin}s–{camp.delayMax}s</span>
@@ -294,6 +325,24 @@ export default function CampaignsPage() {
                     <div className="form-group">
                       <label className="form-label" style={{fontWeight:600,fontSize:'0.8rem',color:'#e2e8f0',marginBottom:'0.4rem',display:'block'}}>Nome da Campanha *</label>
                       <input type="text" className="input-control" placeholder="Ex: Promoção de Domingo" value={name} onChange={e=>setName(e.target.value)} required style={{width:'100%'}}/>
+                    </div>
+
+                    {/* SELEÇÃO DA EMPRESA */}
+                    <div className="form-group">
+                      <label className="form-label" style={{fontWeight:600,fontSize:'0.8rem',color:'#e2e8f0',marginBottom:'0.4rem',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                        <span>🏢 Empresa / Base de Conhecimento IA *</span>
+                        <Link href="/companies" target="_blank" style={{color:'#25d366',fontSize:'0.7rem',textDecoration:'none',fontWeight:600}}>+ Gerenciar Empresas</Link>
+                      </label>
+                      <select className="input-control" value={companyId} onChange={e=>setCompanyId(e.target.value)} required style={{width:'100%'}}>
+                        {companies.length===0?<option value="">Carregando empresas...</option>:companies.map(c=>(
+                          <option key={c.id} value={c.id}>
+                            {c.name} {c.segment?`(${c.segment})`:''} {c.isDefault?'⭐ Padrão':''}
+                          </option>
+                        ))}
+                      </select>
+                      <span style={{fontSize:'0.65rem',color:'#94a3b8',marginTop:'0.25rem',display:'block'}}>
+                        A IA usará os dados (produtos, FAQ, preços) desta empresa para atender as respostas dos clientes.
+                      </span>
                     </div>
 
                     <div className="form-group">

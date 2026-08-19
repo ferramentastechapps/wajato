@@ -39,6 +39,7 @@ export const campaignSchema = z.object({
   templateId: z.string().uuid('ID do template inválido'),
   groupId: z.preprocess((val) => val === '' ? null : val, z.string().uuid('ID do grupo inválido').optional().nullable()),
   segmentId: z.preprocess((val) => val === '' ? null : val, z.string().uuid('ID do segmento inválido').optional().nullable()),
+  companyId: z.preprocess((val) => val === '' ? null : val, z.string().uuid('ID da empresa inválido').optional().nullable()),
   delayMin: z.coerce.number().int().min(1, 'Delay mínimo deve ser pelo menos 1 segundo').default(5),
   delayMax: z.coerce.number().int().min(1, 'Delay máximo deve ser pelo menos 1 segundo').default(15),
   messageVariants: z.array(z.string().trim().min(1)).default([]), // Variantes de texto adicionais
@@ -48,6 +49,21 @@ export const campaignSchema = z.object({
 }).refine(data => data.groupId || data.segmentId, {
   message: "Selecione um grupo de contatos ou uma segmentação para a campanha",
   path: ["groupId"]
+});
+
+// Schema para Empresas / Base de Conhecimento de IA
+export const companySchema = z.object({
+  id: z.preprocess((val) => val === '' ? null : val, z.string().uuid('ID da empresa inválido').optional().nullable()),
+  name: z.string().trim().min(1, 'O nome da empresa é obrigatório'),
+  segment: z.string().trim().nullable().optional(),
+  description: z.string().trim().min(1, 'A descrição da empresa é obrigatória'),
+  productsServices: z.string().trim().min(1, 'Os produtos/serviços e preços são obrigatórios'),
+  faq: z.string().trim().nullable().optional(),
+  policies: z.string().trim().nullable().optional(),
+  contactInfo: z.string().trim().nullable().optional(),
+  toneOfVoice: z.string().trim().nullable().optional(),
+  aiInstructions: z.string().trim().nullable().optional(),
+  isDefault: z.boolean().default(false),
 });
 
 // Schemas para Chatbot Auto-responder
@@ -68,3 +84,4 @@ export const chatbotConfigSchema = z.object({
   startHour: z.coerce.number().int().min(0).max(23),
   endHour: z.coerce.number().int().min(0).max(23),
 });
+

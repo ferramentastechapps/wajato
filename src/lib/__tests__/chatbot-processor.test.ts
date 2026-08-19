@@ -24,6 +24,13 @@ vi.mock('../prisma', () => {
       contact: {
         findUnique: vi.fn(),
       },
+      company: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
+      messageLog: {
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
       chatbotConfig: {
         findUnique: vi.fn(),
         create: vi.fn(),

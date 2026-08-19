@@ -21,6 +21,7 @@ export async function handleChatbotIncoming(phone: string, text: string, instanc
     if (!cleanText) return;
 
     let contactName: string | null = null;
+    let contactRecord: any = null;
 
     // Verificar se o chatbot está temporariamente pausado para o contato devido a resposta manual
     // Wrapped in try/catch to tolerate stale Prisma client builds where the column may not yet be known
@@ -28,6 +29,7 @@ export async function handleChatbotIncoming(phone: string, text: string, instanc
       const contact = await prisma.contact.findUnique({
         where: { phone }
       });
+      contactRecord = contact;
       if (contact?.name) {
         contactName = contact.name;
       }
@@ -117,7 +119,7 @@ export async function handleChatbotIncoming(phone: string, text: string, instanc
       return;
     }
 
-    // 5. Se nenhuma regra bateu e IA estiver ativada, usar a IA com memória persistente
+    // 5. Se nenhuma regra bateu e IA estiver ativada, usar a IA com memória persistente e base de conhecimento da empresa
     if (config.aiEnabled) {
       logger.info('Nenhuma regra encontrada. Gerando resposta com IA', { phone });
       
@@ -125,6 +127,62 @@ export async function handleChatbotIncoming(phone: string, text: string, instanc
       if (!apiKey) {
         logger.error('Chave de API do Gemini não configurada (nem individualmente nem globalmente no servidor)');
         return;
+      }
+
+      // 5.1 Resolver a Empresa / Base de Conhecimento associada ao contato
+      let company: any = null;
+      try {
+        if (contactRecord?.companyId) {
+          company = await prisma.company.findUnique({
+            where: { id: contactRecord.companyId },
+          });
+        }
+
+        if (!company && contactRecord?.id) {
+          const lastCampaignLog = await prisma.messageLog.findFirst({
+            where: {
+              contactId: contactRecord.id,
+              campaign: { companyId: { not: null } },
+            },
+            orderBy: { createdAt: 'desc' },
+            include: { campaign: { include: { company: true } } },
+          });
+          if (lastCampaignLog?.campaign?.company) {
+            company = lastCampaignLog.campaign.company;
+          }
+        }
+
+        if (!company) {
+          company = await prisma.company.findFirst({
+            where: { isDefault: true },
+          });
+          if (!company) {
+            company = await prisma.company.findFirst({
+              orderBy: { createdAt: 'asc' },
+            });
+          }
+        }
+      } catch (compErr: any) {
+        logger.warn?.('[Chatbot Processor] Aviso ao resolver empresa para o contato:', { phone, error: compErr?.message });
+      }
+
+      // Formatar a Base de Conhecimento Oficial da Empresa para o prompt da IA
+      let companyKnowledgeSection = '';
+      if (company) {
+        const sections: string[] = [];
+        sections.push(`EMPRESA: ${company.name}${company.segment ? ` (Segmento: ${company.segment})` : ''}`);
+        if (company.description) sections.push(`- Sobre a Empresa: ${company.description}`);
+        if (company.productsServices) sections.push(`- Catálogo de Produtos, Serviços e Preços:\n${company.productsServices}`);
+        if (company.policies) sections.push(`- Formas de Pagamento, Prazos e Políticas:\n${company.policies}`);
+        if (company.faq) sections.push(`- Perguntas e Respostas Frequentes (FAQ):\n${company.faq}`);
+        if (company.contactInfo) sections.push(`- Canais de Contato e Atendente Humano:\n${company.contactInfo}`);
+        if (company.toneOfVoice) sections.push(`- Tom de Voz Desejado: ${company.toneOfVoice}`);
+        if (company.aiInstructions) sections.push(`- Orientações Especiais para a IA:\n${company.aiInstructions}`);
+
+        companyKnowledgeSection = `
+[BASE DE CONHECIMENTO OFICIAL DA EMPRESA - USE ESTAS INFORMAÇÕES EXATAS PARA RESPONDER O CLIENTE COM PRECISÃO]:
+${sections.join('\n\n')}
+`;
       }
 
       // Recuperar memória acumulada no Redis do contato
@@ -237,6 +295,7 @@ export async function handleChatbotIncoming(phone: string, text: string, instanc
 
       const prompt = `${systemContext}
 ${humanEmulationRules}
+${companyKnowledgeSection}
 ${memoryPromptSection}
 
 Histórico da conversa recente com o cliente:

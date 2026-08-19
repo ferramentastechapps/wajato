@@ -53,6 +53,8 @@ model Contact {
   group              ContactGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
   stageId            String?
   stage              CrmStage?     @relation(fields: [stageId], references: [id], onDelete: SetNull)
+  companyId          String?
+  company            Company?      @relation(fields: [companyId], references: [id], onDelete: SetNull)
   logs               MessageLog[]
   chatbotPausedUntil DateTime?
   createdAt          DateTime      @default(now())
@@ -99,6 +101,8 @@ model Campaign {
   group            ContactGroup?   @relation(fields: [groupId], references: [id])
   segmentId        String?
   segment          ContactSegment? @relation(fields: [segmentId], references: [id])
+  companyId        String?
+  company          Company?        @relation(fields: [companyId], references: [id], onDelete: SetNull)
   delayMin         Int             @default(5)  // mínimo em segundos
   delayMax         Int             @default(15) // máximo em segundos
   messageVariants  String[]        @default([]) // Variantes de texto adicionais (rotação automática)
@@ -289,4 +293,23 @@ model WhatsAppStatus {
   mediaUrl     String?
   createdAt    DateTime @default(now())
 }
+
+model Company {
+  id               String     @id @default(uuid())
+  name             String
+  segment          String?    // Ramo/Segmento de atuação da empresa
+  description      String     // Descrição institucional da empresa
+  productsServices String     // Produtos, serviços, planos e preços
+  faq              String?    // Perguntas e respostas frequentes (FAQ)
+  policies         String?    // Políticas de pagamento, entrega, garantia, devolução
+  contactInfo      String?    // Canais de contato, suporte humano, site, endereço
+  toneOfVoice      String?    // Tom de voz (Amigável, Formal, Consultivo, etc.)
+  aiInstructions   String?    // Instruções específicas para a IA ao atender esta empresa
+  isDefault        Boolean    @default(false)
+  campaigns        Campaign[]
+  contacts         Contact[]
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+}
+
 

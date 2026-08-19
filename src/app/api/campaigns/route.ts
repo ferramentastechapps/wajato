@@ -15,6 +15,7 @@ export async function GET() {
         group: { select: { id: true, name: true } },
         segment: { select: { id: true, name: true } },
         template: { select: { id: true, name: true, imageUrl: true } },
+        company: { select: { id: true, name: true, segment: true } },
         _count: {
           select: { logs: true },
         },
@@ -87,7 +88,18 @@ export async function POST(request: Request) {
       );
     }
 
-    const { name, templateId, groupId, segmentId, delayMin, delayMax, messageVariants, batchSize, batchCooldown, scheduledAt } = result.data;
+    const { name, templateId, groupId, segmentId, companyId, delayMin, delayMax, messageVariants, batchSize, batchCooldown, scheduledAt } = result.data;
+
+    // Se companyId não foi informado, busca a empresa padrão
+    let finalCompanyId = companyId;
+    if (!finalCompanyId) {
+      const defaultComp = await prisma.company.findFirst({
+        where: { isDefault: true },
+      });
+      if (defaultComp) {
+        finalCompanyId = defaultComp.id;
+      }
+    }
 
     const campaign = await prisma.campaign.create({
       data: {
@@ -95,6 +107,7 @@ export async function POST(request: Request) {
         templateId,
         groupId: groupId || null,
         segmentId: segmentId || null,
+        companyId: finalCompanyId || null,
         delayMin,
         delayMax,
         messageVariants: messageVariants || [],
@@ -107,6 +120,7 @@ export async function POST(request: Request) {
         group: { select: { name: true } },
         segment: { select: { name: true } },
         template: { select: { name: true } },
+        company: { select: { name: true } },
       },
     });
 
@@ -119,3 +133,4 @@ export async function POST(request: Request) {
     );
   }
 }
+

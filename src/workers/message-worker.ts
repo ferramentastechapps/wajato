@@ -134,6 +134,18 @@ const worker = new Worker(
         },
       });
 
+      // Atualiza a empresa do contato com a empresa da campanha para contextualizar o chatbot IA
+      if (log.campaign.companyId && log.contact.companyId !== log.campaign.companyId) {
+        try {
+          await prisma.contact.update({
+            where: { id: log.contactId },
+            data: { companyId: log.campaign.companyId },
+          });
+        } catch (compErr: any) {
+          logger.warn?.('[Worker] Aviso ao associar empresa ao contato:', compErr?.message);
+        }
+      }
+
       // 7. Verifica se esta foi a última mensagem da campanha para finalizá-la
       await checkAndUpdateCampaignStatus(campaignId);
     } else {
