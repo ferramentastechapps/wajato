@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Building2,
   Plus,
@@ -18,8 +18,20 @@ import {
   Send,
   Users,
   Search,
+  FileSpreadsheet,
+  Download,
+  UploadCloud,
+  FileText,
+  Check,
+  Layers,
+  RefreshCw,
 } from 'lucide-react';
 import AppLayout from '@/components/layout/AppLayout';
+import {
+  parseProductSpreadsheet,
+  downloadSampleExcel,
+  downloadSampleCSV,
+} from '@/lib/product-catalog-parser';
 
 interface Company {
   id: string;
@@ -63,6 +75,12 @@ export default function CompaniesPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
+  // Spreadsheet import states
+  const [isImportingFile, setIsImportingFile] = useState(false);
+  const [importMode, setImportMode] = useState<'replace' | 'append'>('replace');
+  const [importStatus, setImportStatus] = useState<{ success: boolean; message: string; count?: number } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const fetchCompanies = async () => {
     setLoading(true);
     try {
@@ -96,6 +114,7 @@ export default function CompaniesPage() {
     setIsDefault(companies.length === 0);
     setActiveTab('info');
     setErrorMsg('');
+    setImportStatus(null);
     setIsModalOpen(true);
   };
 
@@ -113,7 +132,40 @@ export default function CompaniesPage() {
     setIsDefault(comp.isDefault);
     setActiveTab('info');
     setErrorMsg('');
+    setImportStatus(null);
     setIsModalOpen(true);
+  };
+
+  const handleSpreadsheetFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsImportingFile(true);
+    setImportStatus(null);
+
+    try {
+      const result = await parseProductSpreadsheet(file);
+
+      if (importMode === 'replace' || !productsServices.trim()) {
+        setProductsServices(result.text);
+      } else {
+        setProductsServices((prev) => `${prev}\n\n${result.text}`);
+      }
+
+      setImportStatus({
+        success: true,
+        message: `${result.count} item(ns) importado(s) da planilha com sucesso!`,
+        count: result.count,
+      });
+    } catch (err: any) {
+      setImportStatus({
+        success: false,
+        message: err.message || 'Erro ao processar arquivo de planilha.',
+      });
+    } finally {
+      setIsImportingFile(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -550,20 +602,246 @@ export default function CompaniesPage() {
                 {/* TAB 2: CATÁLOGO & PREÇOS */}
                 {activeTab === 'catalog' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
+                    {/* CARD DE IMPORTAÇÃO DE PLANILHA */}
+                    <div
+                      style={{
+                        background: 'linear-gradient(145deg, rgba(37, 211, 102, 0.04) 0%, rgba(15, 23, 42, 0.6) 100%)',
+                        border: '1px solid rgba(37, 211, 102, 0.2)',
+                        borderRadius: '12px',
+                        padding: '1.25rem',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '1rem',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                          <div
+                            style={{
+                              width: '40px',
+                              height: '40px',
+                              borderRadius: '10px',
+                              background: 'rgba(37, 211, 102, 0.15)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              color: '#25d366',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <FileSpreadsheet size={22} />
+                          </div>
+                          <div>
+                            <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600, color: '#f8fafc' }}>
+                              Importar Produtos via Planilha (Excel / CSV)
+                            </h4>
+                            <p style={{ margin: '0.2rem 0 0', fontSize: '0.75rem', color: '#94a3b8' }}>
+                              Evite cadastrar item por item. Carregue seu arquivo <strong>.xlsx</strong>, <strong>.xls</strong> ou <strong>.csv</strong> de produtos.
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Botões de Baixar Modelo */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                          <button
+                            type="button"
+                            onClick={downloadSampleExcel}
+                            className="btn"
+                            style={{
+                              background: 'rgba(59, 130, 246, 0.12)',
+                              color: '#60a5fa',
+                              border: '1px solid rgba(59, 130, 246, 0.3)',
+                              fontSize: '0.75rem',
+                              padding: '0.45rem 0.75rem',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.4rem',
+                              borderRadius: '8px',
+                              cursor: 'pointer',
+                              fontWeight: 500,
+                            }}
+                            title="Baixar planilha modelo formatada em Excel"
+                          >
+                            <Download size={14} /> Baixar Modelo (.xlsx)
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={downloadSampleCSV}
+                            className="btn"
+                            style={{
+                              background: 'rgba(148, 163, 184, 0.1)',
+                              color: '#cbd5e1',
+                              border: '1px solid rgba(148, 163, 184, 0.25)',
+                              fontSize: '0.75rem',
+                              padding: '0.45rem 0.75rem',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.4rem',
+                              borderRadius: '8px',
+                              cursor: 'pointer',
+                              fontWeight: 500,
+                            }}
+                            title="Baixar modelo em formato CSV (separado por ponto e vírgula)"
+                          >
+                            <Download size={14} /> Baixar Modelo (.csv)
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Opções de Importação e Botão de Upload */}
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          flexWrap: 'wrap',
+                          gap: '0.75rem',
+                          paddingTop: '0.75rem',
+                          borderTop: '1px solid rgba(255, 255, 255, 0.06)',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
+                          <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 500 }}>Ação ao importar:</span>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', color: '#e2e8f0', cursor: 'pointer' }}>
+                            <input
+                              type="radio"
+                              name="importMode"
+                              value="replace"
+                              checked={importMode === 'replace'}
+                              onChange={() => setImportMode('replace')}
+                              style={{ accentColor: '#25d366' }}
+                            />
+                            Substituir catálogo
+                          </label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', color: '#e2e8f0', cursor: 'pointer' }}>
+                            <input
+                              type="radio"
+                              name="importMode"
+                              value="append"
+                              checked={importMode === 'append'}
+                              onChange={() => setImportMode('append')}
+                              style={{ accentColor: '#25d366' }}
+                            />
+                            Adicionar ao final
+                          </label>
+                        </div>
+
+                        <div>
+                          <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept=".xlsx, .xls, .csv, .tsv, .txt"
+                            onChange={handleSpreadsheetFileChange}
+                            style={{ display: 'none' }}
+                          />
+                          <button
+                            type="button"
+                            disabled={isImportingFile}
+                            onClick={() => fileInputRef.current?.click()}
+                            className="btn btn-primary"
+                            style={{
+                              fontSize: '0.8rem',
+                              padding: '0.5rem 1rem',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.5rem',
+                              borderRadius: '8px',
+                              cursor: isImportingFile ? 'wait' : 'pointer',
+                            }}
+                          >
+                            {isImportingFile ? (
+                              <>
+                                <RefreshCw size={15} style={{ animation: 'spin 1s linear infinite' }} /> Processando planilha...
+                              </>
+                            ) : (
+                              <>
+                                <UploadCloud size={16} /> Subir Planilha de Produtos
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Notificação de Status da Importação */}
+                      {importStatus && (
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: '0.5rem',
+                            padding: '0.65rem 0.85rem',
+                            borderRadius: '8px',
+                            fontSize: '0.78rem',
+                            background: importStatus.success ? 'rgba(37, 211, 102, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                            border: `1px solid ${importStatus.success ? 'rgba(37, 211, 102, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+                            color: importStatus.success ? '#4ade80' : '#f87171',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            {importStatus.success ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
+                            <span>{importStatus.message}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setImportStatus(null)}
+                            style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', opacity: 0.7 }}
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* TEXTAREA DO CATÁLOGO DE PRODUTOS */}
                     <div className="form-group">
-                      <label className="form-label" style={{ fontWeight: 600, fontSize: '0.8rem', color: '#e2e8f0', marginBottom: '0.4rem', display: 'block' }}>
-                        Catálogo de Produtos, Serviços, Planos e Preços *
-                      </label>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+                        <label className="form-label" style={{ fontWeight: 600, fontSize: '0.8rem', color: '#e2e8f0', margin: 0 }}>
+                          Catálogo de Produtos, Serviços, Planos e Preços *
+                        </label>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                          {productsServices && (
+                            <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
+                              {((productsServices.match(/•/g) || []).length || 1)} item(ns) | {productsServices.length} caracteres
+                            </span>
+                          )}
+                          {productsServices && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (confirm('Deseja limpar todo o texto do catálogo?')) {
+                                  setProductsServices('');
+                                }
+                              }}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                color: '#ef4444',
+                                fontSize: '0.7rem',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.2rem',
+                                padding: '0 0.2rem',
+                              }}
+                            >
+                              <Trash2 size={12} /> Limpar
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
                       <textarea
                         className="input-control"
-                        placeholder={`Descreva seus produtos e serviços detalhadamente:\n\nExemplo:\n- Plano Básico: R$ 99/mês (inclui 1000 mensagens e suporte)\n- Plano Pro: R$ 199/mês (mensagens ilimitadas, 5 chips e chatbot IA)\n- Tênis Esportivo Nitro: R$ 249,00 (Tamanhos 38 ao 44, Cores Preto e Branco)`}
+                        placeholder={`Descreva seus produtos e serviços detalhadamente ou use a importação de planilha acima:\n\nExemplo:\n• Plano Básico Mensal\n  - Categoria: Software\n  - Preço: R$ 99,00/mês\n  - Descrição: Inclui 1000 mensagens e suporte via ticket\n\n• Tênis Esportivo Nitro\n  - Categoria: Calçados\n  - Preço: R$ 249,00\n  - Descrição: Tamanhos 38 ao 44, Cores Preto e Branco\n  - Código/Link: REF-102`}
                         value={productsServices}
                         onChange={(e) => setProductsServices(e.target.value)}
                         required
-                        style={{ minHeight: '220px', fontSize: '0.82rem', resize: 'vertical', width: '100%', fontFamily: 'monospace' }}
+                        style={{ minHeight: '220px', fontSize: '0.82rem', resize: 'vertical', width: '100%', fontFamily: 'monospace', lineHeight: 1.5 }}
                       />
                       <span style={{ fontSize: '0.68rem', color: '#94a3b8', marginTop: '0.3rem', display: 'block' }}>
-                        Coloque todos os itens que o cliente pode ter interesse em comprar ou tirar dúvidas de preço.
+                        Coloque todos os itens que o cliente pode ter interesse em comprar ou tirar dúvidas de preço. A IA responderá consultas baseadas neste catálogo.
                       </span>
                     </div>
                   </div>
