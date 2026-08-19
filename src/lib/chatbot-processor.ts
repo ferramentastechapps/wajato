@@ -144,7 +144,7 @@ export async function handleChatbotIncoming(phone: string, text: string, instanc
               contactId: contactRecord.id,
               campaign: { companyId: { not: null } },
             },
-            orderBy: { createdAt: 'desc' },
+            orderBy: { updatedAt: 'desc' },
             include: { campaign: { include: { company: true } } },
           });
           if (lastCampaignLog?.campaign?.company) {
