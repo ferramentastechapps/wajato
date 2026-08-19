@@ -61,14 +61,16 @@ const worker = new Worker(
       .replace(/{{link}}/g, groupLink);
 
     // 4. Seleciona dinamicamente o chip ativo / saudável
-    const activeInstanceName = await getNextWhatsAppInstance();
+    let activeInstanceName = await getNextWhatsAppInstance();
 
-    // 5. Executa o envio pela Evolution API
+    // 5. Executa o envio pela Evolution API com suporte a fallback de chip alternativo
+    let sentSuccess = false;
+    let lastErrorMsg = '';
+
     try {
-      let response;
       if (log.campaign.template.imageUrl) {
         // Envia mensagem de mídia (Imagem) com legenda
-        response = await evolutionApi.sendMediaMessage(
+        await evolutionApi.sendMediaMessage(
           activeInstanceName,
           phone,
           log.campaign.template.imageUrl,
@@ -77,18 +79,51 @@ const worker = new Worker(
         );
       } else {
         // Envia texto simples
-        response = await evolutionApi.sendTextMessage(
-          activeInstanceName,
-          phone,
-          messageText
-        );
+        await evolutionApi.sendTextMessage(activeInstanceName, phone, messageText);
       }
 
+      sentSuccess = true;
       logger.info('Mensagem enviada com sucesso', { messageLogId, phone, instance: activeInstanceName });
-
-      // Registra sucesso do chip no router
       await reportChipSuccess(activeInstanceName);
+    } catch (primaryError: any) {
+      lastErrorMsg = primaryError?.message || 'Falha no envio primário';
+      logger.warn('Falha no envio com chip primário, tentando chip alternativo...', {
+        instance: activeInstanceName,
+        error: lastErrorMsg,
+        messageLogId,
+      });
 
+      // Reporta falha no chip primário
+      await reportChipFailure(activeInstanceName, lastErrorMsg);
+
+      // Tenta obter um chip secundário diferente do que falhou
+      const fallbackInstance = await getNextWhatsAppInstance([activeInstanceName]);
+      if (fallbackInstance && fallbackInstance !== activeInstanceName) {
+        try {
+          if (log.campaign.template.imageUrl) {
+            await evolutionApi.sendMediaMessage(
+              fallbackInstance,
+              phone,
+              log.campaign.template.imageUrl,
+              'image',
+              messageText
+            );
+          } else {
+            await evolutionApi.sendTextMessage(fallbackInstance, phone, messageText);
+          }
+
+          sentSuccess = true;
+          activeInstanceName = fallbackInstance;
+          logger.info('Mensagem enviada com sucesso via chip fallback!', { messageLogId, phone, instance: fallbackInstance });
+          await reportChipSuccess(fallbackInstance);
+        } catch (fallbackError: any) {
+          lastErrorMsg = fallbackError?.message || lastErrorMsg;
+          await reportChipFailure(fallbackInstance, lastErrorMsg);
+        }
+      }
+    }
+
+    if (sentSuccess) {
       // 6. Atualiza o status no banco local para SENT
       await prisma.messageLog.update({
         where: { id: messageLogId },
@@ -101,24 +136,26 @@ const worker = new Worker(
 
       // 7. Verifica se esta foi a última mensagem da campanha para finalizá-la
       await checkAndUpdateCampaignStatus(campaignId);
-
-    } catch (error: any) {
-      const errorMsg = error.message || 'Erro desconhecido no envio';
-      logger.error('Erro ao enviar mensagem', { messageLogId, error: errorMsg, instance: activeInstanceName });
-      
-      // Registra falha do chip no router para rebaixar sua saúde
-      await reportChipFailure(activeInstanceName, errorMsg);
+    } else {
+      logger.error('Erro ao enviar mensagem após todas as tentativas', {
+        messageLogId,
+        error: lastErrorMsg,
+        instance: activeInstanceName,
+      });
 
       await prisma.messageLog.update({
         where: { id: messageLogId },
         data: {
           status: 'FAILED',
-          error: errorMsg,
+          error: lastErrorMsg,
         },
       });
 
+      // Circuit Breaker: Verifica taxa de falha da campanha
+      await checkCampaignDegradation(campaignId);
       await checkAndUpdateCampaignStatus(campaignId);
-      throw error; // Lança para que o BullMQ registre a falha no job
+
+      throw new Error(lastErrorMsg); // Lança para que o BullMQ registre a falha no job
     }
   },
   {
@@ -126,6 +163,45 @@ const worker = new Worker(
     concurrency: 1, // Envia de um em um para respeitar o delay e evitar banimentos
   }
 );
+
+/**
+ * Circuit Breaker: Pausa a campanha automaticamente se a taxa de falha for excessiva (>15%)
+ */
+async function checkCampaignDegradation(campaignId: string) {
+  try {
+    const totalProcessed = await prisma.messageLog.count({
+      where: {
+        campaignId,
+        status: { in: ['SENT', 'FAILED', 'DELIVERED', 'READ'] },
+      },
+    });
+
+    if (totalProcessed >= 8) {
+      const totalFailed = await prisma.messageLog.count({
+        where: {
+          campaignId,
+          status: 'FAILED',
+        },
+      });
+
+      const failureRate = totalFailed / totalProcessed;
+      if (failureRate > 0.15) {
+        await prisma.campaign.update({
+          where: { id: campaignId },
+          data: { status: 'PAUSED' },
+        });
+        logger.warn('⚠️ Circuit Breaker: Campanha pausada automaticamente devido à taxa de falha excessiva (>15%)', {
+          campaignId,
+          totalFailed,
+          totalProcessed,
+          failureRate: Math.round(failureRate * 100) + '%',
+        });
+      }
+    }
+  } catch (err: any) {
+    logger.error('Erro ao verificar degradação da campanha', { campaignId, error: err?.message });
+  }
+}
 
 /**
  * Verifica o status de todos os logs da campanha e a finaliza se necessário
@@ -156,3 +232,4 @@ worker.on('failed', (job, err) => {
 worker.on('error', (err) => {
   logger.error('Erro fatal no Message Worker', err);
 });
+

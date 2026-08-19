@@ -1,9 +1,14 @@
 import { prisma } from './prisma';
+import { redisConnection } from './redis';
 
 const DEFAULT_INSTANCE = process.env.EVOLUTION_INSTANCE_NAME || 'wajato-session';
 const MAX_DAILY_MESSAGES_PER_CHIP = 200;
 
-export async function getNextWhatsAppInstance(): Promise<string> {
+/**
+ * Seleciona a melhor instância de WhatsApp conectada e saudável para envio.
+ * @param excludeInstances Lista de nomes de instâncias a serem ignoradas nesta tentativa (ex: após falha em chip anterior)
+ */
+export async function getNextWhatsAppInstance(excludeInstances: string[] = []): Promise<string> {
   try {
     // 1. Buscar todas as instâncias conectadas que estão saudáveis e abaixo do limite diário
     const healthyInstances = await prisma.whatsAppInstance.findMany({
@@ -11,22 +16,26 @@ export async function getNextWhatsAppInstance(): Promise<string> {
         status: 'CONNECTED',
         healthScore: { gt: 20 },
         dailyMsgCount: { lt: MAX_DAILY_MESSAGES_PER_CHIP },
+        ...(excludeInstances.length > 0 ? { name: { notIn: excludeInstances } } : {}),
       },
-      orderBy: [
-        { dailyMsgCount: 'asc' }, // Prioriza as que enviaram menos mensagens hoje
-        { healthScore: 'desc' },  // Depois as com melhor pontuação de saúde
-      ],
     });
 
     if (healthyInstances.length === 0) {
-      console.warn(`[ChipRouter] Nenhuma instância saudável/conectada encontrada no banco. Usando fallback padrão: ${DEFAULT_INSTANCE}`);
+      // Se filtramos com exclusões e não sobrou nada, tenta sem exclusões se permitido
+      if (excludeInstances.length > 0) {
+        console.warn(`[ChipRouter] Nenhuma instância saudável disponível fora de [${excludeInstances.join(', ')}].`);
+      } else {
+        console.warn(`[ChipRouter] Nenhuma instância saudável/conectada encontrada no banco. Usando fallback padrão: ${DEFAULT_INSTANCE}`);
+      }
       return DEFAULT_INSTANCE;
     }
 
     // Filtra chips que atingiram o limite de mensagens consecutivas sem resposta (outbound puro)
-    const activeInstances = healthyInstances.filter(inst => {
+    const activeInstances = healthyInstances.filter((inst) => {
       if (inst.unrepliedBlockEnabled && inst.unrepliedMsgCount >= inst.maxUnrepliedLimit) {
-        console.warn(`[ChipRouter] Instância ${inst.name} ignorada: atingiu o limite de ${inst.unrepliedMsgCount}/${inst.maxUnrepliedLimit} mensagens sem resposta.`);
+        console.warn(
+          `[ChipRouter] Instância ${inst.name} ignorada: atingiu o limite de ${inst.unrepliedMsgCount}/${inst.maxUnrepliedLimit} mensagens sem resposta.`
+        );
         return false;
       }
       return true;
@@ -37,13 +46,56 @@ export async function getNextWhatsAppInstance(): Promise<string> {
       return DEFAULT_INSTANCE;
     }
 
-    // Seleciona a melhor instância (primeira da fila após a ordenação)
-    const selectedInstance = activeInstances[0];
-    console.log(`[ChipRouter] Instância selecionada para envio: ${selectedInstance.name} (Envios hoje: ${selectedInstance.dailyMsgCount}, Saúde: ${selectedInstance.healthScore}%)`);
+    // 2. Obter métricas de engajamento/leitura por hora no Redis para refinamento do ranking
+    const currentHourBRT = (new Date().getUTCHours() - 3 + 24) % 24;
+    const scoredInstances = await Promise.all(
+      activeInstances.map(async (inst) => {
+        let hourBonus = 0;
+        try {
+          const readsInHour = await redisConnection.get(`chip:${inst.name}:reads_hour:${currentHourBRT}`);
+          if (readsInHour) {
+            hourBonus = Math.min(parseInt(readsInHour, 10) * 2, 20); // até 20 pontos de bônus
+          }
+        } catch {
+          // Ignora silenciosamente se Redis oscilar
+        }
+
+        // Score ponderado: Menos msgs enviadas hoje dá pontuação alta + saúde + bônus de engajamento do horário
+        const volumeScore = Math.max(0, MAX_DAILY_MESSAGES_PER_CHIP - inst.dailyMsgCount);
+        const compositeScore = inst.healthScore * 1.5 + volumeScore * 1.0 + hourBonus;
+
+        return {
+          instance: inst,
+          compositeScore,
+        };
+      })
+    );
+
+    // Ordena pelo score ponderado decrescente
+    scoredInstances.sort((a, b) => b.compositeScore - a.compositeScore);
+
+    const selectedInstance = scoredInstances[0].instance;
+    console.log(
+      `[ChipRouter] Instância selecionada para envio: ${selectedInstance.name} (Envios hoje: ${selectedInstance.dailyMsgCount}, Saúde: ${selectedInstance.healthScore}%, Hora BRT: ${currentHourBRT}h)`
+    );
     return selectedInstance.name;
   } catch (error) {
     console.error('[ChipRouter] Erro ao selecionar instância:', error);
     return DEFAULT_INSTANCE;
+  }
+}
+
+/**
+ * Registra leitura de mensagem (READ) confirmada para o chip, acumulando score de engajamento por hora
+ */
+export async function recordChipReadEngagement(instanceName: string): Promise<void> {
+  try {
+    const currentHourBRT = (new Date().getUTCHours() - 3 + 24) % 24;
+    const key = `chip:${instanceName}:reads_hour:${currentHourBRT}`;
+    await redisConnection.incr(key);
+    await redisConnection.expire(key, 7 * 24 * 60 * 60); // expira em 7 dias
+  } catch (err: any) {
+    console.error('[ChipRouter] Erro ao registrar engajamento de leitura do chip:', err?.message);
   }
 }
 
@@ -128,3 +180,4 @@ export async function resetDailyMsgCounters(): Promise<void> {
     console.error('[ChipRouter] Erro ao resetar contadores diários:', error);
   }
 }
+

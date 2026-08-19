@@ -5,6 +5,18 @@ import { evolutionApi } from '../evolution';
 import { isWithinBusinessHours } from '../warmup-schedule';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
+// Mock do redis
+vi.mock('../redis', () => {
+  return {
+    redisConnection: {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue('OK'),
+      incr: vi.fn().mockResolvedValue(1),
+      expire: vi.fn().mockResolvedValue(1),
+    },
+  };
+});
+
 // Mock do prisma
 vi.mock('../prisma', () => {
   return {
@@ -31,8 +43,9 @@ vi.mock('../prisma', () => {
 vi.mock('../evolution', () => {
   return {
     evolutionApi: {
-      sendTextMessage: vi.fn(),
-      sendMediaMessage: vi.fn(),
+      sendTextMessage: vi.fn().mockResolvedValue({}),
+      sendMediaMessage: vi.fn().mockResolvedValue({}),
+      findMessages: vi.fn().mockResolvedValue([]),
     },
   };
 });

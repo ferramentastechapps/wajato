@@ -4,6 +4,13 @@ import { isWithinBusinessHours } from './warmup-schedule';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { logger } from './logger';
 import { lidResolver } from './lid-resolver';
+import {
+  getContactMemory,
+  formatMemoryForPrompt,
+  summarizeOlderHistory,
+  extractAndUpdateMemoryAsync,
+  splitMessageIntoNaturalParts,
+} from './chatbot-memory';
 
 /**
  * Processa mensagens recebidas do webhook e executa a lógica do chatbot auto-responder.
@@ -13,12 +20,17 @@ export async function handleChatbotIncoming(phone: string, text: string, instanc
     const cleanText = text.trim().toLowerCase();
     if (!cleanText) return;
 
+    let contactName: string | null = null;
+
     // Verificar se o chatbot está temporariamente pausado para o contato devido a resposta manual
     // Wrapped in try/catch to tolerate stale Prisma client builds where the column may not yet be known
     try {
       const contact = await prisma.contact.findUnique({
         where: { phone }
       });
+      if (contact?.name) {
+        contactName = contact.name;
+      }
       if (contact?.chatbotPausedUntil && contact.chatbotPausedUntil > new Date()) {
         logger.info('Chatbot ignorado para contato porque está pausado temporariamente', { phone, pausedUntil: contact.chatbotPausedUntil });
         return;
@@ -105,9 +117,9 @@ export async function handleChatbotIncoming(phone: string, text: string, instanc
       return;
     }
 
-    // 5. Se nenhuma regra bateu e IA estiver ativada, usar o Gemini
+    // 5. Se nenhuma regra bateu e IA estiver ativada, usar a IA com memória persistente
     if (config.aiEnabled) {
-      logger.info('Nenhuma regra encontrada. Gerando resposta com IA (Gemini)', { phone });
+      logger.info('Nenhuma regra encontrada. Gerando resposta com IA', { phone });
       
       const apiKey = config.geminiApiKey || process.env.GEMINI_API_KEY;
       if (!apiKey) {
@@ -115,13 +127,17 @@ export async function handleChatbotIncoming(phone: string, text: string, instanc
         return;
       }
 
+      // Recuperar memória acumulada no Redis do contato
+      const contactMemory = await getContactMemory(phone);
+      const memoryPromptSection = formatMemoryForPrompt(contactMemory);
+
       // Buscar histórico recente de chat real diretamente da Evolution API (unificando JID e LID se houver)
       let historyPrompt = '';
       try {
         const jid = phone.includes('@') ? phone : `${phone}@s.whatsapp.net`;
         
         // Buscar mensagens do JID primário
-        const messages = await evolutionApi.findMessages(instanceName, jid, 10);
+        const messages = await evolutionApi.findMessages(instanceName, jid, 12);
         let finalMessages = Array.isArray(messages) ? messages : [];
         
         // Tentar obter JID secundário (LID) se aplicável
@@ -134,7 +150,7 @@ export async function handleChatbotIncoming(phone: string, text: string, instanc
         
         if (otherJid) {
           try {
-            const otherMessages = await evolutionApi.findMessages(instanceName, otherJid, 10);
+            const otherMessages = await evolutionApi.findMessages(instanceName, otherJid, 12);
             if (Array.isArray(otherMessages) && otherMessages.length > 0) {
               const merged = [...finalMessages, ...otherMessages];
               const unique = new Map<string, any>();
@@ -160,18 +176,40 @@ export async function handleChatbotIncoming(phone: string, text: string, instanc
           return tsA - tsB;
         });
         
-        historyPrompt = sortedMessages
+        // Formatar mensagens normalizadas
+        const normalizedList = sortedMessages
           .map((m: any) => {
-            const fromMe = m.key?.fromMe;
+            const fromMe = Boolean(m.key?.fromMe);
             const msgText = m.message?.conversation || m.message?.extendedTextMessage?.text || m.text || '';
             if (!msgText.trim()) return null;
-            return fromMe ? `Você: ${msgText}` : `Cliente: ${msgText}`;
+            return {
+              role: (fromMe ? 'model' : 'user') as 'model' | 'user',
+              text: msgText.trim(),
+            };
           })
-          .filter(Boolean)
-          .join('\n');
+          .filter(Boolean) as Array<{ role: 'model' | 'user'; text: string }>;
+
+        // Se houver mais de 5 mensagens no histórico, sumariza as mais antigas progressivamente
+        if (normalizedList.length > 5) {
+          const olderPart = normalizedList.slice(0, normalizedList.length - 4);
+          const recentPart = normalizedList.slice(normalizedList.length - 4);
+
+          const summary = await summarizeOlderHistory(olderPart, apiKey);
+          const recentText = recentPart
+            .map((m) => (m.role === 'model' ? `Você: ${m.text}` : `Cliente: ${m.text}`))
+            .join('\n');
+
+          historyPrompt = summary
+            ? `[Resumo do início do diálogo]: ${summary}\n\n[Mensagens mais recentes]:\n${recentText}`
+            : recentText;
+        } else {
+          historyPrompt = normalizedList
+            .map((m) => (m.role === 'model' ? `Você: ${m.text}` : `Cliente: ${m.text}`))
+            .join('\n');
+        }
       } catch (err) {
         console.error('[Chatbot Processor] Erro ao buscar histórico da Evolution API, usando backup do ChatbotLog:', err);
-        // Fallback para o comportamento antigo caso falhe
+        // Fallback para o comportamento do ChatbotLog caso falhe
         const recentLogs = await prisma.chatbotLog.findMany({
           where: { phone },
           orderBy: { createdAt: 'desc' },
@@ -199,9 +237,10 @@ export async function handleChatbotIncoming(phone: string, text: string, instanc
 
       const prompt = `${systemContext}
 ${humanEmulationRules}
+${memoryPromptSection}
 
 Histórico da conversa recente com o cliente:
-${historyPrompt}
+${historyPrompt || 'Nenhuma conversa anterior registrada.'}
 
 Cliente diz: "${text}"
 Gere uma resposta curta, educada, prestativa e muito natural para o WhatsApp do cliente. Responda como "Você". Não adicione prefixos como "Você:" na resposta final.`;
@@ -233,7 +272,7 @@ Gere uma resposta curta, educada, prestativa e muito natural para o WhatsApp do 
               { role: 'user', content: prompt }
             ],
             temperature: 0.7,
-            max_tokens: isOpenRouter ? 1000 : 150,
+            max_tokens: isOpenRouter ? 1000 : 180,
           }),
         });
 
@@ -248,7 +287,7 @@ Gere uma resposta curta, educada, prestativa e muito natural para o WhatsApp do 
           model: 'gemini-2.0-flash',
           generationConfig: {
             temperature: 0.7,
-            maxOutputTokens: 150,
+            maxOutputTokens: 180,
           },
         });
 
@@ -262,10 +301,24 @@ Gere uma resposta curta, educada, prestativa e muito natural para o WhatsApp do 
           .replace(/^(Você|Atendente|Suporte|Equipe|AI|IA|Bot):\s*/i, '')
           .trim();
 
-        // Calcular tempo de digitação (ex: 35ms por caractere, mínimo 1.5s, máximo 5s)
-        const typingDelay = Math.min(Math.max(cleanResponse.length * 35, 1500), 5000);
+        // Quebra inteligente de resposta longa em múltiplas partes (padrão humano de WhatsApp)
+        const parts = splitMessageIntoNaturalParts(cleanResponse);
 
-        await evolutionApi.sendTextMessage(instanceName, phone, cleanResponse, typingDelay);
+        if (parts.length === 1) {
+          const typingDelay = Math.min(Math.max(parts[0].length * 35, 1500), 5000);
+          await evolutionApi.sendTextMessage(instanceName, phone, parts[0], typingDelay);
+        } else {
+          // Envia primeira parte
+          const delay1 = Math.min(Math.max(parts[0].length * 35, 1200), 3500);
+          await evolutionApi.sendTextMessage(instanceName, phone, parts[0], delay1);
+
+          // Pausa natural entre as 2 mensagens (1.5s a 2.5s)
+          await new Promise((r) => setTimeout(r, 1500 + Math.random() * 1000));
+
+          // Envia segunda parte
+          const delay2 = Math.min(Math.max(parts[1].length * 30, 1000), 3000);
+          await evolutionApi.sendTextMessage(instanceName, phone, parts[1], delay2);
+        }
 
         // Logar interação
         await prisma.chatbotLog.create({
@@ -276,9 +329,13 @@ Gere uma resposta curta, educada, prestativa e muito natural para o WhatsApp do 
             source: 'AI',
           },
         });
+
+        // Atualiza memória de fatos do cliente em background no Redis (sem bloquear)
+        extractAndUpdateMemoryAsync(phone, text, cleanResponse, apiKey, contactName);
       }
     }
   } catch (error: any) {
     logger.error('Erro ao processar chatbot incoming', error);
   }
 }
+

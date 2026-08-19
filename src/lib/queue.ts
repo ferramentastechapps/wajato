@@ -13,7 +13,7 @@ export const messageQueue = new Queue(QUEUE_NAME, {
       delay: 5000, // 5s, 10s, 20s
     },
     removeOnComplete: true, // Remove da fila ao concluir com sucesso para não saturar o Redis
-    removeOnFail: false, // Mantém falhas na fila para análise/re-tentativa manual
+    removeOnFail: { count: 200 }, // Mantém até 200 falhas recentes para diagnóstico sem vazar memória
   },
 });
 

@@ -4,6 +4,7 @@ import { handleChatbotIncoming } from '@/lib/chatbot-processor';
 import { queueWarmupMessage, cancelCampaignWarmupJobs } from '@/lib/warmup-queue';
 import { lidResolver } from '@/lib/lid-resolver';
 import { sentMessagesCache } from '@/lib/sent-messages-cache';
+import { recordChipReadEngagement } from '@/lib/chip-router';
 
 /**
  * Normaliza um número de telefone removendo DDI duplicado, + e espaços.
@@ -346,6 +347,12 @@ export async function POST(request: Request) {
             } else if (status === 3 || status === 'READ') {
               newStatus = 'READ';
               updateData.readAt = new Date();
+
+              // Registra engajamento positivo de leitura no chip router
+              const instanceName = payload.instance || data?.instance;
+              if (instanceName) {
+                recordChipReadEngagement(instanceName).catch(() => {});
+              }
             }
 
             if (newStatus !== log.status) {

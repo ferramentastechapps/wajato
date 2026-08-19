@@ -2,6 +2,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { getNextWhatsAppInstance, reportChipSuccess, reportChipFailure } from '../chip-router';
 import { prisma } from '../prisma';
 
+vi.mock('../redis', () => {
+  return {
+    redisConnection: {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn(),
+      incr: vi.fn(),
+      expire: vi.fn(),
+    },
+  };
+});
+
 // Mock do prisma
 vi.mock('../prisma', () => {
   return {
