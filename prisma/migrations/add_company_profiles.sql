@@ -19,28 +19,10 @@ CREATE TABLE IF NOT EXISTS "Company" (
 );
 
 -- 2. Adiciona a coluna companyId na tabela Contact se não existir
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'Contact' AND column_name = 'companyId'
-    ) THEN
-        ALTER TABLE "Contact" ADD COLUMN "companyId" TEXT;
-        ALTER TABLE "Contact" ADD CONSTRAINT "Contact_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "Company"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-    END IF;
-END $$;
+ALTER TABLE "Contact" ADD COLUMN IF NOT EXISTS "companyId" TEXT;
 
 -- 3. Adiciona a coluna companyId na tabela Campaign se não existir
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'Campaign' AND column_name = 'companyId'
-    ) THEN
-        ALTER TABLE "Campaign" ADD COLUMN "companyId" TEXT;
-        ALTER TABLE "Campaign" ADD CONSTRAINT "Campaign_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "Company"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-    END IF;
-END $$;
+ALTER TABLE "Campaign" ADD COLUMN IF NOT EXISTS "companyId" TEXT;
 
 -- 4. Cria índices para performance de busca
 CREATE INDEX IF NOT EXISTS "Company_isDefault_idx" ON "Company"("isDefault");
