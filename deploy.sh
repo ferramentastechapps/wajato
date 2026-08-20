@@ -19,25 +19,8 @@ git clean -fd
 git pull origin master
 
 echo ""
-echo "[2/6] Aplicando migração do banco de dados (se houver)..."
-if npx prisma migrate deploy 2>/dev/null; then
-  echo "  ✅ Migrate deploy aplicado com sucesso."
-else
-  echo "  ⚠️  Migrate deploy falhou — aplicando SQLs manuais..."
-  DATABASE_URL=$(grep DATABASE_URL .env | cut -d '=' -f2- | tr -d '"' | cut -d '?' -f1)
-  psql "$DATABASE_URL" -f prisma/migrations/warmup_professional_upgrade.sql 2>/dev/null || true
-  psql "$DATABASE_URL" -f prisma/migrations/warmup_pool_upgrade.sql 2>/dev/null || true
-  psql "$DATABASE_URL" -f prisma/migrations/warmup_instances_upgrade.sql 2>/dev/null || true
-  psql "$DATABASE_URL" -f prisma/migrations/warmup_v2_2_upgrade.sql 2>/dev/null || true
-  psql "$DATABASE_URL" -f prisma/migrations/warmup_v2_4_upgrade.sql 2>/dev/null || true
-  psql "$DATABASE_URL" -f prisma/migrations/warmup_v3_messageid.sql 2>/dev/null || true
-  psql "$DATABASE_URL" -f prisma/migrations/warmup_status_config.sql 2>/dev/null || true
-  psql "$DATABASE_URL" -f prisma/migrations/add_whatsapp_status.sql 2>/dev/null || true
-  psql "$DATABASE_URL" -f prisma/migrations/add_campaign_variants.sql 2>/dev/null || true
-  psql "$DATABASE_URL" -f prisma/migrations/add_chatbot_paused_until.sql 2>/dev/null || true
-  psql "$DATABASE_URL" -f prisma/migrations/add_company_profiles.sql 2>/dev/null || true
-  psql "$DATABASE_URL" -f prisma/migrations/add_continuous_mode.sql 2>/dev/null || true
-fi
+echo "[2/6] Aplicando sincronização do banco de dados (Prisma db push)..."
+npx prisma db push --skip-generate || true
 
 echo ""
 echo "[3/6] Regenerando cliente Prisma..."
