@@ -98,6 +98,7 @@ export default function CreateWarmupModal({ initialSourceInstance, onClose, onCr
     'Você é responsável por simular conversas extremamente humanas entre duas pessoas no WhatsApp.\n\nSiga exatamente as instruções abaixo para definir o comportamento da conversa.\n\nPERSONAS:\n[Descreva quem são os participantes.]\n\nOBJETIVO DA CONVERSA:\n[Explique qual é o contexto da conversa.]\n\nESTILO:\n- Natural e espontâneo.\n- Linguagem brasileira.\n- Mensagens variadas.\n- Uso moderado de gírias.\n- Emojis ocasionais.\n- Perguntas naturais.\n- Sem parecer uma IA.\n\nCOMPORTAMENTO:\n- Nem todas as mensagens precisam receber resposta imediata.\n- Alterne mensagens curtas e longas.\n- Inclua pausas naturais entre as conversas.\n- Evite repetir frases.\n- Os participantes podem enviar áudios, fotos, figurinhas e GIFs (descrevendo apenas como "[áudio]", "[foto]", "[figurinha]" ou "[GIF]").\n- Os assuntos devem evoluir naturalmente.\n- Nunca gere mensagens idênticas ou padronizadas.\n- Faça a conversa parecer uma troca real entre duas pessoas durante dias ou semanas.'
   );
   const [intensity, setIntensity] = useState<Intensity>('soft');
+  const [continuousMode, setContinuousMode] = useState(true);
   const [startHour, setStartHour] = useState(8);
   const [endHour, setEndHour] = useState(22);
   const [error, setError] = useState('');
@@ -239,6 +240,7 @@ export default function CreateWarmupModal({ initialSourceInstance, onClose, onCr
           enableStatus,
           statusFrequency,
           statusType,
+          continuousMode,
         }),
       });
 
@@ -758,6 +760,46 @@ export default function CreateWarmupModal({ initialSourceInstance, onClose, onCr
                   <span>🏆 Máximo: <strong style={{ color: '#fff' }}>{selectedConfig.max} msgs/dia</strong></span>
                   <span>⏰ Janela: <strong style={{ color: '#fff' }}>{startHour}h–{endHour}h (BRT)</strong></span>
                 </div>
+              </div>
+
+              {/* Modo Contínuo / Manutenção Perpétua */}
+              <div style={{
+                padding: '0.85rem 1rem',
+                background: continuousMode ? 'rgba(59, 130, 246, 0.08)' : 'rgba(255, 255, 255, 0.02)',
+                border: continuousMode ? '1px solid rgba(59, 130, 246, 0.25)' : '1px solid rgba(255, 255, 255, 0.06)',
+                borderRadius: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '1rem',
+              }}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '0.85rem', color: continuousMode ? '#60a5fa' : 'rgba(255,255,255,0.85)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span>🔁 Modo Contínuo (Manutenção Antiban)</span>
+                    <span style={{ fontSize: '0.62rem', background: '#3b82f622', color: '#60a5fa', border: '1px solid #3b82f644', padding: '1px 5px', borderRadius: '4px', fontWeight: 700 }}>Recomendado</span>
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.5)', marginTop: 3 }}>
+                    Ao fim dos {selectedConfig.days} dias, mantém conversas bilaterais diárias para blindar o chip contra bloqueios durante disparos frios.
+                  </div>
+                </div>
+                <label style={{ position: 'relative', display: 'inline-block', width: 44, height: 24, flexShrink: 0, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={continuousMode}
+                    onChange={e => setContinuousMode(e.target.checked)}
+                    style={{ opacity: 0, width: 0, height: 0 }}
+                  />
+                  <span style={{
+                    position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0,
+                    backgroundColor: continuousMode ? '#3b82f6' : 'rgba(255,255,255,0.1)',
+                    borderRadius: 24, transition: '0.3s'
+                  }}>
+                    <span style={{
+                      position: 'absolute', height: 18, width: 18, left: continuousMode ? 23 : 3, bottom: 3,
+                      backgroundColor: 'white', borderRadius: '50%', transition: '0.3s'
+                    }} />
+                  </span>
+                </label>
               </div>
 
               {error && (

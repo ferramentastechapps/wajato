@@ -27,6 +27,7 @@ interface Campaign {
   enableStatus: boolean;
   statusFrequency: number;
   statusType: string;
+  continuousMode?: boolean;
 }
 
 export default function EditWarmupModal({ campaignId, onClose, onUpdated }: Props) {
@@ -47,6 +48,7 @@ export default function EditWarmupModal({ campaignId, onClose, onUpdated }: Prop
   const [customContext, setCustomContext] = useState('');
   const [initialMsgsPerDay, setInitialMsgsPerDay] = useState(5);
   const [maxMsgsPerDay, setMaxMsgsPerDay] = useState(150);
+  const [continuousMode, setContinuousMode] = useState(true);
 
   useEffect(() => {
     // Fetch campaign details
@@ -69,6 +71,7 @@ export default function EditWarmupModal({ campaignId, onClose, onUpdated }: Prop
         setCustomContext(data.customContext || '');
         setInitialMsgsPerDay(data.initialMsgsPerDay);
         setMaxMsgsPerDay(data.maxMsgsPerDay);
+        setContinuousMode(data.continuousMode !== undefined ? data.continuousMode : true);
       })
       .catch((err) => {
         setError(err.message);
@@ -109,6 +112,7 @@ export default function EditWarmupModal({ campaignId, onClose, onUpdated }: Prop
           customContext: customContext.trim() || null,
           initialMsgsPerDay,
           maxMsgsPerDay,
+          continuousMode,
         }),
       });
 
@@ -319,6 +323,46 @@ export default function EditWarmupModal({ campaignId, onClose, onUpdated }: Prop
                 rows={3}
                 style={{ width: '100%', padding: '0.65rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '8px', color: '#fff', outline: 'none', resize: 'vertical', fontSize: '0.82rem', fontFamily: 'inherit' }}
               />
+            </div>
+
+            {/* Modo Contínuo / Manutenção */}
+            <div style={{
+              padding: '0.85rem 1rem',
+              background: continuousMode ? 'rgba(59, 130, 246, 0.08)' : 'rgba(255, 255, 255, 0.02)',
+              border: continuousMode ? '1px solid rgba(59, 130, 246, 0.25)' : '1px solid rgba(255, 255, 255, 0.06)',
+              borderRadius: '12px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '1rem',
+            }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: '0.85rem', color: continuousMode ? '#60a5fa' : 'rgba(255,255,255,0.85)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>🔁 Modo Contínuo (Manutenção Antiban)</span>
+                  <span style={{ fontSize: '0.62rem', background: '#3b82f622', color: '#60a5fa', border: '1px solid #3b82f644', padding: '1px 5px', borderRadius: '4px', fontWeight: 700 }}>Recomendado</span>
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.5)', marginTop: 3 }}>
+                  Após atingir o total de dias, mantém conversas bilaterais diárias para blindar o chip contra bloqueios durante disparos.
+                </div>
+              </div>
+              <label style={{ position: 'relative', display: 'inline-block', width: 44, height: 24, flexShrink: 0, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={continuousMode}
+                  onChange={e => setContinuousMode(e.target.checked)}
+                  style={{ opacity: 0, width: 0, height: 0 }}
+                />
+                <span style={{
+                  position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0,
+                  backgroundColor: continuousMode ? '#3b82f6' : 'rgba(255,255,255,0.1)',
+                  borderRadius: 24, transition: '0.3s'
+                }}>
+                  <span style={{
+                    position: 'absolute', height: 18, width: 18, left: continuousMode ? 23 : 3, bottom: 3,
+                    backgroundColor: 'white', borderRadius: '50%', transition: '0.3s'
+                  }} />
+                </span>
+              </label>
             </div>
 
             {error && (

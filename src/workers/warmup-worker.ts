@@ -216,22 +216,37 @@ export const warmupWorker = new Worker(
         console.log(`[Warmup Worker] Mudança de dia do calendário detectada para campanha ${campaignId}. Reiniciando contadores.`);
         
         const nextDay = campaign.currentDay + 1;
-        const nextTarget = getRampUpTarget(nextDay, campaign.initialMsgsPerDay, campaign.maxMsgsPerDay, weekend);
+        const isPastEnd = nextDay > campaign.totalDays;
+        
+        let newCurrentDay = nextDay;
+        let newStatus: 'RUNNING' | 'COMPLETED' = 'RUNNING';
+        let nextTarget = getRampUpTarget(nextDay, campaign.initialMsgsPerDay, campaign.maxMsgsPerDay, weekend);
+
+        if (isPastEnd) {
+          if (campaign.continuousMode) {
+            newCurrentDay = campaign.totalDays;
+            newStatus = 'RUNNING';
+            nextTarget = campaign.maxMsgsPerDay;
+          } else {
+            newCurrentDay = nextDay;
+            newStatus = 'COMPLETED';
+          }
+        }
         
         // Calcular heat score baseado em sucesso
         const totalLogs = await prisma.warmupLog.count({ where: { campaignId } });
         const successLogs = await prisma.warmupLog.count({ where: { campaignId, status: 'SENT' } });
         const successRate = totalLogs > 0 ? successLogs / totalLogs : 1;
-        const heatScore = calculateHeatScore(nextDay, campaign.totalDays, successRate);
+        const heatScore = calculateHeatScore(newCurrentDay, campaign.totalDays, successRate);
 
         campaign = await prisma.warmupCampaign.update({
           where: { id: campaignId },
           data: {
-            currentDay: nextDay,
+            currentDay: newCurrentDay,
             msgsSentToday: 0,
             targetMsgsToday: nextTarget,
             heatScore,
-            status: nextDay > campaign.totalDays ? 'COMPLETED' : 'RUNNING',
+            status: newStatus,
           },
         });
       }

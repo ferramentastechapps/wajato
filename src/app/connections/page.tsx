@@ -49,7 +49,7 @@ interface Instance {
   profilePicUrl: string | null;
   warmupProgress: number;
   heatScore: number;
-  activeWarmupType: 'SINGLE' | 'POOL' | 'NONE';
+  activeWarmupType: 'SINGLE' | 'POOL' | 'WARMED' | 'NONE';
   warmupCampaignId: string | null;
   warmupPoolId: string | null;
   proxy: string | null;
@@ -953,15 +953,19 @@ export default function ConnectionsPage() {
                       <div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.68rem', marginBottom: 3 }}>
                           <span style={{ color: 'rgba(255,255,255,0.4)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <Flame size={11} color="#f59e0b" /> Aquecimento
+                            <Flame size={11} color={inst.activeWarmupType === 'WARMED' ? '#10b981' : '#f59e0b'} /> Aquecimento
                           </span>
-                          <strong style={{ color: '#f59e0b' }}>{inst.warmupProgress}%</strong>
+                          <strong style={{ color: inst.activeWarmupType === 'WARMED' ? '#10b981' : '#f59e0b' }}>
+                            {inst.activeWarmupType === 'WARMED' && inst.warmupProgress === 0 ? 100 : inst.warmupProgress}%
+                          </strong>
                         </div>
                         <div style={{ height: 4, background: 'rgba(255,255,255,0.08)', borderRadius: 2 }}>
                           <div style={{
                             height: '100%',
-                            width: `${inst.warmupProgress}%`,
-                            background: 'linear-gradient(90deg, #f59e0b, #ef4444)',
+                            width: `${inst.activeWarmupType === 'WARMED' && inst.warmupProgress === 0 ? 100 : inst.warmupProgress}%`,
+                            background: inst.activeWarmupType === 'WARMED' || inst.warmupProgress >= 100
+                              ? 'linear-gradient(90deg, #10b981, #059669)'
+                              : 'linear-gradient(90deg, #f59e0b, #ef4444)',
                             borderRadius: 2,
                             transition: 'width 0.6s ease',
                           }} />
@@ -1092,18 +1096,44 @@ export default function ConnectionsPage() {
                         {/* Warmup */}
                         <div style={{
                           padding: '0.4rem 0.6rem',
-                          background: inst.activeWarmupType !== 'NONE' ? 'rgba(245,158,11,0.06)' : 'rgba(100,116,139,0.06)',
+                          background: inst.activeWarmupType === 'WARMED'
+                            ? 'rgba(16,185,129,0.06)'
+                            : inst.activeWarmupType !== 'NONE'
+                            ? 'rgba(245,158,11,0.06)'
+                            : 'rgba(100,116,139,0.06)',
                           borderRadius: '6px',
-                          border: `1px solid ${inst.activeWarmupType !== 'NONE' ? 'rgba(245,158,11,0.12)' : 'rgba(100,116,139,0.12)'}`,
+                          border: `1px solid ${
+                            inst.activeWarmupType === 'WARMED'
+                              ? 'rgba(16,185,129,0.15)'
+                              : inst.activeWarmupType !== 'NONE'
+                              ? 'rgba(245,158,11,0.12)'
+                              : 'rgba(100,116,139,0.12)'
+                          }`,
                           fontSize: '0.65rem',
                         }}>
                           <div style={{
-                            color: inst.activeWarmupType !== 'NONE' ? '#f59e0b' : '#64748b',
+                            color: inst.activeWarmupType === 'WARMED'
+                              ? '#10b981'
+                              : inst.activeWarmupType !== 'NONE'
+                              ? '#f59e0b'
+                              : '#64748b',
                             fontWeight: 700,
                             display: 'flex', alignItems: 'center', gap: '3px',
                           }}>
-                            {inst.activeWarmupType !== 'NONE' ? <Flame size={10} /> : <Snowflake size={10} />}
-                            {inst.activeWarmupType === 'SINGLE' ? '🔥 Aquecendo' : inst.activeWarmupType === 'POOL' ? '👥 Pool Ativo' : '🧊 Chip Frio'}
+                            {inst.activeWarmupType === 'WARMED' ? (
+                              <Flame size={10} color="#10b981" />
+                            ) : inst.activeWarmupType !== 'NONE' ? (
+                              <Flame size={10} />
+                            ) : (
+                              <Snowflake size={10} />
+                            )}
+                            {inst.activeWarmupType === 'WARMED'
+                              ? '🔥 Aquecido (Pronto)'
+                              : inst.activeWarmupType === 'SINGLE'
+                              ? '🔥 Aquecendo'
+                              : inst.activeWarmupType === 'POOL'
+                              ? '👥 Pool Ativo'
+                              : '🧊 Chip Frio'}
                           </div>
                         </div>
 

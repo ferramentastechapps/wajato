@@ -46,6 +46,7 @@ export default function CreateWarmupPoolModal({ onClose, onCreated }: Props) {
   const [name, setName] = useState('');
   const [selectedInstances, setSelectedInstances] = useState<string[]>([]);
   const [intensity, setIntensity] = useState<Intensity>('soft');
+  const [continuousMode, setContinuousMode] = useState(true);
   const [startHour, setStartHour] = useState(8);
   const [endHour, setEndHour] = useState(22);
   const [error, setError] = useState('');
@@ -103,6 +104,7 @@ export default function CreateWarmupPoolModal({ onClose, onCreated }: Props) {
           totalDays: config.days,
           initialMsgsPerDay: config.initial,
           maxMsgsPerDay: config.max,
+          continuousMode,
           startHour,
           endHour,
         }),
@@ -354,6 +356,46 @@ export default function CreateWarmupPoolModal({ onClose, onCreated }: Props) {
                   <span>🏆 Máximo: <strong style={{ color: 'white' }}>{selectedConfig.max} msgs/dia</strong></span>
                   <span>⏰ Janela: <strong style={{ color: 'white' }}>{startHour}h–{endHour}h</strong></span>
                 </div>
+              </div>
+
+              {/* Modo Contínuo / Manutenção Perpétua */}
+              <div style={{
+                padding: '0.85rem 1rem',
+                background: continuousMode ? 'rgba(59, 130, 246, 0.08)' : 'rgba(255, 255, 255, 0.02)',
+                border: continuousMode ? '1px solid rgba(59, 130, 246, 0.25)' : '1px solid rgba(255, 255, 255, 0.06)',
+                borderRadius: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '1rem',
+              }}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '0.85rem', color: continuousMode ? '#60a5fa' : 'rgba(255,255,255,0.85)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span>🔁 Modo Contínuo (Manutenção Antiban)</span>
+                    <span style={{ fontSize: '0.62rem', background: '#3b82f622', color: '#60a5fa', border: '1px solid #3b82f644', padding: '1px 5px', borderRadius: '4px', fontWeight: 700 }}>Recomendado</span>
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.5)', marginTop: 3 }}>
+                    Ao fim dos {selectedConfig.days} dias, o grupo continuará trocando mensagens diárias para manter os chips aquecidos.
+                  </div>
+                </div>
+                <label style={{ position: 'relative', display: 'inline-block', width: 44, height: 24, flexShrink: 0, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={continuousMode}
+                    onChange={e => setContinuousMode(e.target.checked)}
+                    style={{ opacity: 0, width: 0, height: 0 }}
+                  />
+                  <span style={{
+                    position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0,
+                    backgroundColor: continuousMode ? '#3b82f6' : 'rgba(255,255,255,0.1)',
+                    borderRadius: 24, transition: '0.3s'
+                  }}>
+                    <span style={{
+                      position: 'absolute', height: 18, width: 18, left: continuousMode ? 23 : 3, bottom: 3,
+                      backgroundColor: 'white', borderRadius: '50%', transition: '0.3s'
+                    }} />
+                  </span>
+                </label>
               </div>
 
               {error && (

@@ -36,6 +36,7 @@ else
   psql "$DATABASE_URL" -f prisma/migrations/add_campaign_variants.sql 2>/dev/null || true
   psql "$DATABASE_URL" -f prisma/migrations/add_chatbot_paused_until.sql 2>/dev/null || true
   psql "$DATABASE_URL" -f prisma/migrations/add_company_profiles.sql 2>/dev/null || true
+  psql "$DATABASE_URL" -f prisma/migrations/add_continuous_mode.sql 2>/dev/null || true
 fi
 
 echo ""

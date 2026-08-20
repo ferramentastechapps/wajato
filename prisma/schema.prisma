@@ -172,6 +172,7 @@ model WarmupCampaign {
   customContext    String?      // Contexto ou Persona customizada de IA
   isGroup          Boolean      @default(false) // Se o aquecimento é para um grupo
   status           WarmupStatus @default(RUNNING)
+  continuousMode   Boolean      @default(true)  // Modo contínuo / manutenção perpétua pós-maturação
   currentDay       Int          @default(1)
   totalDays        Int          @default(30)
   msgsSentToday    Int          @default(0)
@@ -219,6 +220,7 @@ model WarmupPool {
   id                String            @id @default(uuid())
   name              String
   status            WarmupStatus      @default(RUNNING)
+  continuousMode    Boolean           @default(true)  // Modo contínuo / manutenção perpétua pós-maturação
   instanceNames     String[]          @default([])
   currentDay        Int               @default(1)
   totalDays         Int               @default(30)

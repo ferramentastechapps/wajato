@@ -30,15 +30,24 @@ export async function GET(_req: Request, { params }: Params) {
   }
 }
 
-// PATCH /api/warmup/[id] — Pausar, retomar, ou encerrar campanha
+// PATCH /api/warmup/[id] — Pausar, retomar, reativar em modo contínuo, ou encerrar campanha
 export async function PATCH(req: Request, { params }: Params) {
   try {
     const { id } = await params;
-    const { action } = await req.json(); // 'pause' | 'resume' | 'stop'
+    const body = await req.json();
+    const { action, continuousMode } = body; // 'pause' | 'resume' | 'stop'
 
     const campaign = await prisma.warmupCampaign.findUnique({ where: { id } });
     if (!campaign) {
       return NextResponse.json({ error: 'Campanha não encontrada' }, { status: 404 });
+    }
+
+    if (continuousMode !== undefined && !action) {
+      const updated = await prisma.warmupCampaign.update({
+        where: { id },
+        data: { continuousMode: Boolean(continuousMode) },
+      });
+      return NextResponse.json({ success: true, message: 'Modo contínuo atualizado.', campaign: updated });
     }
 
     if (action === 'pause') {
@@ -55,25 +64,43 @@ export async function PATCH(req: Request, { params }: Params) {
     }
 
     if (action === 'resume') {
-      if (campaign.status !== 'PAUSED') {
-        return NextResponse.json({ error: 'Campanha não está pausada' }, { status: 400 });
+      if (campaign.status !== 'PAUSED' && campaign.status !== 'COMPLETED' && campaign.status !== 'STOPPED') {
+        return NextResponse.json({ error: 'Campanha já está em execução' }, { status: 400 });
       }
+
+      const isReactivating = campaign.status === 'COMPLETED' || campaign.currentDay >= campaign.totalDays;
+
       // Retoma e agenda o próximo job
-      await prisma.warmupCampaign.update({
+      const updated = await prisma.warmupCampaign.update({
         where: { id },
-        data: { status: 'RUNNING', restPeriodUntil: null },
+        data: {
+          status: 'RUNNING',
+          continuousMode: isReactivating ? true : (continuousMode !== undefined ? Boolean(continuousMode) : campaign.continuousMode),
+          restPeriodUntil: null,
+          currentDay: isReactivating ? campaign.totalDays : campaign.currentDay,
+          msgsSentToday: isReactivating ? 0 : campaign.msgsSentToday,
+          targetMsgsToday: isReactivating ? campaign.maxMsgsPerDay : campaign.targetMsgsToday,
+          heatScore: isReactivating ? 100 : campaign.heatScore,
+        },
       });
+
+      await cancelCampaignWarmupJobs(id);
       await queueWarmupMessage(
         {
           campaignId: id,
-          sourceInstance: campaign.sourceInstance,
-          targetPhone: campaign.targetPhone,
-          isFirstMessageOfDay: false,
+          sourceInstance: updated.sourceInstance,
+          targetPhone: updated.targetPhone,
+          isFirstMessageOfDay: isReactivating,
         },
-        30000,
-        15000
+        15000,
+        10000
       );
-      return NextResponse.json({ success: true, message: 'Campanha retomada.' });
+      return NextResponse.json({
+        success: true,
+        message: isReactivating
+          ? 'Campanha reativada em Modo Contínuo com sucesso!'
+          : 'Campanha retomada.',
+      });
     }
 
     if (action === 'stop') {
@@ -140,6 +167,7 @@ export async function PUT(req: Request, { params }: Params) {
       enableStatus,
       statusFrequency,
       statusType,
+      continuousMode,
     } = body;
 
     if (startHour !== undefined && endHour !== undefined) {
@@ -167,6 +195,7 @@ export async function PUT(req: Request, { params }: Params) {
         enableStatus: enableStatus !== undefined ? Boolean(enableStatus) : campaign.enableStatus,
         statusFrequency: statusFrequency !== undefined ? Number(statusFrequency) : campaign.statusFrequency,
         statusType: statusType !== undefined ? statusType : campaign.statusType,
+        continuousMode: continuousMode !== undefined ? Boolean(continuousMode) : campaign.continuousMode,
       },
     });
 

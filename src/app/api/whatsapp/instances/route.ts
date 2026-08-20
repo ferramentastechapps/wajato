@@ -88,37 +88,93 @@ export async function GET() {
         // 4. Calcular o Grau de Aquecimento (%) e saúde da instância
         let warmupProgress = 0;
         let heatScore = 0;
-        let activeWarmupType: 'SINGLE' | 'POOL' | 'NONE' = 'NONE';
+        let activeWarmupType: 'SINGLE' | 'POOL' | 'WARMED' | 'NONE' = 'NONE';
         let warmupCampaignId: string | null = null;
         let warmupPoolId: string | null = null;
 
-        // Busca se tem alguma campanha individual rodando
+        // 4.1 Busca se tem alguma campanha individual rodando ou pausada (como origem ou destino)
         const campaign = await prisma.warmupCampaign.findFirst({
           where: {
-            sourceInstance: dbInst.name,
+            OR: [
+              { sourceInstance: dbInst.name },
+              { targetInstance: dbInst.name },
+            ],
             status: { in: ['RUNNING', 'PAUSED'] },
           },
+          orderBy: { updatedAt: 'desc' },
         });
 
         if (campaign) {
-          warmupProgress = Math.min(100, Math.round((campaign.currentDay / campaign.totalDays) * 100));
+          warmupProgress = Math.min(100, Math.round((Math.min(campaign.currentDay, campaign.totalDays) / campaign.totalDays) * 100));
           heatScore = campaign.heatScore;
           activeWarmupType = 'SINGLE';
           warmupCampaignId = campaign.id;
         } else {
-          // Se não encontrou campanha individual, busca se está em algum pool
+          // 4.2 Se não encontrou campanha individual ativa, busca se está em algum pool ativo
           const pool = await prisma.warmupPool.findFirst({
             where: {
               instanceNames: { has: dbInst.name },
               status: { in: ['RUNNING', 'PAUSED'] },
             },
+            orderBy: { updatedAt: 'desc' },
           });
 
           if (pool) {
-            warmupProgress = Math.min(100, Math.round((pool.currentDay / pool.totalDays) * 100));
+            warmupProgress = Math.min(100, Math.round((Math.min(pool.currentDay, pool.totalDays) / pool.totalDays) * 100));
             heatScore = pool.heatScore;
             activeWarmupType = 'POOL';
             warmupPoolId = pool.id;
+          } else {
+            // 4.3 Busca campanhas ou pools completados para esta instância (Chip já aquecido)
+            const completedCampaign = await prisma.warmupCampaign.findFirst({
+              where: {
+                OR: [
+                  { sourceInstance: dbInst.name },
+                  { targetInstance: dbInst.name },
+                ],
+                status: 'COMPLETED',
+              },
+              orderBy: { updatedAt: 'desc' },
+            });
+
+            const completedPool = await prisma.warmupPool.findFirst({
+              where: {
+                instanceNames: { has: dbInst.name },
+                status: 'COMPLETED',
+              },
+              orderBy: { updatedAt: 'desc' },
+            });
+
+            if (completedCampaign || completedPool) {
+              const bestScore = Math.max(
+                completedCampaign?.heatScore ?? 0,
+                completedPool?.heatScore ?? 0,
+                100
+              );
+              heatScore = bestScore;
+              warmupProgress = 100;
+              activeWarmupType = 'WARMED';
+              warmupCampaignId = completedCampaign?.id || null;
+              warmupPoolId = completedPool?.id || null;
+            } else {
+              // 4.4 Busca histórico de qualquer campanha/pool que deixou histórico de heatScore
+              const pastCampaign = await prisma.warmupCampaign.findFirst({
+                where: {
+                  OR: [
+                    { sourceInstance: dbInst.name },
+                    { targetInstance: dbInst.name },
+                  ],
+                },
+                orderBy: { updatedAt: 'desc' },
+              });
+
+              if (pastCampaign && pastCampaign.heatScore > 0) {
+                heatScore = pastCampaign.heatScore;
+                warmupProgress = Math.min(100, Math.round((Math.min(pastCampaign.currentDay, pastCampaign.totalDays) / pastCampaign.totalDays) * 100));
+                activeWarmupType = pastCampaign.heatScore >= 80 ? 'WARMED' : 'NONE';
+                warmupCampaignId = pastCampaign.id;
+              }
+            }
           }
         }
 
@@ -149,13 +205,13 @@ export async function GET() {
 
         // 8. Calcular Score de Proteção (0-100)
         const hasProxy = !!dbInst.proxy;
-        const isWarming = activeWarmupType !== 'NONE';
+        const isWarmedOrWarming = activeWarmupType !== 'NONE' || heatScore >= 70;
         const isBlockedByUnreplied = dbInst.unrepliedBlockEnabled && dbInst.unrepliedMsgCount >= dbInst.maxUnrepliedLimit;
 
         let protectionScore = (
           (hasProxy ? 30 : 0) +
           (healthScore >= 70 ? 30 : healthScore >= 40 ? 15 : 0) +
-          (isWarming ? 20 : 0) +
+          (isWarmedOrWarming ? 20 : 0) +
           (dailyMsgCount < 160 ? 20 : dailyMsgCount < 200 ? 10 : 0)
         );
 
@@ -187,7 +243,7 @@ export async function GET() {
           if (hourlyMsgCount > 48) {
             alerts.push({ message: `${hourlyMsgCount}/60 msgs/h — perto do limite horário`, severity: 'MEDIUM' });
           }
-          if (!isWarming) {
+          if (activeWarmupType === 'NONE' && heatScore < 50) {
             alerts.push({ message: 'Chip frio — aqueça antes de usar para campanhas', severity: 'LOW' });
           }
         }

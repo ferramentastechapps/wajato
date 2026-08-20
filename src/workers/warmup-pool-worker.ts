@@ -111,22 +111,37 @@ export const warmupPoolWorker = new Worker(
         console.log(`[Warmup Pool Worker] Mudança de dia do calendário detectada para pool ${poolId}. Reiniciando contadores.`);
         
         const nextDay = pool.currentDay + 1;
-        const nextTarget = getRampUpTarget(nextDay, pool.initialMsgsPerDay, pool.maxMsgsPerDay, isWeekend());
+        const isPastEnd = nextDay > pool.totalDays;
+        
+        let newCurrentDay = nextDay;
+        let newStatus: 'RUNNING' | 'COMPLETED' = 'RUNNING';
+        let nextTarget = getRampUpTarget(nextDay, pool.initialMsgsPerDay, pool.maxMsgsPerDay, isWeekend());
+
+        if (isPastEnd) {
+          if (pool.continuousMode) {
+            newCurrentDay = pool.totalDays;
+            newStatus = 'RUNNING';
+            nextTarget = pool.maxMsgsPerDay;
+          } else {
+            newCurrentDay = nextDay;
+            newStatus = 'COMPLETED';
+          }
+        }
         
         // Calcular heat score baseado em sucesso
         const totalLogs = await prisma.warmupPoolLog.count({ where: { poolId } });
         const successLogs = await prisma.warmupPoolLog.count({ where: { poolId, status: 'SENT' } });
         const successRate = totalLogs > 0 ? successLogs / totalLogs : 1;
-        const heatScore = calculateHeatScore(nextDay, pool.totalDays, successRate);
+        const heatScore = calculateHeatScore(newCurrentDay, pool.totalDays, successRate);
 
         pool = await prisma.warmupPool.update({
           where: { id: poolId },
           data: {
-            currentDay: nextDay,
+            currentDay: newCurrentDay,
             msgsSentToday: 0,
             targetMsgsToday: nextTarget,
             heatScore,
-            status: nextDay > pool.totalDays ? 'COMPLETED' : 'RUNNING',
+            status: newStatus,
           },
         });
       }

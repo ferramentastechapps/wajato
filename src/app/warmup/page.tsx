@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useMemo } from 'react';
 import AppLayout from '@/components/layout/AppLayout';
-import { Flame, Plus, MessageSquare, Pause, Play, TrendingUp, Clock, Activity, Users, HeartPulse, ChevronDown, ChevronRight, Smartphone, Edit, AlertTriangle } from 'lucide-react';
+import { Flame, Plus, MessageSquare, Pause, Play, TrendingUp, Clock, Activity, Users, HeartPulse, ChevronDown, ChevronRight, Smartphone, Edit, AlertTriangle, RotateCw } from 'lucide-react';
 import CreateWarmupModal from '@/components/warmup/CreateWarmupModal';
 import CreateWarmupPoolModal from '@/components/warmup/CreateWarmupPoolModal';
 import EditWarmupModal from '@/components/warmup/EditWarmupModal';
@@ -19,6 +19,7 @@ interface Campaign {
   targetInstance?: string;
   targetPhone: string;
   status: 'RUNNING' | 'PAUSED' | 'STOPPED' | 'COMPLETED';
+  continuousMode?: boolean;
   currentDay: number;
   totalDays: number;
   msgsSentToday: number;
@@ -44,6 +45,7 @@ interface Pool {
   name: string;
   instanceNames: string[];
   status: 'RUNNING' | 'PAUSED' | 'STOPPED' | 'COMPLETED';
+  continuousMode?: boolean;
   currentDay: number;
   totalDays: number;
   msgsSentToday: number;
@@ -582,6 +584,26 @@ export default function WarmupPage() {
                                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                   {camp.name || camp.targetPhone}
                                 </span>
+                                {camp.continuousMode && (
+                                  <span
+                                    style={{
+                                      fontSize: '0.62rem',
+                                      background: 'rgba(59, 130, 246, 0.12)',
+                                      color: '#60a5fa',
+                                      padding: '1px 5px',
+                                      borderRadius: '4px',
+                                      border: '1px solid rgba(59, 130, 246, 0.25)',
+                                      fontWeight: 700,
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '2px',
+                                      flexShrink: 0,
+                                    }}
+                                    title="Modo Contínuo Ativo: Mantém trocas bilaterais diárias mesmo após maturação"
+                                  >
+                                    <RotateCw size={9} /> Contínuo
+                                  </span>
+                                )}
                                 {camp.stats?.consecutiveFailures !== undefined && camp.stats.consecutiveFailures >= 3 && (
                                   <span 
                                     style={{
@@ -614,7 +636,7 @@ export default function WarmupPage() {
                             {/* Progress bars column */}
                             <div style={{ width: 120, flexShrink: 0 }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: 'rgba(255,255,255,0.4)', marginBottom: 2 }}>
-                                <span>Dia {camp.currentDay}/{camp.totalDays}</span>
+                                <span>Dia {Math.min(camp.currentDay, camp.totalDays)}/{camp.totalDays}</span>
                                 <span style={{ color: camp.msgsSentToday >= camp.targetMsgsToday ? '#10b981' : 'rgba(255,255,255,0.6)', fontWeight: 600 }}>
                                   {camp.msgsSentToday}/{camp.targetMsgsToday} msgs
                                 </span>
@@ -674,6 +696,27 @@ export default function WarmupPage() {
                                   title="Retomar"
                                 >
                                   {isLoading ? '…' : <Play size={13} />}
+                                </button>
+                              )}
+
+                              {camp.status === 'COMPLETED' && (
+                                <button
+                                  className="btn btn-primary"
+                                  style={{
+                                    padding: '0.3rem 0.6rem',
+                                    fontSize: '0.72rem',
+                                    background: 'linear-gradient(135deg, #3b82f6, #06b6d4)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    border: 'none',
+                                  }}
+                                  onClick={() => handleQuickAction(camp.id, 'resume')}
+                                  disabled={isLoading}
+                                  title="Continuar Aquecendo em Modo Manutenção Perpétua"
+                                >
+                                  {isLoading ? '…' : <RotateCw size={11} />}
+                                  <span>Continuar</span>
                                 </button>
                               )}
 
@@ -754,6 +797,25 @@ export default function WarmupPage() {
                         <span style={{ fontSize: '0.7rem', fontWeight: 700, color: statusCfg.color, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                           {statusCfg.label}
                         </span>
+                        {pool.continuousMode && (
+                          <span
+                            style={{
+                              fontSize: '0.62rem',
+                              background: 'rgba(59, 130, 246, 0.12)',
+                              color: '#60a5fa',
+                              padding: '1px 5px',
+                              borderRadius: '4px',
+                              border: '1px solid rgba(59, 130, 246, 0.25)',
+                              fontWeight: 700,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '2px',
+                            }}
+                            title="Modo Contínuo Ativo"
+                          >
+                            <RotateCw size={9} /> Contínuo
+                          </span>
+                        )}
                       </div>
                       <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'white', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {pool.name}
@@ -770,7 +832,7 @@ export default function WarmupPage() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.3rem' }}>
                       <span style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.5)' }}>Progresso do grupo</span>
                       <span style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.7)', fontWeight: 600 }}>
-                        Dia {pool.currentDay} / {pool.totalDays}
+                        Dia {Math.min(pool.currentDay, pool.totalDays)} / {pool.totalDays}
                       </span>
                     </div>
                     <div style={{ height: 5, background: 'rgba(255,255,255,0.08)', borderRadius: 3, marginBottom: '0.75rem' }}>
@@ -868,6 +930,27 @@ export default function WarmupPage() {
                         disabled={isLoading}
                       >
                         {isLoading ? '...' : <Play size={14} />}
+                      </button>
+                    )}
+
+                    {pool.status === 'COMPLETED' && (
+                      <button
+                        className="btn btn-primary"
+                        style={{
+                          padding: '0.4rem 0.75rem',
+                          fontSize: '0.78rem',
+                          background: 'linear-gradient(135deg, #3b82f6, #06b6d4)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          border: 'none',
+                        }}
+                        onClick={() => handlePoolQuickAction(pool.id, 'resume')}
+                        disabled={isLoading}
+                        title="Continuar Aquecendo Grupo em Modo Contínuo"
+                      >
+                        {isLoading ? '...' : <RotateCw size={12} />}
+                        <span>Continuar</span>
                       </button>
                     )}
 

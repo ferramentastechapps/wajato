@@ -87,6 +87,7 @@ export async function POST(req: Request) {
       endHour = 22,
       initialMsgsPerDay = 5,
       maxMsgsPerDay = 150,
+      continuousMode = true,
     } = body;
 
     if (!name || !instanceNames || !Array.isArray(instanceNames) || instanceNames.length < 2) {
@@ -114,6 +115,7 @@ export async function POST(req: Request) {
       data: {
         name,
         instanceNames,
+        continuousMode: Boolean(continuousMode),
         totalDays,
         targetMsgsToday: targetMsgs,
         initialMsgsPerDay,

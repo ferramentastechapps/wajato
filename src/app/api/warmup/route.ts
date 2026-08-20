@@ -104,6 +104,7 @@ export async function POST(req: Request) {
       targetPhones,
       customContext,
       isGroup = false,
+      continuousMode = true,
       totalDays = 30,
       startHour = 8,
       endHour = 22,
@@ -183,6 +184,7 @@ export async function POST(req: Request) {
           targetPhones: phone, // Apenas este telefone para esta campanha
           customContext: customContext || null,
           isGroup: campaignIsGroup,
+          continuousMode: Boolean(continuousMode),
           totalDays,
           targetMsgsToday: perContactTargets[idx],
           initialMsgsPerDay: perContactInitial[idx],

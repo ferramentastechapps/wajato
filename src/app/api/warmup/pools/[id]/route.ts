@@ -31,11 +31,20 @@ export async function GET(_req: Request, { params }: Params) {
 export async function PATCH(req: Request, { params }: Params) {
   try {
     const { id } = await params;
-    const { action } = await req.json(); // 'pause' | 'resume' | 'stop'
+    const body = await req.json();
+    const { action, continuousMode } = body; // 'pause' | 'resume' | 'stop'
 
     const pool = await prisma.warmupPool.findUnique({ where: { id } });
     if (!pool) {
       return NextResponse.json({ error: 'Pool não encontrado' }, { status: 404 });
+    }
+
+    if (continuousMode !== undefined && !action) {
+      const updated = await prisma.warmupPool.update({
+        where: { id },
+        data: { continuousMode: Boolean(continuousMode) },
+      });
+      return NextResponse.json({ success: true, message: 'Modo contínuo atualizado.', pool: updated });
     }
 
     if (action === 'pause') {
@@ -51,22 +60,40 @@ export async function PATCH(req: Request, { params }: Params) {
     }
 
     if (action === 'resume') {
-      if (pool.status !== 'PAUSED') {
-        return NextResponse.json({ error: 'Pool não está pausado' }, { status: 400 });
+      if (pool.status !== 'PAUSED' && pool.status !== 'COMPLETED' && pool.status !== 'STOPPED') {
+        return NextResponse.json({ error: 'Pool já está ativo' }, { status: 400 });
       }
+
+      const isReactivating = pool.status === 'COMPLETED' || pool.currentDay >= pool.totalDays;
+
       await prisma.warmupPool.update({
         where: { id },
-        data: { status: 'RUNNING', restPeriodUntil: null },
+        data: {
+          status: 'RUNNING',
+          continuousMode: isReactivating ? true : (continuousMode !== undefined ? Boolean(continuousMode) : pool.continuousMode),
+          restPeriodUntil: null,
+          currentDay: isReactivating ? pool.totalDays : pool.currentDay,
+          msgsSentToday: isReactivating ? 0 : pool.msgsSentToday,
+          targetMsgsToday: isReactivating ? pool.maxMsgsPerDay : pool.targetMsgsToday,
+          heatScore: isReactivating ? 100 : pool.heatScore,
+        },
       });
+
+      await cancelWarmupPoolJobs(id);
       await queuePoolMessage(
         {
           poolId: id,
-          isFirstMessageOfDay: false,
+          isFirstMessageOfDay: isReactivating,
         },
-        30000,
-        15000
+        15000,
+        10000
       );
-      return NextResponse.json({ success: true, message: 'Pool retomado.' });
+      return NextResponse.json({
+        success: true,
+        message: isReactivating
+          ? 'Pool reativado em Modo Contínuo com sucesso!'
+          : 'Pool retomado.',
+      });
     }
 
     if (action === 'stop') {

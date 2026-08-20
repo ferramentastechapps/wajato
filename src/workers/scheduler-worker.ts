@@ -210,14 +210,30 @@ async function healStuckWarmupCampaigns() {
         if (campaign.msgsSentToday >= campaign.targetMsgsToday) {
           logger.info(`[Scheduler] 🌅 Reset de novo dia detectado para campanha ${campaign.name || campaign.id}. Atualizando contadores...`);
           const nextDay = campaign.currentDay + 1;
-          const nextTarget = getRampUpTarget(nextDay, campaign.initialMsgsPerDay, campaign.maxMsgsPerDay, isWeekend());
+          const isPastEnd = nextDay > campaign.totalDays;
+          
+          let newCurrentDay = nextDay;
+          let newStatus: 'RUNNING' | 'COMPLETED' = 'RUNNING';
+          let nextTarget = getRampUpTarget(nextDay, campaign.initialMsgsPerDay, campaign.maxMsgsPerDay, isWeekend());
+
+          if (isPastEnd) {
+            if (campaign.continuousMode) {
+              newCurrentDay = campaign.totalDays;
+              newStatus = 'RUNNING';
+              nextTarget = campaign.maxMsgsPerDay;
+            } else {
+              newCurrentDay = nextDay;
+              newStatus = 'COMPLETED';
+            }
+          }
+
           campaign = await prisma.warmupCampaign.update({
             where: { id: campaign.id },
             data: {
-              currentDay: nextDay,
+              currentDay: newCurrentDay,
               msgsSentToday: 0,
               targetMsgsToday: nextTarget,
-              status: nextDay > campaign.totalDays ? 'COMPLETED' : 'RUNNING',
+              status: newStatus,
             }
           });
         }
