@@ -44,6 +44,10 @@ import {
   shouldTakeRestPeriod,
   getRestPeriodDurationMs,
   isSameCalendarDayInBRT,
+  getCurrentShift,
+  getMsUntilNextShift,
+  allocateDailyQuota,
+  type DayShift,
 } from '../lib/warmup-schedule';
 import {
   acquireInstanceSlot,
@@ -239,6 +243,9 @@ export const warmupWorker = new Worker(
         const successRate = totalLogs > 0 ? successLogs / totalLogs : 1;
         const heatScore = calculateHeatScore(newCurrentDay, campaign.totalDays, successRate);
 
+        // Distribui a cota do novo dia entre os 3 turnos
+        const newQuota = allocateDailyQuota(nextTarget);
+
         campaign = await prisma.warmupCampaign.update({
           where: { id: campaignId },
           data: {
@@ -247,6 +254,12 @@ export const warmupWorker = new Worker(
             targetMsgsToday: nextTarget,
             heatScore,
             status: newStatus,
+            morningQuota: newQuota.morning,
+            afternoonQuota: newQuota.afternoon,
+            eveningQuota: newQuota.evening,
+            msgsMorningSent: 0,
+            msgsAfternoonSent: 0,
+            msgsEveningSent: 0,
           },
         });
       }
@@ -291,6 +304,37 @@ export const warmupWorker = new Worker(
         60 * 1000 // Jitter já calculado em getMsUntilTomorrowStart
       );
       return;
+    }
+
+    // ── 4.1 Verificar cota do turno atual ────────────────────────────────────
+    // Se as cotas foram alocadas (totalQuota > 0), verifica se o turno atual
+    // já atingiu sua subcota e pausa até o início do próximo turno.
+    const totalAllocated = campaign.morningQuota + campaign.afternoonQuota + campaign.eveningQuota;
+    if (totalAllocated > 0) {
+      const currentShift = getCurrentShift(campaign.startHour, campaign.endHour);
+      if (currentShift) {
+        const shiftSent: Record<DayShift, number> = {
+          morning:   campaign.msgsMorningSent,
+          afternoon: campaign.msgsAfternoonSent,
+          evening:   campaign.msgsEveningSent,
+        };
+        const shiftQuota: Record<DayShift, number> = {
+          morning:   campaign.morningQuota,
+          afternoon: campaign.afternoonQuota,
+          evening:   campaign.eveningQuota,
+        };
+
+        if (shiftSent[currentShift] >= shiftQuota[currentShift]) {
+          const msUntilNext = getMsUntilNextShift(currentShift, campaign.startHour, campaign.endHour);
+          console.log(`[Warmup Worker] Subcota do turno '${currentShift}' atingida (${shiftSent[currentShift]}/${shiftQuota[currentShift]}). Aguardando próximo turno em ${Math.round(msUntilNext / 60000)} min.`);
+          await queueWarmupMessage(
+            { campaignId, sourceInstance, targetPhone, isFirstMessageOfDay: true },
+            msUntilNext,
+            5 * 60 * 1000
+          );
+          return;
+        }
+      }
     }
 
     // ── 5. Verificar rate limit por instância ────────────────────────────────
@@ -707,11 +751,21 @@ Dia ${campaign.currentDay} de conversa. Assunto: ${topic}`;
         // Reporta sucesso para o ChipRouter atualizar health score
         await reportChipSuccess(sourceInstance);
         
+        // Incrementa o contador do turno atual junto com o total diário
+        const shiftNow = getCurrentShift(campaign.startHour, campaign.endHour);
+        const shiftField: Record<DayShift, 'msgsMorningSent' | 'msgsAfternoonSent' | 'msgsEveningSent'> = {
+          morning:   'msgsMorningSent',
+          afternoon: 'msgsAfternoonSent',
+          evening:   'msgsEveningSent',
+        };
+        const shiftIncrementField = shiftNow ? shiftField[shiftNow] : null;
+
         await prisma.warmupCampaign.update({
           where: { id: campaignId },
           data: {
             msgsSentToday: { increment: 1 },
             lastMessageAt: new Date(),
+            ...(shiftIncrementField ? { [shiftIncrementField]: { increment: 1 } } : {}),
           },
         });
 

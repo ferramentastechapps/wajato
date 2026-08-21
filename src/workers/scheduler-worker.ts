@@ -9,7 +9,7 @@ import { messageQueue } from '../lib/queue';
 import { resolveContactsForSegment } from '../lib/segment-resolver';
 import { logger } from '../lib/logger';
 import { runProxySelfHealer } from '../lib/proxy-healer';
-import { isSameCalendarDayInBRT, getRampUpTarget, isWeekend } from '../lib/warmup-schedule';
+import { isSameCalendarDayInBRT, getRampUpTarget, isWeekend, allocateDailyQuota, getCurrentShift } from '../lib/warmup-schedule';
 
 logger.info('Worker de agendamento de campanhas (Scheduler) iniciado.');
 
@@ -227,6 +227,8 @@ async function healStuckWarmupCampaigns() {
             }
           }
 
+          const newDayQuota = allocateDailyQuota(nextTarget);
+
           campaign = await prisma.warmupCampaign.update({
             where: { id: campaign.id },
             data: {
@@ -234,12 +236,40 @@ async function healStuckWarmupCampaigns() {
               msgsSentToday: 0,
               targetMsgsToday: nextTarget,
               status: newStatus,
+              morningQuota:      newDayQuota.morning,
+              afternoonQuota:    newDayQuota.afternoon,
+              eveningQuota:      newDayQuota.evening,
+              msgsMorningSent:   0,
+              msgsAfternoonSent: 0,
+              msgsEveningSent:   0,
             }
           });
         }
       }
 
       if (!activeCampaignIds.has(campaign.id) && campaign.msgsSentToday < campaign.targetMsgsToday) {
+        // Verifica se a subcota do turno atual já foi atingida antes de reativar
+        const totalAllocated = campaign.morningQuota + campaign.afternoonQuota + campaign.eveningQuota;
+        if (totalAllocated > 0) {
+          const shift = getCurrentShift(campaign.startHour, campaign.endHour);
+          if (shift) {
+            const sent: Record<string, number> = {
+              morning:   campaign.msgsMorningSent,
+              afternoon: campaign.msgsAfternoonSent,
+              evening:   campaign.msgsEveningSent,
+            };
+            const quota: Record<string, number> = {
+              morning:   campaign.morningQuota,
+              afternoon: campaign.afternoonQuota,
+              evening:   campaign.eveningQuota,
+            };
+            if (sent[shift] >= quota[shift]) {
+              logger.info(`[Scheduler] ⏳ Campanha ${campaign.name || campaign.id} travada mas subcota do turno '${shift}' já foi atingida. Aguardando próximo turno.`);
+              continue;
+            }
+          }
+        }
+
         logger.info(`[Scheduler] 🩹 Detectada campanha de aquecimento travada: ${campaign.name || campaign.id}. Recuperando...`);
         
         await queueWarmupMessage(

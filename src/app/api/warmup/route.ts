@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { queueWarmupMessage } from '@/lib/warmup-queue';
-import { getRampUpTarget, calculateHeatScore } from '@/lib/warmup-schedule';
+import { getRampUpTarget, calculateHeatScore, allocateDailyQuota } from '@/lib/warmup-schedule';
 
 export async function GET() {
   try {
@@ -113,6 +113,7 @@ export async function POST(req: Request) {
       enableStatus = false,
       statusFrequency = 2,
       statusType = 'text',
+      startDay = 1,
     } = body;
 
     const resolvedTargetPhones = targetPhones || targetPhone;
@@ -175,6 +176,10 @@ export async function POST(req: Request) {
         ? `${name || `Aquecimento ${sourceInstance}`} (${cleanPhoneLabel})`
         : (name || `Aquecimento ${sourceInstance}`);
 
+      const resolvedStartDay = Math.min(Math.max(1, startDay), totalDays);
+      const firstDayTarget = getRampUpTarget(resolvedStartDay, perContactInitial[idx], perContactMax[idx]);
+      const firstDayQuota = allocateDailyQuota(firstDayTarget);
+
       const campaign = await prisma.warmupCampaign.create({
         data: {
           name: campaignName,
@@ -186,7 +191,8 @@ export async function POST(req: Request) {
           isGroup: campaignIsGroup,
           continuousMode: Boolean(continuousMode),
           totalDays,
-          targetMsgsToday: perContactTargets[idx],
+          currentDay: resolvedStartDay,
+          targetMsgsToday: firstDayTarget,
           initialMsgsPerDay: perContactInitial[idx],
           maxMsgsPerDay: perContactMax[idx],
           startHour,
@@ -194,6 +200,9 @@ export async function POST(req: Request) {
           enableStatus,
           statusFrequency,
           statusType,
+          morningQuota:   firstDayQuota.morning,
+          afternoonQuota: firstDayQuota.afternoon,
+          eveningQuota:   firstDayQuota.evening,
         },
       });
 

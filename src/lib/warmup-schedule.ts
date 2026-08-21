@@ -180,3 +180,130 @@ export function getRestPeriodDurationMs(): number {
   const maxMinutes = 15;
   return (minMinutes + Math.floor(Math.random() * (maxMinutes - minMinutes + 1))) * 60 * 1000;
 }
+
+// ─── Sistema de Turnos Diários ───────────────────────────────────────────────
+// Divide o dia em 3 blocos: manhã, tarde e noite.
+// Cada bloco recebe uma fatia aleatória da cota diária para que as mensagens
+// sejam espalhadas organicamente ao longo do dia, como uma pessoa real faria.
+
+export type DayShift = 'morning' | 'afternoon' | 'evening';
+
+export interface ShiftWindow {
+  from: number; // hora BRT (inclusive)
+  to: number;   // hora BRT (exclusive)
+}
+
+export interface DailyShiftQuota {
+  morning: number;
+  afternoon: number;
+  evening: number;
+}
+
+/**
+ * Divide a janela do dia (startHour→endHour) em 3 turnos proporcionais.
+ * Se a janela for muito curta para 3 blocos reais, reduz para o que couber.
+ */
+export function getShiftWindows(startHour: number, endHour: number): Record<DayShift, ShiftWindow> {
+  const totalHours = endHour - startHour;
+  // Pontos de corte: ~28% e ~60% da janela, com jitter leve para não ser exato
+  const cut1 = startHour + Math.max(1, Math.round(totalHours * 0.28));
+  const cut2 = startHour + Math.max(cut1 - startHour + 1, Math.round(totalHours * 0.60));
+
+  return {
+    morning:   { from: startHour, to: Math.min(cut1, endHour) },
+    afternoon: { from: Math.min(cut1, endHour), to: Math.min(cut2, endHour) },
+    evening:   { from: Math.min(cut2, endHour), to: endHour },
+  };
+}
+
+/**
+ * Retorna o turno atual com base na hora BRT.
+ * Fora da janela comercial retorna null.
+ */
+export function getCurrentShift(startHour: number, endHour: number): DayShift | null {
+  const now = new Date();
+  const brazilOffset = -3 * 60;
+  const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+  const brazilMinutes = (utcMinutes + brazilOffset + 1440) % 1440;
+  const brazilHour = Math.floor(brazilMinutes / 60);
+
+  if (brazilHour < startHour || brazilHour >= endHour) return null;
+
+  const windows = getShiftWindows(startHour, endHour);
+
+  if (brazilHour >= windows.morning.from && brazilHour < windows.morning.to) return 'morning';
+  if (brazilHour >= windows.afternoon.from && brazilHour < windows.afternoon.to) return 'afternoon';
+  return 'evening';
+}
+
+/**
+ * Calcula o delay em ms até o início do próximo turno (ou da próxima janela).
+ * Retorna 0 se o próximo turno já começou (ou se ainda estamos dentro do atual).
+ */
+export function getMsUntilNextShift(
+  currentShift: DayShift,
+  startHour: number,
+  endHour: number
+): number {
+  const windows = getShiftWindows(startHour, endHour);
+
+  const shiftOrder: DayShift[] = ['morning', 'afternoon', 'evening'];
+  const currentIndex = shiftOrder.indexOf(currentShift);
+  const nextShift = shiftOrder[currentIndex + 1];
+
+  if (!nextShift) {
+    // Último turno do dia: aguarda amanhã
+    return getMsUntilTomorrowStart(startHour);
+  }
+
+  const nextShiftStartHour = windows[nextShift].from;
+
+  const now = new Date();
+  const brazilOffset = -3 * 60;
+  const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+  const brazilMinutes = (utcMinutes + brazilOffset + 1440) % 1440;
+  const brazilHour = Math.floor(brazilMinutes / 60);
+  const brazilMin = brazilMinutes % 60;
+
+  if (brazilHour >= nextShiftStartHour) return 0;
+
+  const minsUntil = (nextShiftStartHour - brazilHour) * 60 - brazilMin;
+  // Adiciona jitter de ±10 min para não parecer automático
+  const jitterMs = (Math.floor(Math.random() * 20) - 10) * 60 * 1000;
+  return Math.max(60000, minsUntil * 60 * 1000 + jitterMs);
+}
+
+/**
+ * Distribui aleatoriamente `total` mensagens entre os 3 turnos do dia.
+ * As proporções variam a cada dia (dentro de faixas) para simular comportamento humano variável.
+ * 
+ * Faixas:
+ *  - Manhã:   20–40% do total
+ *  - Tarde:   30–50% do total
+ *  - Noite:   15–35% do total
+ * 
+ * Garante que a soma seja exatamente `total` e que cada turno tenha no mínimo 1 msg.
+ */
+export function allocateDailyQuota(total: number): DailyShiftQuota {
+  if (total <= 2) {
+    // Para cotas mínimas, distribui 1 por turno até acabar
+    return { morning: Math.min(1, total), afternoon: Math.min(1, Math.max(0, total - 1)), evening: Math.max(0, total - 2) };
+  }
+
+  // Gera proporções aleatórias dentro das faixas
+  const morningPct  = 0.20 + Math.random() * 0.20; // 20%–40%
+  const afternoonPct = 0.30 + Math.random() * 0.20; // 30%–50%
+  // Noite = o que sobrar, mas garantimos pelo menos 15%
+  const eveningPct = Math.max(0.15, 1 - morningPct - afternoonPct);
+
+  // Normaliza para que a soma seja exatamente 1
+  const sumPct = morningPct + afternoonPct + eveningPct;
+  const m = Math.max(1, Math.round((morningPct / sumPct) * total));
+  const a = Math.max(1, Math.round((afternoonPct / sumPct) * total));
+  let e = Math.max(1, total - m - a);
+
+  // Ajuste fino para garantir soma == total
+  const diff = total - (m + a + e);
+  return { morning: m, afternoon: a, evening: e + diff };
+}
+

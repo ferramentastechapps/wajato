@@ -101,6 +101,7 @@ export default function CreateWarmupModal({ initialSourceInstance, onClose, onCr
   const [continuousMode, setContinuousMode] = useState(true);
   const [startHour, setStartHour] = useState(8);
   const [endHour, setEndHour] = useState(22);
+  const [startDay, setStartDay] = useState(1);
   const [error, setError] = useState('');
   const [groups, setGroups] = useState<{ id: string; subject: string }[]>([]);
   const [loadingGroups, setLoadingGroups] = useState(false);
@@ -237,6 +238,7 @@ export default function CreateWarmupModal({ initialSourceInstance, onClose, onCr
           maxMsgsPerDay: config.max,
           startHour,
           endHour,
+          startDay,
           enableStatus,
           statusFrequency,
           statusType,
@@ -743,6 +745,35 @@ export default function CreateWarmupModal({ initialSourceInstance, onClose, onCr
                 </div>
               </div>
 
+              {/* Dia Inicial */}
+              <div>
+                <label style={{ fontSize: '0.82rem', fontWeight: 700, color: 'rgba(255,255,255,0.85)', marginBottom: '0.6rem', display: 'flex', alignItems: 'center', gap: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  <TrendingUp size={14} /> Dia Inicial do Aquecimento
+                </label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <select
+                    className="form-input"
+                    value={startDay}
+                    onChange={e => setStartDay(Number(e.target.value))}
+                    style={{ flex: 1, padding: '0.65rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', color: '#fff', outline: 'none' }}
+                  >
+                    {Array.from({ length: selectedConfig.days }, (_, i) => i + 1).map(d => (
+                      <option key={d} value={d} style={{ background: '#0b0f19' }}>
+                        Dia {d}{d === 1 ? ' (padrão)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  {startDay > 1 && (
+                    <div style={{ fontSize: '0.72rem', color: '#f59e0b', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: '8px', padding: '0.45rem 0.75rem', whiteSpace: 'nowrap' }}>
+                      ⚠️ Iniciará já no dia {startDay}
+                    </div>
+                  )}
+                </div>
+                <small style={{ color: 'rgba(255,255,255,0.35)', fontSize: '0.7rem', marginTop: '0.3rem', display: 'block' }}>
+                  Use isto se a conversa deveria ter começado antes. O ramp-up será calculado a partir do dia escolhido.
+                </small>
+              </div>
+
               {/* Resumo */}
               <div style={{
                 padding: '0.85rem 1rem',
@@ -759,6 +790,7 @@ export default function CreateWarmupModal({ initialSourceInstance, onClose, onCr
                   <span>🚀 Início: <strong style={{ color: '#fff' }}>{selectedConfig.initial} msgs/dia</strong></span>
                   <span>🏆 Máximo: <strong style={{ color: '#fff' }}>{selectedConfig.max} msgs/dia</strong></span>
                   <span>⏰ Janela: <strong style={{ color: '#fff' }}>{startHour}h–{endHour}h (BRT)</strong></span>
+                  {startDay > 1 && <span style={{ color: '#f59e0b' }}>📌 Dia inicial: <strong style={{ color: '#f59e0b' }}>Dia {startDay}</strong></span>}
                 </div>
               </div>
 

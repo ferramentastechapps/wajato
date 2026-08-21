@@ -188,6 +188,13 @@ model WarmupCampaign {
   enableStatus     Boolean      @default(false)
   statusFrequency  Int          @default(2)
   statusType       String       @default("text") // "text", "image", "random"
+  // ── Controle de turnos diários (manhã / tarde / noite) ──────────────────
+  morningQuota     Int          @default(0)  // Cota de msgs alocada para o turno da manhã hoje
+  afternoonQuota   Int          @default(0)  // Cota de msgs alocada para o turno da tarde hoje
+  eveningQuota     Int          @default(0)  // Cota de msgs alocada para o turno da noite hoje
+  msgsMorningSent  Int          @default(0)  // Msgs enviadas no turno da manhã hoje
+  msgsAfternoonSent Int         @default(0)  // Msgs enviadas no turno da tarde hoje
+  msgsEveningSent  Int          @default(0)  // Msgs enviadas no turno da noite hoje
   logs             WarmupLog[]
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
