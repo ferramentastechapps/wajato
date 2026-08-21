@@ -589,36 +589,36 @@ export default function WarmupPage() {
                                 {camp.continuousMode && (
                                   <span
                                     style={{
-                                      fontSize: '0.62rem',
-                                      background: isMaturedContinuous ? 'rgba(16, 185, 129, 0.15)' : 'rgba(59, 130, 246, 0.12)',
+                                      fontSize: '0.65rem',
+                                      background: isMaturedContinuous ? 'rgba(16, 185, 129, 0.12)' : 'rgba(59, 130, 246, 0.12)',
                                       color: isMaturedContinuous ? '#34d399' : '#60a5fa',
-                                      padding: '1px 5px',
-                                      borderRadius: '4px',
-                                      border: isMaturedContinuous ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(59, 130, 246, 0.25)',
+                                      padding: '2px 6px',
+                                      borderRadius: '5px',
+                                      border: isMaturedContinuous ? '1px solid rgba(16, 185, 129, 0.25)' : '1px solid rgba(59, 130, 246, 0.25)',
                                       fontWeight: 700,
                                       display: 'inline-flex',
                                       alignItems: 'center',
-                                      gap: '2px',
+                                      gap: '3px',
                                       flexShrink: 0,
                                     }}
-                                    title={isMaturedContinuous ? "Maturado • Mantendo aquecido continuamente" : "Modo Contínuo Ativo: Mantém trocas bilaterais diárias mesmo após maturação"}
+                                    title={isMaturedContinuous ? "Chip maturado. Mantendo aquecido continuamente com cota de manutenção diária." : "Modo Contínuo Ativo: Mantém trocas bilaterais diárias mesmo após maturação."}
                                   >
-                                    <RotateCw size={9} /> {isMaturedContinuous ? 'Maturado (Contínuo)' : 'Contínuo'}
+                                    <RotateCw size={10} /> {isMaturedContinuous ? 'Maturado' : 'Contínuo'}
                                   </span>
                                 )}
                                 {camp.stats?.consecutiveFailures !== undefined && camp.stats.consecutiveFailures >= 3 && (
                                   <span 
                                     style={{
-                                      fontSize: '0.62rem',
+                                      fontSize: '0.65rem',
                                       background: 'rgba(239, 68, 68, 0.15)',
                                       color: '#f87171',
-                                      padding: '1px 5px',
-                                      borderRadius: '4px',
+                                      padding: '2px 6px',
+                                      borderRadius: '5px',
                                       border: '1px solid rgba(239, 68, 68, 0.3)',
                                       fontWeight: 600,
                                       display: 'inline-flex',
                                       alignItems: 'center',
-                                      gap: '2px',
+                                      gap: '3px',
                                       flexShrink: 0
                                     }}
                                     title="O aquecimento foi pausado automaticamente após 3 falhas consecutivas de envio. Verifique se o número possui WhatsApp e tente novamente."
@@ -629,48 +629,67 @@ export default function WarmupPage() {
                                 )}
                               </div>
                               {camp.stats?.lastMessage && (
-                                <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.35)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.4)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: '2px' }}>
                                   {TYPE_ICONS[camp.stats.lastMessage.type] || ''} {camp.stats.lastMessage.text}
                                 </div>
                               )}
                             </div>
 
-                            {/* Progress bars column */}
-                            <div style={{ width: 140, flexShrink: 0 }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: 'rgba(255,255,255,0.4)', marginBottom: 2 }}>
-                                {isMaturedContinuous ? (
-                                  <span style={{ color: '#34d399', fontWeight: 700 }} title="Chip maturado • Mantendo aquecido diariamente">
-                                    🛡️ Manter Aquecido
-                                  </span>
-                                ) : (
-                                  <span>Dia {Math.min(camp.currentDay, camp.totalDays)}/{camp.totalDays}</span>
-                                )}
-                                <span style={{ color: camp.msgsSentToday >= camp.targetMsgsToday ? '#10b981' : 'rgba(255,255,255,0.7)', fontWeight: 700 }}>
-                                  {camp.msgsSentToday}/{camp.targetMsgsToday} msgs
-                                </span>
-                              </div>
-                              <div style={{ height: 3, background: 'rgba(255,255,255,0.08)', borderRadius: 2, marginBottom: 3 }}>
-                                <div style={{ height: '100%', width: `${dayPct}%`, background: isMaturedContinuous ? '#10b981' : 'linear-gradient(90deg,#f59e0b,#ef4444)', borderRadius: 2 }} />
-                              </div>
-                              <div style={{ height: 3, background: 'rgba(255,255,255,0.08)', borderRadius: 2 }}>
-                                <div style={{ height: '100%', width: `${progressPct}%`, background: progressPct >= 100 ? '#10b981' : 'linear-gradient(90deg,#10b981,#34d399)', borderRadius: 2 }} />
-                              </div>
-                              {isMaturedContinuous && (
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 3, fontSize: '0.6rem' }}>
-                                  <span
-                                    style={{
-                                      color: '#38bdf8',
-                                      background: 'rgba(56,189,248,0.1)',
-                                      padding: '1px 5px',
-                                      borderRadius: 3,
-                                      border: '1px solid rgba(56,189,248,0.2)',
-                                      fontWeight: 600,
-                                    }}
-                                    title={`Capacidade segura do chip: 200 msgs/dia. ${camp.targetMsgsToday} para aquecimento + ${Math.max(0, 200 - camp.targetMsgsToday)} livres para disparos frios.`}
-                                  >
-                                    ❄️ +{Math.max(0, 200 - camp.targetMsgsToday)} frias
-                                  </span>
-                                  <span style={{ color: 'rgba(255,255,255,0.35)' }}>200 máx</span>
+                            {/* Progress & Capacity Column */}
+                            <div style={{ width: 175, flexShrink: 0 }}>
+                              {isMaturedContinuous ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <span style={{ fontSize: '0.72rem', color: camp.msgsSentToday >= camp.targetMsgsToday ? '#10b981' : 'rgba(255,255,255,0.8)', fontWeight: 700 }}>
+                                      {camp.msgsSentToday}/{camp.targetMsgsToday} msgs
+                                    </span>
+                                    <span
+                                      style={{
+                                        fontSize: '0.62rem',
+                                        color: '#38bdf8',
+                                        background: 'rgba(56, 189, 248, 0.12)',
+                                        border: '1px solid rgba(56, 189, 248, 0.25)',
+                                        padding: '1px 5px',
+                                        borderRadius: '4px',
+                                        fontWeight: 700,
+                                      }}
+                                      title={`Capacidade segura: 200 msgs/dia. ${camp.targetMsgsToday} para aquecimento + ${Math.max(0, 200 - camp.targetMsgsToday)} para disparos frios.`}
+                                    >
+                                      ❄️ +{Math.max(0, 200 - camp.targetMsgsToday)} frias
+                                    </span>
+                                  </div>
+                                  <div style={{ height: 4, background: 'rgba(255,255,255,0.08)', borderRadius: 2, overflow: 'hidden' }}>
+                                    <div
+                                      style={{
+                                        height: '100%',
+                                        width: `${progressPct}%`,
+                                        background: progressPct >= 100 ? '#10b981' : 'linear-gradient(90deg, #10b981, #34d399)',
+                                        borderRadius: 2,
+                                        transition: 'width 0.3s',
+                                      }}
+                                    />
+                                  </div>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.62rem', color: 'rgba(255,255,255,0.35)' }}>
+                                    <span>🛡️ Manutenção</span>
+                                    <span>200 máx</span>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>
+                                      Dia {Math.min(camp.currentDay, camp.totalDays)}/{camp.totalDays}
+                                    </span>
+                                    <span style={{ fontSize: '0.72rem', color: camp.msgsSentToday >= camp.targetMsgsToday ? '#10b981' : 'rgba(255,255,255,0.75)', fontWeight: 700 }}>
+                                      {camp.msgsSentToday}/{camp.targetMsgsToday} msgs
+                                    </span>
+                                  </div>
+                                  <div style={{ height: 3, background: 'rgba(255,255,255,0.08)', borderRadius: 2, overflow: 'hidden' }}>
+                                    <div style={{ height: '100%', width: `${dayPct}%`, background: 'linear-gradient(90deg, #f59e0b, #ef4444)', borderRadius: 2 }} />
+                                  </div>
+                                  <div style={{ height: 3, background: 'rgba(255,255,255,0.08)', borderRadius: 2, overflow: 'hidden' }}>
+                                    <div style={{ height: '100%', width: `${progressPct}%`, background: progressPct >= 100 ? '#10b981' : 'linear-gradient(90deg, #10b981, #34d399)', borderRadius: 2 }} />
+                                  </div>
                                 </div>
                               )}
                             </div>
