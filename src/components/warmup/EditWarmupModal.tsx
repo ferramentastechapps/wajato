@@ -327,42 +327,166 @@ export default function EditWarmupModal({ campaignId, onClose, onUpdated }: Prop
 
             {/* Modo Contínuo / Manutenção */}
             <div style={{
-              padding: '0.85rem 1rem',
+              padding: '1rem',
               background: continuousMode ? 'rgba(59, 130, 246, 0.08)' : 'rgba(255, 255, 255, 0.02)',
               border: continuousMode ? '1px solid rgba(59, 130, 246, 0.25)' : '1px solid rgba(255, 255, 255, 0.06)',
-              borderRadius: '12px',
+              borderRadius: '14px',
               display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '1rem',
+              flexDirection: 'column',
+              gap: '0.85rem',
             }}>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: '0.85rem', color: continuousMode ? '#60a5fa' : 'rgba(255,255,255,0.85)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span>🔁 Modo Contínuo (Manutenção Antiban)</span>
-                  <span style={{ fontSize: '0.62rem', background: '#3b82f622', color: '#60a5fa', border: '1px solid #3b82f644', padding: '1px 5px', borderRadius: '4px', fontWeight: 700 }}>Recomendado</span>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '1rem',
+              }}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '0.85rem', color: continuousMode ? '#60a5fa' : 'rgba(255,255,255,0.85)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span>🔁 Modo Contínuo (Manutenção Antiban)</span>
+                    <span style={{ fontSize: '0.62rem', background: '#3b82f622', color: '#60a5fa', border: '1px solid #3b82f644', padding: '1px 5px', borderRadius: '4px', fontWeight: 700 }}>Recomendado</span>
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.5)', marginTop: 3 }}>
+                    Mantém trocas bilaterais diárias para blindar o chip contra bloqueios enquanto você realiza disparos para números frios.
+                  </div>
                 </div>
-                <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.5)', marginTop: 3 }}>
-                  Após atingir o total de dias, mantém conversas bilaterais diárias para blindar o chip contra bloqueios durante disparos.
-                </div>
-              </div>
-              <label style={{ position: 'relative', display: 'inline-block', width: 44, height: 24, flexShrink: 0, cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={continuousMode}
-                  onChange={e => setContinuousMode(e.target.checked)}
-                  style={{ opacity: 0, width: 0, height: 0 }}
-                />
-                <span style={{
-                  position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0,
-                  backgroundColor: continuousMode ? '#3b82f6' : 'rgba(255,255,255,0.1)',
-                  borderRadius: 24, transition: '0.3s'
-                }}>
+                <label style={{ position: 'relative', display: 'inline-block', width: 44, height: 24, flexShrink: 0, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={continuousMode}
+                    onChange={e => setContinuousMode(e.target.checked)}
+                    style={{ opacity: 0, width: 0, height: 0 }}
+                  />
                   <span style={{
-                    position: 'absolute', height: 18, width: 18, left: continuousMode ? 23 : 3, bottom: 3,
-                    backgroundColor: 'white', borderRadius: '50%', transition: '0.3s'
-                  }} />
-                </span>
-              </label>
+                    position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0,
+                    backgroundColor: continuousMode ? '#3b82f6' : 'rgba(255,255,255,0.1)',
+                    borderRadius: 24, transition: '0.3s'
+                  }}>
+                    <span style={{
+                      position: 'absolute', height: 18, width: 18, left: continuousMode ? 23 : 3, bottom: 3,
+                      backgroundColor: 'white', borderRadius: '50%', transition: '0.3s'
+                    }} />
+                  </span>
+                </label>
+              </div>
+
+              {/* Ajuste de Volume de Manutenção Diária & Balanço de Disparos Frios */}
+              {continuousMode && (
+                <div style={{
+                  padding: '0.85rem',
+                  background: 'rgba(0, 0, 0, 0.3)',
+                  border: '1px solid rgba(59, 130, 246, 0.2)',
+                  borderRadius: '10px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.65rem',
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#93c5fd' }}>
+                      🔥 Volume de Manutenção (Aquecimento Diário):
+                    </label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <input
+                        type="number"
+                        min={5}
+                        max={180}
+                        value={maxMsgsPerDay}
+                        onChange={e => {
+                          const val = Math.max(5, Math.min(180, Number(e.target.value) || 5));
+                          setMaxMsgsPerDay(val);
+                          if (currentDay >= totalDays) {
+                            setTargetMsgsToday(val);
+                          }
+                        }}
+                        style={{
+                          width: '65px',
+                          padding: '0.3rem 0.5rem',
+                          background: 'rgba(59, 130, 246, 0.15)',
+                          border: '1px solid rgba(59, 130, 246, 0.4)',
+                          borderRadius: '6px',
+                          color: '#fff',
+                          fontWeight: 700,
+                          fontSize: '0.85rem',
+                          textAlign: 'center',
+                        }}
+                      />
+                      <span style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.6)' }}>msgs/dia</span>
+                    </div>
+                  </div>
+
+                  {/* Atalhos Rápidos */}
+                  <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                    {[20, 30, 40, 60, 80].map(v => (
+                      <button
+                        key={v}
+                        type="button"
+                        onClick={() => {
+                          setMaxMsgsPerDay(v);
+                          if (currentDay >= totalDays) {
+                            setTargetMsgsToday(v);
+                          }
+                        }}
+                        style={{
+                          flex: 1,
+                          minWidth: '50px',
+                          padding: '0.3rem 0.4rem',
+                          fontSize: '0.72rem',
+                          fontWeight: maxMsgsPerDay === v ? 700 : 500,
+                          background: maxMsgsPerDay === v ? 'rgba(59, 130, 246, 0.3)' : 'rgba(255,255,255,0.04)',
+                          border: maxMsgsPerDay === v ? '1px solid #3b82f6' : '1px solid rgba(255,255,255,0.08)',
+                          borderRadius: '6px',
+                          color: maxMsgsPerDay === v ? '#60a5fa' : 'rgba(255,255,255,0.7)',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s',
+                        }}
+                      >
+                        {v} msgs
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Barra de Distribuição da Capacidade do Chip (Total 200 msgs) */}
+                  <div style={{ marginTop: '0.2rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', marginBottom: 4 }}>
+                      <span style={{ color: '#f59e0b', fontWeight: 600 }}>
+                        🔥 Aquecimento: <strong>{maxMsgsPerDay}</strong> msgs
+                      </span>
+                      <span style={{ color: '#38bdf8', fontWeight: 600 }}>
+                        ❄️ Disparos Frios: <strong>{Math.max(0, 200 - maxMsgsPerDay)}</strong> msgs
+                      </span>
+                    </div>
+
+                    {/* Split bar */}
+                    <div style={{ height: 8, background: 'rgba(255,255,255,0.08)', borderRadius: 4, overflow: 'hidden', display: 'flex' }}>
+                      <div
+                        style={{
+                          width: `${Math.min(100, (maxMsgsPerDay / 200) * 100)}%`,
+                          background: 'linear-gradient(90deg, #f59e0b, #ef4444)',
+                          transition: 'width 0.3s',
+                        }}
+                        title={`Aquecimento: ${maxMsgsPerDay} msgs`}
+                      />
+                      <div
+                        style={{
+                          width: `${Math.max(0, 100 - (maxMsgsPerDay / 200) * 100)}%`,
+                          background: 'linear-gradient(90deg, #0284c7, #38bdf8)',
+                          transition: 'width 0.3s',
+                        }}
+                        title={`Disparos Frios Livres: ${Math.max(0, 200 - maxMsgsPerDay)} msgs`}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.62rem', color: 'rgba(255,255,255,0.4)', marginTop: 3 }}>
+                      <span>0</span>
+                      <span>Capacidade Total Segura do Chip: 200 msgs/dia</span>
+                      <span>200</span>
+                    </div>
+                  </div>
+
+                  <p style={{ margin: 0, fontSize: '0.68rem', color: 'rgba(255,255,255,0.5)', lineHeight: '1.3' }}>
+                    💡 <em>Com o chip já maturado, você pode reduzir o aquecimento (ex: de 80 para 30 ou 20 msgs) para liberar mais envios para números frios sem risco de banimento.</em>
+                  </p>
+                </div>
+              )}
             </div>
 
             {error && (

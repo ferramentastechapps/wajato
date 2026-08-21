@@ -801,37 +801,63 @@ export default function CreateWarmupModal({ initialSourceInstance, onClose, onCr
                 border: continuousMode ? '1px solid rgba(59, 130, 246, 0.25)' : '1px solid rgba(255, 255, 255, 0.06)',
                 borderRadius: '12px',
                 display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '1rem',
+                flexDirection: 'column',
+                gap: '0.65rem',
               }}>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: '0.85rem', color: continuousMode ? '#60a5fa' : 'rgba(255,255,255,0.85)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span>🔁 Modo Contínuo (Manutenção Antiban)</span>
-                    <span style={{ fontSize: '0.62rem', background: '#3b82f622', color: '#60a5fa', border: '1px solid #3b82f644', padding: '1px 5px', borderRadius: '4px', fontWeight: 700 }}>Recomendado</span>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '1rem',
+                }}>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: '0.85rem', color: continuousMode ? '#60a5fa' : 'rgba(255,255,255,0.85)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span>🔁 Modo Contínuo (Manutenção Antiban)</span>
+                      <span style={{ fontSize: '0.62rem', background: '#3b82f622', color: '#60a5fa', border: '1px solid #3b82f644', padding: '1px 5px', borderRadius: '4px', fontWeight: 700 }}>Recomendado</span>
+                    </div>
+                    <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.5)', marginTop: 3 }}>
+                      Ao fim dos {selectedConfig.days} dias, mantém conversas bilaterais diárias para blindar o chip contra bloqueios durante disparos frios.
+                    </div>
                   </div>
-                  <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.5)', marginTop: 3 }}>
-                    Ao fim dos {selectedConfig.days} dias, mantém conversas bilaterais diárias para blindar o chip contra bloqueios durante disparos frios.
-                  </div>
-                </div>
-                <label style={{ position: 'relative', display: 'inline-block', width: 44, height: 24, flexShrink: 0, cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={continuousMode}
-                    onChange={e => setContinuousMode(e.target.checked)}
-                    style={{ opacity: 0, width: 0, height: 0 }}
-                  />
-                  <span style={{
-                    position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0,
-                    backgroundColor: continuousMode ? '#3b82f6' : 'rgba(255,255,255,0.1)',
-                    borderRadius: 24, transition: '0.3s'
-                  }}>
+                  <label style={{ position: 'relative', display: 'inline-block', width: 44, height: 24, flexShrink: 0, cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={continuousMode}
+                      onChange={e => setContinuousMode(e.target.checked)}
+                      style={{ opacity: 0, width: 0, height: 0 }}
+                    />
                     <span style={{
-                      position: 'absolute', height: 18, width: 18, left: continuousMode ? 23 : 3, bottom: 3,
-                      backgroundColor: 'white', borderRadius: '50%', transition: '0.3s'
-                    }} />
-                  </span>
-                </label>
+                      position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0,
+                      backgroundColor: continuousMode ? '#3b82f6' : 'rgba(255,255,255,0.1)',
+                      borderRadius: 24, transition: '0.3s'
+                    }}>
+                      <span style={{
+                        position: 'absolute', height: 18, width: 18, left: continuousMode ? 23 : 3, bottom: 3,
+                        backgroundColor: 'white', borderRadius: '50%', transition: '0.3s'
+                      }} />
+                    </span>
+                  </label>
+                </div>
+
+                {continuousMode && (
+                  <div style={{
+                    padding: '0.5rem 0.75rem',
+                    background: 'rgba(0, 0, 0, 0.25)',
+                    borderRadius: '8px',
+                    border: '1px solid rgba(59, 130, 246, 0.15)',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    fontSize: '0.7rem',
+                  }}>
+                    <span style={{ color: '#f59e0b' }}>
+                      🔥 Manutenção: <strong>{selectedConfig.max} msgs/dia</strong>
+                    </span>
+                    <span style={{ color: '#38bdf8' }}>
+                      ❄️ Sobra para Disparos Frios: <strong>{Math.max(0, 200 - selectedConfig.max)} msgs/dia</strong>
+                    </span>
+                  </div>
+                )}
               </div>
 
               {error && (

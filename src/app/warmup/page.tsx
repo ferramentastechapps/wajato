@@ -559,6 +559,8 @@ export default function WarmupPage() {
                         const dayPct = Math.min(100, (camp.currentDay / Math.max(1, camp.totalDays)) * 100);
                         const isLoading = actionLoading === camp.id;
 
+                        const isMaturedContinuous = camp.continuousMode && camp.currentDay >= camp.totalDays;
+
                         return (
                           <div
                             key={camp.id}
@@ -588,20 +590,20 @@ export default function WarmupPage() {
                                   <span
                                     style={{
                                       fontSize: '0.62rem',
-                                      background: 'rgba(59, 130, 246, 0.12)',
-                                      color: '#60a5fa',
+                                      background: isMaturedContinuous ? 'rgba(16, 185, 129, 0.15)' : 'rgba(59, 130, 246, 0.12)',
+                                      color: isMaturedContinuous ? '#34d399' : '#60a5fa',
                                       padding: '1px 5px',
                                       borderRadius: '4px',
-                                      border: '1px solid rgba(59, 130, 246, 0.25)',
+                                      border: isMaturedContinuous ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(59, 130, 246, 0.25)',
                                       fontWeight: 700,
                                       display: 'inline-flex',
                                       alignItems: 'center',
                                       gap: '2px',
                                       flexShrink: 0,
                                     }}
-                                    title="Modo Contínuo Ativo: Mantém trocas bilaterais diárias mesmo após maturação"
+                                    title={isMaturedContinuous ? "Maturado • Mantendo aquecido continuamente" : "Modo Contínuo Ativo: Mantém trocas bilaterais diárias mesmo após maturação"}
                                   >
-                                    <RotateCw size={9} /> Contínuo
+                                    <RotateCw size={9} /> {isMaturedContinuous ? 'Maturado (Contínuo)' : 'Contínuo'}
                                   </span>
                                 )}
                                 {camp.stats?.consecutiveFailures !== undefined && camp.stats.consecutiveFailures >= 3 && (
@@ -634,19 +636,43 @@ export default function WarmupPage() {
                             </div>
 
                             {/* Progress bars column */}
-                            <div style={{ width: 120, flexShrink: 0 }}>
+                            <div style={{ width: 140, flexShrink: 0 }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: 'rgba(255,255,255,0.4)', marginBottom: 2 }}>
-                                <span>Dia {Math.min(camp.currentDay, camp.totalDays)}/{camp.totalDays}</span>
-                                <span style={{ color: camp.msgsSentToday >= camp.targetMsgsToday ? '#10b981' : 'rgba(255,255,255,0.6)', fontWeight: 600 }}>
+                                {isMaturedContinuous ? (
+                                  <span style={{ color: '#34d399', fontWeight: 700 }} title="Chip maturado • Mantendo aquecido diariamente">
+                                    🛡️ Manter Aquecido
+                                  </span>
+                                ) : (
+                                  <span>Dia {Math.min(camp.currentDay, camp.totalDays)}/{camp.totalDays}</span>
+                                )}
+                                <span style={{ color: camp.msgsSentToday >= camp.targetMsgsToday ? '#10b981' : 'rgba(255,255,255,0.7)', fontWeight: 700 }}>
                                   {camp.msgsSentToday}/{camp.targetMsgsToday} msgs
                                 </span>
                               </div>
                               <div style={{ height: 3, background: 'rgba(255,255,255,0.08)', borderRadius: 2, marginBottom: 3 }}>
-                                <div style={{ height: '100%', width: `${dayPct}%`, background: 'linear-gradient(90deg,#f59e0b,#ef4444)', borderRadius: 2 }} />
+                                <div style={{ height: '100%', width: `${dayPct}%`, background: isMaturedContinuous ? '#10b981' : 'linear-gradient(90deg,#f59e0b,#ef4444)', borderRadius: 2 }} />
                               </div>
                               <div style={{ height: 3, background: 'rgba(255,255,255,0.08)', borderRadius: 2 }}>
                                 <div style={{ height: '100%', width: `${progressPct}%`, background: progressPct >= 100 ? '#10b981' : 'linear-gradient(90deg,#10b981,#34d399)', borderRadius: 2 }} />
                               </div>
+                              {isMaturedContinuous && (
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 3, fontSize: '0.6rem' }}>
+                                  <span
+                                    style={{
+                                      color: '#38bdf8',
+                                      background: 'rgba(56,189,248,0.1)',
+                                      padding: '1px 5px',
+                                      borderRadius: 3,
+                                      border: '1px solid rgba(56,189,248,0.2)',
+                                      fontWeight: 600,
+                                    }}
+                                    title={`Capacidade segura do chip: 200 msgs/dia. ${camp.targetMsgsToday} para aquecimento + ${Math.max(0, 200 - camp.targetMsgsToday)} livres para disparos frios.`}
+                                  >
+                                    ❄️ +{Math.max(0, 200 - camp.targetMsgsToday)} frias
+                                  </span>
+                                  <span style={{ color: 'rgba(255,255,255,0.35)' }}>200 máx</span>
+                                </div>
+                              )}
                             </div>
 
                             {/* Hour range */}

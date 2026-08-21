@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { cancelCampaignWarmupJobs, queueWarmupMessage } from '@/lib/warmup-queue';
+import { allocateDailyQuota } from '@/lib/warmup-schedule';
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -176,6 +177,16 @@ export async function PUT(req: Request, { params }: Params) {
       }
     }
 
+    const resolvedTargetMsgs = targetMsgsToday !== undefined 
+      ? Number(targetMsgsToday) 
+      : (continuousMode && (currentDay !== undefined ? Number(currentDay) : campaign.currentDay) >= (totalDays !== undefined ? Number(totalDays) : campaign.totalDays) && maxMsgsPerDay !== undefined
+          ? Number(maxMsgsPerDay)
+          : campaign.targetMsgsToday);
+
+    const shiftQuotaUpdate = resolvedTargetMsgs !== campaign.targetMsgsToday
+      ? allocateDailyQuota(resolvedTargetMsgs)
+      : null;
+
     // Atualiza campanha no banco
     const updated = await prisma.warmupCampaign.update({
       where: { id },
@@ -185,7 +196,7 @@ export async function PUT(req: Request, { params }: Params) {
         targetPhones: targetPhone !== undefined ? targetPhone : campaign.targetPhones,
         currentDay: currentDay !== undefined ? Number(currentDay) : campaign.currentDay,
         msgsSentToday: msgsSentToday !== undefined ? Number(msgsSentToday) : campaign.msgsSentToday,
-        targetMsgsToday: targetMsgsToday !== undefined ? Number(targetMsgsToday) : campaign.targetMsgsToday,
+        targetMsgsToday: resolvedTargetMsgs,
         totalDays: totalDays !== undefined ? Number(totalDays) : campaign.totalDays,
         startHour: startHour !== undefined ? Number(startHour) : campaign.startHour,
         endHour: endHour !== undefined ? Number(endHour) : campaign.endHour,
@@ -196,6 +207,11 @@ export async function PUT(req: Request, { params }: Params) {
         statusFrequency: statusFrequency !== undefined ? Number(statusFrequency) : campaign.statusFrequency,
         statusType: statusType !== undefined ? statusType : campaign.statusType,
         continuousMode: continuousMode !== undefined ? Boolean(continuousMode) : campaign.continuousMode,
+        ...(shiftQuotaUpdate ? {
+          morningQuota: shiftQuotaUpdate.morning,
+          afternoonQuota: shiftQuotaUpdate.afternoon,
+          eveningQuota: shiftQuotaUpdate.evening,
+        } : {}),
       },
     });
 
