@@ -30,7 +30,17 @@ interface Campaign {
   scheduledAt?: string | null;
 }
 interface Group { id: string; name: string; _count?: { contacts: number }; }
-interface Template { id: string; name: string; body: string; imageUrl?: string | null; }
+interface Template { 
+  id: string; 
+  name: string; 
+  body: string; 
+  imageUrl?: string | null; 
+  enableHook?: boolean; 
+  hookMessage?: string | null; 
+  hookVariants?: string[]; 
+  hookMode?: 'ON_REPLY' | 'DELAY'; 
+  hookDelay?: number; 
+}
 interface CompanyOption { id: string; name: string; segment?: string | null; isDefault: boolean; }
 
 const DELAY_PRESETS = [
@@ -369,8 +379,20 @@ export default function CampaignsPage() {
                     <div className="form-group">
                       <label className="form-label" style={{fontWeight:600,fontSize:'0.8rem',color:'#e2e8f0',marginBottom:'0.4rem',display:'block'}}>Mensagem Base (Template) *</label>
                       <select className="input-control" value={templateId} onChange={e=>{setTemplateId(e.target.value);setPreviewVariantIdx(0);}} required style={{width:'100%'}}>
-                        {templates.length===0?<option value="">Crie um template primeiro!</option>:templates.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
+                        {templates.length===0?<option value="">Crie um template primeiro!</option>:templates.map(t=><option key={t.id} value={t.id}>{t.name} {t.enableHook ? '🛡️ (2 Etapas)' : ''}</option>)}
                       </select>
+                      {(() => {
+                        const selTmpl = templates.find(t => t.id === templateId);
+                        if (!selTmpl?.enableHook) return null;
+                        return (
+                          <div style={{ marginTop: '0.5rem', padding: '0.5rem 0.75rem', borderRadius: '6px', background: 'rgba(37,211,102,0.08)', border: '1px solid rgba(37,211,102,0.25)', fontSize: '0.725rem', color: '#25d366', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                            <Shield size={13} />
+                            <span>
+                              <strong>Proteção Anti-Ban Ativa:</strong> Envia saudação curta primeiro ({selTmpl.hookMode === 'ON_REPLY' ? 'aguarda resposta' : `após ${selTmpl.hookDelay || 15}s`}).
+                            </span>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
 

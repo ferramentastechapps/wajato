@@ -5,6 +5,7 @@ import { queueWarmupMessage, cancelCampaignWarmupJobs } from '@/lib/warmup-queue
 import { lidResolver } from '@/lib/lid-resolver';
 import { sentMessagesCache } from '@/lib/sent-messages-cache';
 import { recordChipReadEngagement } from '@/lib/chip-router';
+import { formatMessageText } from '@/lib/spintax';
 
 /**
  * Normaliza um número de telefone removendo DDI duplicado, + e espaços.
@@ -289,10 +290,83 @@ export async function POST(request: Request) {
                   console.error(`[Webhook] Erro ao registrar opt-out para ${phone}:`, optErr.message);
                 }
               } else {
-                // Chatbot normal apenas para mensagens diretas fora de campanhas
-                handleChatbotIncoming(phone, messageText, instanceName).catch((err) => {
-                  console.error('[Webhook] Erro no processamento do chatbot:', err);
-                });
+                // ── Detecção de Resposta a Mensagem Prévia (Hook Anti-Bloqueio) ──────
+                let hookHandled = false;
+                try {
+                  const pendingHookLog = await prisma.messageLog.findFirst({
+                    where: {
+                      contact: { phone },
+                      hookStatus: 'SENT',
+                      status: 'PENDING',
+                    },
+                    include: {
+                      contact: true,
+                      campaign: {
+                        include: {
+                          template: true,
+                          group: true,
+                        },
+                      },
+                    },
+                    orderBy: { hookSentAt: 'desc' },
+                  });
+
+                  if (pendingHookLog && pendingHookLog.campaign.status === 'SENDING') {
+                    console.log(`[Webhook] 🎯 Contato ${phone} respondeu à mensagem prévia! Disparando template principal...`);
+                    hookHandled = true;
+
+                    // Marca hookStatus como REPLIED
+                    await prisma.messageLog.update({
+                      where: { id: pendingHookLog.id },
+                      data: {
+                        hookStatus: 'REPLIED',
+                        hookRepliedAt: new Date(),
+                      },
+                    });
+
+                    // Monta o texto do template principal
+                    const template = pendingHookLog.campaign.template;
+                    const contactName = pendingHookLog.contact.name || pushName || 'Cliente';
+                    const groupLink = pendingHookLog.campaign.group?.description || '';
+
+                    const allVariants = [template.body, ...(pendingHookLog.campaign.messageVariants || [])];
+                    const chosenVariant = allVariants[Math.floor(Math.random() * allVariants.length)];
+                    const mainMessageText = formatMessageText(chosenVariant, { name: contactName, link: groupLink });
+
+                    const { evolutionApi } = await import('@/lib/evolution');
+                    if (template.imageUrl) {
+                      await evolutionApi.sendMediaMessage(
+                        instanceName,
+                        phone,
+                        template.imageUrl,
+                        'image',
+                        mainMessageText
+                      );
+                    } else {
+                      await evolutionApi.sendTextMessage(instanceName, phone, mainMessageText);
+                    }
+
+                    await prisma.messageLog.update({
+                      where: { id: pendingHookLog.id },
+                      data: {
+                        status: 'SENT',
+                        sentAt: new Date(),
+                        error: null,
+                      },
+                    });
+
+                    console.log(`[Webhook] ✅ Template principal entregue com sucesso para ${phone} pós-resposta.`);
+                  }
+                } catch (hookDeliverErr: any) {
+                  console.error(`[Webhook] Erro ao entregar template principal pós-resposta para ${phone}:`, hookDeliverErr?.message);
+                }
+
+                // Chatbot normal apenas se não foi entrega de hook
+                if (!hookHandled) {
+                  handleChatbotIncoming(phone, messageText, instanceName).catch((err) => {
+                    console.error('[Webhook] Erro no processamento do chatbot:', err);
+                  });
+                }
               }
             }
 

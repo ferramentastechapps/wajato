@@ -42,7 +42,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { id, name, body: messageBody, imageUrl } = result.data;
+    const { id, name, body: messageBody, imageUrl, enableHook, hookMessage, hookVariants, hookMode, hookDelay } = result.data;
 
     let template;
     if (id) {
@@ -52,6 +52,11 @@ export async function POST(request: Request) {
           name,
           body: messageBody,
           imageUrl: imageUrl || null,
+          enableHook: enableHook ?? false,
+          hookMessage: hookMessage || null,
+          hookVariants: hookVariants || [],
+          hookMode: hookMode || 'ON_REPLY',
+          hookDelay: hookDelay || 15,
         },
       });
     } else {
@@ -60,6 +65,11 @@ export async function POST(request: Request) {
           name,
           body: messageBody,
           imageUrl: imageUrl || null,
+          enableHook: enableHook ?? false,
+          hookMessage: hookMessage || null,
+          hookVariants: hookVariants || [],
+          hookMode: hookMode || 'ON_REPLY',
+          hookDelay: hookDelay || 15,
         },
       });
     }

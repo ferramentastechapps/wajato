@@ -33,6 +33,11 @@ export const templateSchema = z.object({
   name: z.string().trim().min(1, 'O nome do template é obrigatório'),
   body: z.string().trim().min(1, 'O texto da mensagem é obrigatório'),
   imageUrl: z.string().url('URL da imagem inválida').or(z.literal('')).nullable().optional(),
+  enableHook: z.boolean().default(false),
+  hookMessage: z.string().trim().nullable().optional(),
+  hookVariants: z.array(z.string().trim().min(1)).default([]),
+  hookMode: z.enum(['ON_REPLY', 'DELAY']).default('ON_REPLY'),
+  hookDelay: z.coerce.number().int().min(1).default(15),
 });
 
 // Schema para campanhas de mensagens

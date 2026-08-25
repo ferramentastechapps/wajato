@@ -5,6 +5,7 @@ import { evolutionApi } from '../lib/evolution';
 import { MessageJobData } from '../lib/queue';
 import { getNextWhatsAppInstance, reportChipSuccess, reportChipFailure } from '../lib/chip-router';
 import { logger } from '../lib/logger';
+import { formatMessageText } from '../lib/spintax';
 import './warmup-worker'; // Importa para iniciar o worker de aquecimento junto
 import './warmup-pool-worker'; // Importa o worker de pool mútuo
 import './scheduler-worker'; // Importa o worker de agendamento de campanhas
@@ -82,14 +83,69 @@ const worker = new Worker(
     // Se houver {{link}} no template, substitui pela descrição do grupo (onde salvamos o link do grupo)
     const groupLink = log.campaign.group?.description || '';
 
+    // ── 3a. Proteção Anti-Bloqueio (Envio em 2 Etapas / Mensagem Prévia) ──────
+    const template = log.campaign.template;
+    const hasHookEnabled = template.enableHook && (template.hookMessage || (template.hookVariants && template.hookVariants.length > 0));
+
+    if (hasHookEnabled && log.hookStatus !== 'SENT' && log.hookStatus !== 'REPLIED') {
+      const allHooks = [template.hookMessage, ...(template.hookVariants || [])].filter((h): h is string => Boolean(h && h.trim().length > 0));
+      const chosenHook = allHooks.length > 0 ? allHooks[Math.floor(Math.random() * allHooks.length)] : 'Olá {{nome}}, tudo bem?';
+      const hookText = formatMessageText(chosenHook, { name: contactName, link: groupLink });
+
+      let hookInstanceName = await getNextWhatsAppInstance();
+      let hookSentSuccess = false;
+
+      try {
+        await evolutionApi.sendTextMessage(hookInstanceName, phone, hookText);
+        hookSentSuccess = true;
+        await reportChipSuccess(hookInstanceName);
+        logger.info('🛡️ Mensagem prévia anti-bloqueio enviada!', { messageLogId, phone, instance: hookInstanceName });
+      } catch (hookErr: any) {
+        logger.warn('Falha no envio da mensagem prévia anti-bloqueio com chip primário, tentando fallback...', { error: hookErr?.message });
+        await reportChipFailure(hookInstanceName, hookErr?.message);
+
+        const fallback = await getNextWhatsAppInstance([hookInstanceName]);
+        if (fallback && fallback !== hookInstanceName) {
+          try {
+            await evolutionApi.sendTextMessage(fallback, phone, hookText);
+            hookSentSuccess = true;
+            await reportChipSuccess(fallback);
+          } catch (fbErr: any) {
+            await reportChipFailure(fallback, fbErr?.message);
+          }
+        }
+      }
+
+      if (hookSentSuccess) {
+        await prisma.messageLog.update({
+          where: { id: messageLogId },
+          data: {
+            hookStatus: 'SENT',
+            hookSentAt: new Date(),
+          },
+        });
+
+        // Se o modo for ON_REPLY, pausa o envio para este contato até ele responder via webhook
+        if (template.hookMode === 'ON_REPLY') {
+          logger.info('Aguardando resposta do contato para disparar o template principal', { phone, messageLogId });
+          return;
+        }
+
+        // Se o modo for DELAY, aguarda os segundos configurados antes de enviar o template principal
+        if (template.hookMode === 'DELAY') {
+          const delayMs = (template.hookDelay || 15) * 1000;
+          logger.info(`Aguardando ${template.hookDelay || 15}s para envio do template principal (2 balões)...`, { phone });
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+        }
+      }
+    }
+
     // Variantes de mensagem: inclui o corpo do template como opção 0 + todas as variantes cadastradas
-    const allVariants = [log.campaign.template.body, ...(log.campaign.messageVariants || [])];
+    const allVariants = [template.body, ...(log.campaign.messageVariants || [])];
     // Seleciona aleatoriamente uma variante para parecer humano e evitar detecção de spam
     const chosenVariant = allVariants[Math.floor(Math.random() * allVariants.length)];
 
-    let messageText = chosenVariant
-      .replace(/{{nome}}/g, contactName)
-      .replace(/{{link}}/g, groupLink);
+    let messageText = formatMessageText(chosenVariant, { name: contactName, link: groupLink });
 
     // 4. Seleciona dinamicamente o chip ativo / saudável
     let activeInstanceName = await getNextWhatsAppInstance();

@@ -84,13 +84,18 @@ model ContactGroup {
 }
 
 model Template {
-  id        String     @id @default(uuid())
-  name      String
-  body      String
-  imageUrl  String?
-  campaigns Campaign[]
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  id           String     @id @default(uuid())
+  name         String
+  body         String
+  imageUrl     String?
+  enableHook   Boolean    @default(false)     // Ativa o envio prévio de mensagem curta anti-bloqueio
+  hookMessage  String?                        // Mensagem curta de saudação/gancho
+  hookVariants String[]   @default([])        // Variações alternativas de saudações curtas para rotação
+  hookMode     String     @default("ON_REPLY") // "ON_REPLY" (ao responder) ou "DELAY" (após X segundos)
+  hookDelay    Int        @default(15)        // Segundos de espera se hookMode for DELAY
+  campaigns    Campaign[]
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
 }
 
 model Campaign {
@@ -127,17 +132,20 @@ model ContactSegment {
 }
 
 model MessageLog {
-  id          String        @id @default(uuid())
-  campaignId  String
-  campaign    Campaign      @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  contactId   String
-  contact     Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  status      MessageStatus @default(PENDING)
-  error       String?
-  sentAt      DateTime?
-  deliveredAt DateTime?
-  readAt      DateTime?
-  updatedAt   DateTime      @updatedAt
+  id            String        @id @default(uuid())
+  campaignId    String
+  campaign      Campaign      @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contactId     String
+  contact       Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  status        MessageStatus @default(PENDING)
+  hookStatus    String?       // PENDING, SENT, REPLIED, SKIPPED
+  hookSentAt    DateTime?
+  hookRepliedAt DateTime?
+  error         String?
+  sentAt        DateTime?
+  deliveredAt   DateTime?
+  readAt        DateTime?
+  updatedAt     DateTime      @updatedAt
 }
 
 model WhatsAppInstance {
