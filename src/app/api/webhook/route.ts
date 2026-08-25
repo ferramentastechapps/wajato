@@ -254,11 +254,48 @@ export async function POST(request: Request) {
                 20000  // desvio 20s
               );
             } else if (!warmupCampaign && !isLocalInstance && messageText && (isDirectMessage || isLidMessage)) {
-              // Chatbot normal apenas para mensagens diretas fora de campanhas
-              handleChatbotIncoming(phone, messageText, instanceName).catch((err) => {
-                console.error('[Webhook] Erro no processamento do chatbot:', err);
-              });
+              // ── Detecção de opt-out por palavras-chave ────────────────────────────
+              const optOutKeywords = ['sair', 'parar', 'cancelar', 'stop', 'descadastrar', 'remover', 'nao quero', 'não quero', 'chega', 'desinscrever'];
+              const normalizedMsg = messageText.toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+              const isOptOutRequest = optOutKeywords.some(kw =>
+                normalizedMsg === kw ||
+                normalizedMsg.startsWith(kw + ' ') ||
+                normalizedMsg.endsWith(' ' + kw)
+              );
+
+              if (isOptOutRequest) {
+                try {
+                  await prisma.contact.upsert({
+                    where: { phone },
+                    update: { optOut: true, optOutAt: new Date() },
+                    create: { phone, name: pushName || null, optOut: true, optOutAt: new Date() },
+                  });
+                  // Envia mensagem de confirmação ao contato
+                  const { evolutionApi } = await import('@/lib/evolution');
+                  const activeInstances = await prisma.whatsAppInstance.findMany({
+                    where: { status: 'CONNECTED' },
+                    select: { name: true },
+                    take: 1,
+                  });
+                  if (activeInstances.length > 0) {
+                    await evolutionApi.sendTextMessage(
+                      instanceName,
+                      phone,
+                      '✅ Você foi removido da nossa lista de contatos e não receberá mais mensagens. Se mudar de ideia, entre em contato conosco.'
+                    );
+                  }
+                  console.log(`[Webhook] Opt-out automático registrado para ${phone} (palavra-chave: "${messageText}")`);
+                } catch (optErr: any) {
+                  console.error(`[Webhook] Erro ao registrar opt-out para ${phone}:`, optErr.message);
+                }
+              } else {
+                // Chatbot normal apenas para mensagens diretas fora de campanhas
+                handleChatbotIncoming(phone, messageText, instanceName).catch((err) => {
+                  console.error('[Webhook] Erro no processamento do chatbot:', err);
+                });
+              }
             }
+
           }
         } else if (fromMe && remoteJid && (isDirectMessage || isLidMessage) && instanceName) {
           // Mensagem enviada a partir da nossa própria instância

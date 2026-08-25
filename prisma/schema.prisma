@@ -57,6 +57,8 @@ model Contact {
   company            Company?      @relation(fields: [companyId], references: [id], onDelete: SetNull)
   logs               MessageLog[]
   chatbotPausedUntil DateTime?
+  optOut             Boolean       @default(false)  // Contato optou por não receber mensagens
+  optOutAt           DateTime?                      // Quando foi registrado o opt-out
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
 }

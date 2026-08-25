@@ -36,7 +36,37 @@ const worker = new Worker(
       return;
     }
 
-    // 2. Se a campanha não estiver em andamento (ex: pausada ou cancelada), cancela o envio
+    // 2a. Bloqueia envio se contato está em opt-out
+    if (log.contact.optOut) {
+      logger.info('Contato em opt-out — envio bloqueado', { contactId, phone, messageLogId });
+      await prisma.messageLog.update({
+        where: { id: messageLogId },
+        data: { status: 'FAILED', error: 'Contato em opt-out (não deseja receber mensagens)' },
+      });
+      await checkAndUpdateCampaignStatus(campaignId);
+      return;
+    }
+
+    // 2b. Bloqueia reenvio se este contato já recebeu mensagem desta campanha com sucesso
+    const alreadySent = await prisma.messageLog.findFirst({
+      where: {
+        campaignId,
+        contactId,
+        id: { not: messageLogId },
+        status: { in: ['SENT', 'DELIVERED', 'READ'] },
+      },
+    });
+    if (alreadySent) {
+      logger.info('Contato já recebeu mensagem nesta campanha — ignorando duplicata', { contactId, phone, campaignId, messageLogId });
+      await prisma.messageLog.update({
+        where: { id: messageLogId },
+        data: { status: 'FAILED', error: 'Mensagem já enviada anteriormente nesta campanha' },
+      });
+      await checkAndUpdateCampaignStatus(campaignId);
+      return;
+    }
+
+    // 2c. Se a campanha não estiver em andamento (ex: pausada ou cancelada), cancela o envio
     if (log.campaign.status !== 'SENDING') {
       logger.info('Campanha não está ativa, ignorando envio', { campaignId, status: log.campaign.status, messageLogId });
       await prisma.messageLog.update({
@@ -45,6 +75,7 @@ const worker = new Worker(
       });
       return;
     }
+
 
     // 3. Monta a mensagem interpolando variáveis
     const contactName = log.contact.name || 'Cliente';

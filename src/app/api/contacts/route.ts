@@ -16,12 +16,19 @@ export async function GET(request: Request) {
     const limit = parseInt(searchParams.get('limit') || '50', 10);
     const search = searchParams.get('search') || '';
     const groupId = searchParams.get('groupId') || '';
+    const statusFilter = searchParams.get('status') || ''; // 'active' | 'optout' | '' (todos)
 
     // Cláusula de busca no banco
     const where: any = {};
 
     if (groupId) {
       where.groupId = groupId;
+    }
+
+    if (statusFilter === 'active') {
+      where.optOut = false;
+    } else if (statusFilter === 'optout') {
+      where.optOut = true;
     }
 
     if (search) {
@@ -33,6 +40,7 @@ export async function GET(request: Request) {
 
     const skip = (page - 1) * limit;
     const take = limit;
+
 
     // Busca os contatos da página atual, o total e os grupos de filtros
     const [contacts, total, groups] = await Promise.all([
@@ -50,6 +58,14 @@ export async function GET(request: Request) {
       }),
     ]);
 
+    // Conta contatos ativos (sem opt-out) para exibir no painel
+    const activeCount = await prisma.contact.count({
+      where: { ...where, optOut: false },
+    });
+    const optOutCount = await prisma.contact.count({
+      where: { ...where, optOut: true },
+    });
+
     return NextResponse.json({
       success: true,
       contacts,
@@ -59,6 +75,11 @@ export async function GET(request: Request) {
         limit,
         total,
         totalPages: Math.ceil(total / limit),
+      },
+      stats: {
+        total,
+        active: activeCount,
+        optOut: optOutCount,
       },
     });
   } catch (error: any) {
@@ -159,7 +180,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { name, phone, tags, groupId } = result.data;
+    const { name, phone, tags, groupId, optOut } = result.data;
 
     const cleanPhone = evolutionApi.formatPhone(phone);
 
@@ -169,12 +190,15 @@ export async function POST(request: Request) {
         name: name || null,
         tags: tags || [],
         groupId: groupId || null,
+        ...(typeof optOut === 'boolean' ? { optOut, optOutAt: optOut ? new Date() : null } : {}),
       },
       create: {
         name: name || null,
         phone: cleanPhone,
         tags: tags || [],
         groupId: groupId || null,
+        optOut: optOut ?? false,
+        optOutAt: optOut ? new Date() : null,
       },
     });
 

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   Users, 
   Plus, 
@@ -16,7 +16,9 @@ import {
   RefreshCw,
   CheckSquare,
   Square,
-  Download
+  Download,
+  BellOff,
+  Bell
 } from 'lucide-react';
 import AppLayout from '@/components/layout/AppLayout';
 
@@ -26,9 +28,24 @@ interface Contact {
   phone: string;
   tags: string[];
   groupId: string | null;
+  optOut: boolean;
+  optOutAt?: string | null;
   group?: {
     id: string;
     name: string;
+  };
+}
+
+interface PhoneCheckResult {
+  exists: boolean;
+  contact?: {
+    id: string;
+    name: string | null;
+    optOut: boolean;
+    optOutAt?: string | null;
+    group?: { id: string; name: string } | null;
+    tags?: string[];
+    createdAt?: string;
   };
 }
 
@@ -85,13 +102,23 @@ export default function ContactsPage() {
   const [showEditContact, setShowEditContact] = useState(false);
 
   // Form inputs
-  const [newContact, setNewContact] = useState({ name: '', phone: '', tags: '', groupId: '' });
+  const [newContact, setNewContact] = useState({ name: '', phone: '', tags: '', groupId: '', optOut: false });
   const [newGroup, setNewGroup] = useState({ name: '', description: '' });
   const [importGroupId, setImportGroupId] = useState('');
   const [csvFileContent, setCsvFileContent] = useState<string | null>(null);
   const [csvError, setCsvError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [importProgress, setImportProgress] = useState<{ current: number; total: number } | null>(null);
+
+  // Detecção de duplicatas ao digitar telefone
+  const [phoneCheckResult, setPhoneCheckResult] = useState<PhoneCheckResult | null>(null);
+  const [phoneCheckLoading, setPhoneCheckLoading] = useState(false);
+
+  // Filtro de status (opt-out)
+  const [statusFilter, setStatusFilter] = useState('');
+
+  // Stats (contadores)
+  const [stats, setStats] = useState<{ total: number; active: number; optOut: number } | null>(null);
 
   // Exclusão em Massa
   const [showBulkDelete, setShowBulkDelete] = useState(false);
@@ -118,8 +145,30 @@ export default function ContactsPage() {
     return () => clearTimeout(handler);
   }, [search]);
 
+  // Verificação de telefone em tempo real
+  useEffect(() => {
+    const phone = newContact.phone.trim();
+    if (!phone || phone.replace(/\D/g, '').length < 8) {
+      setPhoneCheckResult(null);
+      return;
+    }
+    setPhoneCheckLoading(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/contacts/check-phone?phone=${encodeURIComponent(phone)}`);
+        const data = await res.json();
+        setPhoneCheckResult(data);
+      } catch {
+        setPhoneCheckResult(null);
+      } finally {
+        setPhoneCheckLoading(false);
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [newContact.phone]);
+
   // Carrega dados iniciais e paginados
-  const fetchData = async (currentPage = page, searchVal = debouncedSearch, groupFilter = selectedGroupFilter, currentLimit = limit) => {
+  const fetchData = async (currentPage = page, searchVal = debouncedSearch, groupFilter = selectedGroupFilter, currentLimit = limit, statusVal = statusFilter) => {
     setLoading(true);
     try {
       const query = new URLSearchParams({
@@ -127,12 +176,14 @@ export default function ContactsPage() {
         limit: String(currentLimit),
         search: searchVal,
         groupId: groupFilter,
+        status: statusVal,
       });
       const response = await fetch(`/api/contacts?${query.toString()}`);
       if (response.ok) {
         const data = await response.json();
         setContacts(data.contacts || []);
         setGroups(data.groups || []);
+        if (data.stats) setStats(data.stats);
         if (data.pagination) {
           setTotalContacts(data.pagination.total || 0);
           setTotalPages(data.pagination.totalPages || 1);
@@ -152,12 +203,12 @@ export default function ContactsPage() {
   // Reseta página para 1 quando o filtro, busca ou limite de registros por página mudam
   useEffect(() => {
     setPage(1);
-  }, [selectedGroupFilter, debouncedSearch, limit]);
+  }, [selectedGroupFilter, debouncedSearch, limit, statusFilter]);
 
-  // Dispara o fetch sempre que a página, grupo, limite ou termo buscado mudarem
+  // Dispara o fetch sempre que a página, grupo, limite, status ou termo buscado mudarem
   useEffect(() => {
-    fetchData(page, debouncedSearch, selectedGroupFilter, limit);
-  }, [page, selectedGroupFilter, debouncedSearch, limit]);
+    fetchData(page, debouncedSearch, selectedGroupFilter, limit, statusFilter);
+  }, [page, selectedGroupFilter, debouncedSearch, limit, statusFilter]);
 
   // Sem filtro local no frontend (feito 100% no banco de dados)
   const filteredContacts = contacts;
@@ -175,6 +226,18 @@ export default function ContactsPage() {
     setSelectedContacts((prev) => 
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
     );
+  };
+
+  // Toggle opt-out rápido na tabela
+  const handleToggleOptOut = async (contact: Contact) => {
+    try {
+      const res = await fetch(`/api/contacts/${contact.id}/optout`, { method: 'PATCH' });
+      if (res.ok) {
+        fetchData();
+      }
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   // Envia formulário de novo contato
@@ -196,11 +259,13 @@ export default function ContactsPage() {
           phone: newContact.phone,
           tags: tagsArray,
           groupId: newContact.groupId || null,
+          optOut: newContact.optOut,
         }),
       });
 
       if (response.ok) {
-        setNewContact({ name: '', phone: '', tags: '', groupId: '' });
+        setNewContact({ name: '', phone: '', tags: '', groupId: '', optOut: false });
+        setPhoneCheckResult(null);
         setShowAddContact(false);
         fetchData();
       }
@@ -229,6 +294,7 @@ export default function ContactsPage() {
           phone: editingContact.phone,
           tags: tagsArray,
           groupId: editingContact.groupId || null,
+          optOut: editingContact.optOut,
         }),
       });
 
@@ -638,7 +704,7 @@ export default function ContactsPage() {
   return (
     <AppLayout title="Contatos">
       {/* Barra de Ferramentas / Ações */}
-      <div className="card-glass" style={{ marginBottom: '2rem', padding: '1.5rem' }}>
+      <div className="card-glass" style={{ marginBottom: '1.25rem', padding: '1.5rem' }}>
         <div style={{
           display: 'flex',
           flexWrap: 'wrap',
@@ -648,7 +714,7 @@ export default function ContactsPage() {
         }}>
           {/* Ações primárias */}
           <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-            <button onClick={() => setShowAddContact(true)} className="btn btn-primary">
+            <button onClick={() => { setPhoneCheckResult(null); setShowAddContact(true); }} className="btn btn-primary">
               <Plus size={16} />
               Novo Contato
             </button>
@@ -682,13 +748,25 @@ export default function ContactsPage() {
           </div>
 
           {/* Filtros de Busca */}
-          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flex: '1', maxWidth: '500px' }}>
+          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flex: '1', maxWidth: '600px', flexWrap: 'wrap' }}>
+            {/* Filtro por status de opt-out */}
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="input-control"
+              style={{ maxWidth: '150px', padding: '0.5rem' }}
+            >
+              <option value="">Todos</option>
+              <option value="active">✅ Ativos</option>
+              <option value="optout">🚫 Opt-Out</option>
+            </select>
+
             {/* Filtro por grupo */}
             <select
               value={selectedGroupFilter}
               onChange={(e) => setSelectedGroupFilter(e.target.value)}
               className="input-control"
-              style={{ maxWidth: '180px', padding: '0.5rem' }}
+              style={{ maxWidth: '170px', padding: '0.5rem' }}
             >
               <option value="">Todos os Grupos</option>
               {groups.map((g) => (
@@ -699,7 +777,7 @@ export default function ContactsPage() {
             </select>
 
             {/* Input de busca */}
-            <div style={{ position: 'relative', width: '100%' }}>
+            <div style={{ position: 'relative', flex: 1 }}>
               <Search size={16} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#6b7280' }} />
               <input
                 type="text"
@@ -712,6 +790,24 @@ export default function ContactsPage() {
             </div>
           </div>
         </div>
+
+        {/* Contadores de status */}
+        {stats && (
+          <div style={{ display: 'flex', gap: '1.5rem', marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.8rem', color: '#9ca3af', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <Users size={13} />
+              <strong style={{ color: '#e5e7eb' }}>{stats.total.toLocaleString()}</strong> total
+            </span>
+            <span style={{ fontSize: '0.8rem', color: '#9ca3af', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <Bell size={13} style={{ color: '#22c55e' }} />
+              <strong style={{ color: '#22c55e' }}>{stats.active.toLocaleString()}</strong> ativos
+            </span>
+            <span style={{ fontSize: '0.8rem', color: '#9ca3af', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <BellOff size={13} style={{ color: '#ef4444' }} />
+              <strong style={{ color: '#ef4444' }}>{stats.optOut.toLocaleString()}</strong> opt-out
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Tabela de Contatos */}
@@ -751,6 +847,7 @@ export default function ContactsPage() {
                   <th>Telefone</th>
                   <th>Grupo</th>
                   <th>Tags</th>
+                  <th style={{ width: '90px', textAlign: 'center' }}>Status</th>
                   <th style={{ width: '80px', textAlign: 'center' }}>Ações</th>
                 </tr>
               </thead>
@@ -798,6 +895,30 @@ export default function ContactsPage() {
                           <span style={{ color: '#6b7280', fontSize: '0.75rem' }}>-</span>
                         )}
                       </div>
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <button
+                        onClick={() => handleToggleOptOut(contact)}
+                        title={contact.optOut ? 'Clique para reativar (remover opt-out)' : 'Clique para marcar como opt-out'}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.3rem',
+                          fontSize: '0.7rem',
+                          padding: '0.2rem 0.5rem',
+                          borderRadius: '999px',
+                          border: contact.optOut ? '1px solid rgba(239,68,68,0.4)' : '1px solid rgba(34,197,94,0.4)',
+                          background: contact.optOut ? 'rgba(239,68,68,0.1)' : 'rgba(34,197,94,0.1)',
+                          color: contact.optOut ? '#ef4444' : '#22c55e',
+                          cursor: 'pointer',
+                          fontWeight: 600,
+                          letterSpacing: '0.02em',
+                          transition: 'all 0.2s',
+                        }}
+                      >
+                        {contact.optOut ? <BellOff size={11} /> : <Bell size={11} />}
+                        {contact.optOut ? 'Opt-Out' : 'Ativo'}
+                      </button>
                     </td>
                     <td style={{ textAlign: 'center' }}>
                       <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
@@ -905,7 +1026,7 @@ export default function ContactsPage() {
           <div className="modal-content">
             <div className="modal-header">
               <h3 className="modal-title">Novo Contato</h3>
-              <X className="modal-close" onClick={() => setShowAddContact(false)} />
+              <X className="modal-close" onClick={() => { setShowAddContact(false); setPhoneCheckResult(null); }} />
             </div>
             <form onSubmit={handleAddContactSubmit}>
               <div className="modal-body">
@@ -928,7 +1049,57 @@ export default function ContactsPage() {
                     value={newContact.phone}
                     onChange={(e) => setNewContact({ ...newContact, phone: e.target.value })}
                     required
+                    style={{
+                      borderColor: phoneCheckResult?.exists
+                        ? 'rgba(234,179,8,0.6)'
+                        : phoneCheckResult && !phoneCheckResult.exists
+                        ? 'rgba(34,197,94,0.5)'
+                        : undefined
+                    }}
                   />
+                  {/* Feedback de duplicata em tempo real */}
+                  {phoneCheckLoading && (
+                    <div style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: '#6b7280', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <div style={{ width: '12px', height: '12px', border: '2px solid rgba(255,255,255,0.1)', borderTopColor: '#9ca3af', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                      Verificando número...
+                    </div>
+                  )}
+                  {!phoneCheckLoading && phoneCheckResult?.exists && (
+                    <div style={{
+                      marginTop: '0.5rem',
+                      padding: '0.6rem 0.9rem',
+                      borderRadius: '8px',
+                      background: 'rgba(234,179,8,0.08)',
+                      border: '1px solid rgba(234,179,8,0.3)',
+                      fontSize: '0.8rem',
+                      color: '#fbbf24',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 600, marginBottom: '0.25rem' }}>
+                        <AlertCircle size={13} />
+                        Número já cadastrado
+                      </div>
+                      <div style={{ color: '#9ca3af', lineHeight: 1.5 }}>
+                        Nome: <strong style={{ color: '#e5e7eb' }}>{phoneCheckResult.contact?.name || 'Sem nome'}</strong>
+                        {phoneCheckResult.contact?.group && (
+                          <span> · Grupo: <strong style={{ color: '#e5e7eb' }}>{phoneCheckResult.contact.group.name}</strong></span>
+                        )}
+                        {phoneCheckResult.contact?.optOut && (
+                          <span style={{ display: 'block', marginTop: '0.2rem', color: '#ef4444' }}>
+                            <BellOff size={11} style={{ display: 'inline', marginRight: '0.3rem' }} />
+                            Este contato está em opt-out e não receberá mensagens.
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ marginTop: '0.4rem', fontSize: '0.75rem', color: '#6b7280' }}>
+                        Salvar irá <strong style={{ color: '#fbbf24' }}>atualizar</strong> o contato existente.
+                      </div>
+                    </div>
+                  )}
+                  {!phoneCheckLoading && phoneCheckResult && !phoneCheckResult.exists && (
+                    <div style={{ marginTop: '0.4rem', fontSize: '0.8rem', color: '#22c55e', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                      <Check size={12} /> Número disponível
+                    </div>
+                  )}
                 </div>
                 <div className="form-group">
                   <label className="form-label">Grupo</label>
@@ -953,12 +1124,42 @@ export default function ContactsPage() {
                     onChange={(e) => setNewContact({ ...newContact, tags: e.target.value })}
                   />
                 </div>
+                {/* Toggle de opt-out */}
+                <div className="form-group">
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer', userSelect: 'none' }}>
+                    <div
+                      onClick={() => setNewContact({ ...newContact, optOut: !newContact.optOut })}
+                      style={{
+                        width: '40px', height: '22px', borderRadius: '999px',
+                        background: newContact.optOut ? '#ef4444' : 'rgba(255,255,255,0.1)',
+                        border: newContact.optOut ? '1px solid #ef4444' : '1px solid var(--border)',
+                        position: 'relative', cursor: 'pointer', transition: 'all 0.25s',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <div style={{
+                        width: '16px', height: '16px', borderRadius: '50%', background: 'white',
+                        position: 'absolute', top: '2px',
+                        left: newContact.optOut ? '20px' : '2px',
+                        transition: 'left 0.25s',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.4)',
+                      }} />
+                    </div>
+                    <span style={{ fontSize: '0.875rem', color: newContact.optOut ? '#ef4444' : '#9ca3af' }}>
+                      {newContact.optOut ? (
+                        <><BellOff size={13} style={{ display: 'inline', marginRight: '0.4rem' }} />Marcar como opt-out (não receberá mensagens)</>  
+                      ) : (
+                        <><Bell size={13} style={{ display: 'inline', marginRight: '0.4rem' }} />Ativo (receberá mensagens)</>
+                      )}
+                    </span>
+                  </label>
+                </div>
               </div>
               <div className="modal-footer">
                 <button 
                   type="button" 
                   className="btn btn-secondary" 
-                  onClick={() => setShowAddContact(false)}
+                  onClick={() => { setShowAddContact(false); setPhoneCheckResult(null); }}
                   disabled={isSubmitting}
                 >
                   Cancelar
@@ -1025,6 +1226,41 @@ export default function ContactsPage() {
                     value={editingContact.tags ? (Array.isArray(editingContact.tags) ? editingContact.tags.join(', ') : editingContact.tags) : ''}
                     onChange={(e) => setEditingContact({ ...editingContact, tags: e.target.value.split(',').map(t => t.trim()) })}
                   />
+                </div>
+                {/* Toggle de opt-out no editar */}
+                <div className="form-group">
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer', userSelect: 'none' }}>
+                    <div
+                      onClick={() => setEditingContact({ ...editingContact, optOut: !editingContact.optOut })}
+                      style={{
+                        width: '40px', height: '22px', borderRadius: '999px',
+                        background: editingContact.optOut ? '#ef4444' : 'rgba(255,255,255,0.1)',
+                        border: editingContact.optOut ? '1px solid #ef4444' : '1px solid var(--border)',
+                        position: 'relative', cursor: 'pointer', transition: 'all 0.25s',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <div style={{
+                        width: '16px', height: '16px', borderRadius: '50%', background: 'white',
+                        position: 'absolute', top: '2px',
+                        left: editingContact.optOut ? '20px' : '2px',
+                        transition: 'left 0.25s',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.4)',
+                      }} />
+                    </div>
+                    <span style={{ fontSize: '0.875rem', color: editingContact.optOut ? '#ef4444' : '#9ca3af' }}>
+                      {editingContact.optOut ? (
+                        <><BellOff size={13} style={{ display: 'inline', marginRight: '0.4rem' }} />Opt-Out ativo (não recebe mensagens)</>  
+                      ) : (
+                        <><Bell size={13} style={{ display: 'inline', marginRight: '0.4rem' }} />Ativo (recebe mensagens)</>
+                      )}
+                    </span>
+                  </label>
+                  {editingContact.optOut && editingContact.optOutAt && (
+                    <p style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: '0.4rem', marginLeft: '3.5rem' }}>
+                      Opt-out registrado em {new Date(editingContact.optOutAt).toLocaleDateString('pt-BR')}
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="modal-footer">

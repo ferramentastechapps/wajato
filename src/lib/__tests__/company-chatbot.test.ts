@@ -116,6 +116,8 @@ describe('Company Knowledge Base & Chatbot Integration Tests', () => {
       stageId: null,
       companyId: 'company-acme',
       chatbotPausedUntil: null,
+      optOut: false,
+      optOutAt: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     });
@@ -181,6 +183,8 @@ describe('Company Knowledge Base & Chatbot Integration Tests', () => {
       stageId: null,
       companyId: null,
       chatbotPausedUntil: null,
+      optOut: false,
+      optOutAt: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     });
