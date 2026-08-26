@@ -16,7 +16,7 @@ export async function PATCH(
 
     const { id } = await params;
 
-    const contact = await prisma.contact.findUnique({
+    const contact = await (prisma.contact as any).findUnique({
       where: { id },
       select: { id: true, optOut: true },
     });
@@ -27,7 +27,7 @@ export async function PATCH(
 
     const newOptOut = !contact.optOut;
 
-    const updated = await prisma.contact.update({
+    const updated = await (prisma.contact as any).update({
       where: { id },
       data: {
         optOut: newOptOut,
