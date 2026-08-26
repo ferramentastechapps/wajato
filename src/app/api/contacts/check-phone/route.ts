@@ -24,7 +24,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ exists: false });
     }
 
-    const contact = await prisma.contact.findUnique({
+    const contact = await (prisma.contact as any).findUnique({
       where: { phone: cleanPhone },
       select: {
         id: true,
