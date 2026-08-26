@@ -29,6 +29,7 @@ interface Template {
   id: string;
   name: string;
   body: string;
+  bodyVariants: string[];
   imageUrl: string | null;
   enableHook: boolean;
   hookMessage: string | null;
@@ -48,6 +49,7 @@ export default function TemplatesPage() {
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [body, setBody] = useState('');
+  const [bodyVariants, setBodyVariants] = useState<string[]>([]);
   const [imageUrl, setImageUrl] = useState('');
 
   // ── Estados de Proteção Anti-Bloqueio (Mensagem Prévia / Hook) ──────────────
@@ -60,6 +62,7 @@ export default function TemplatesPage() {
   const [hookMode, setHookMode] = useState<'ON_REPLY' | 'DELAY'>('ON_REPLY');
   const [hookDelay, setHookDelay] = useState(15);
   const [previewHookIdx, setPreviewHookIdx] = useState(0);
+  const [previewBodyIdx, setPreviewBodyIdx] = useState(0);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const hookTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -92,6 +95,7 @@ export default function TemplatesPage() {
     setEditingTemplateId(null);
     setName('');
     setBody('Olá {{nome}},\n\nTemos novas promoções imperdíveis hoje! Clique no link abaixo para entrar no nosso grupo oficial:\n\n👉 {{link}}\n\nTe espero lá!');
+    setBodyVariants([]);
     setImageUrl('');
     setEnableHook(false);
     setHookMessage('Olá {{nome}}, tudo bem? Posso te passar uma informação rápida?');
@@ -102,6 +106,7 @@ export default function TemplatesPage() {
     setHookMode('ON_REPLY');
     setHookDelay(15);
     setPreviewHookIdx(0);
+    setPreviewBodyIdx(0);
     setShowEditor(true);
   };
 
@@ -110,6 +115,7 @@ export default function TemplatesPage() {
     setEditingTemplateId(tmpl.id);
     setName(tmpl.name);
     setBody(tmpl.body);
+    setBodyVariants(Array.isArray(tmpl.bodyVariants) ? tmpl.bodyVariants : []);
     setImageUrl(tmpl.imageUrl || '');
     setEnableHook(Boolean(tmpl.enableHook));
     setHookMessage(tmpl.hookMessage || 'Olá {{nome}}, tudo bem? Posso te passar uma informação rápida?');
@@ -117,7 +123,24 @@ export default function TemplatesPage() {
     setHookMode(tmpl.hookMode === 'DELAY' ? 'DELAY' : 'ON_REPLY');
     setHookDelay(tmpl.hookDelay || 15);
     setPreviewHookIdx(0);
+    setPreviewBodyIdx(0);
     setShowEditor(true);
+  };
+
+  // ── Handlers para variações do texto principal (body) ───────────────────────────
+  const handleAddBodyVariant = () => setBodyVariants((prev) => [...prev, '']);
+
+  const handleBodyVariantChange = (index: number, value: string) => {
+    setBodyVariants((prev) => {
+      const updated = [...prev];
+      updated[index] = value;
+      return updated;
+    });
+  };
+
+  const handleRemoveBodyVariant = (index: number) => {
+    setBodyVariants((prev) => prev.filter((_, i) => i !== index));
+    setPreviewBodyIdx(0);
   };
 
   // Adiciona variação de mensagem curta
@@ -165,6 +188,7 @@ export default function TemplatesPage() {
 
     try {
       const cleanHookVariants = hookVariants.map((v) => v.trim()).filter((v) => v.length > 0);
+      const cleanBodyVariants = bodyVariants.map((v) => v.trim()).filter((v) => v.length > 0);
 
       const response = await fetch('/api/templates', {
         method: 'POST',
@@ -173,6 +197,7 @@ export default function TemplatesPage() {
           id: editingTemplateId,
           name,
           body,
+          bodyVariants: cleanBodyVariants,
           imageUrl: imageUrl || null,
           enableHook,
           hookMessage: enableHook ? hookMessage.trim() : null,
@@ -242,6 +267,17 @@ export default function TemplatesPage() {
     const safeIdx = previewHookIdx % allHookOptions.length;
     return allHookOptions[safeIdx] || '';
   }, [allHookOptions, previewHookIdx]);
+
+  // Lista de todas as opções de body para o preview
+  const allBodyOptions = useMemo(() => {
+    const list = [body, ...bodyVariants].filter((b) => Boolean(b && b.trim().length > 0));
+    return list.length > 0 ? list : [body || ''];
+  }, [body, bodyVariants]);
+
+  const currentBodyPreview = useMemo(() => {
+    const safeIdx = previewBodyIdx % Math.max(1, allBodyOptions.length);
+    return allBodyOptions[safeIdx] || '';
+  }, [allBodyOptions, previewBodyIdx]);
 
   const getFormattedTime = (offsetSeconds = 0) => {
     const now = new Date(Date.now() + offsetSeconds * 1000);
@@ -594,6 +630,95 @@ export default function TemplatesPage() {
                 />
               </div>
 
+              {/* ═════════════════════════════════════════════════════════════════ */}
+              {/* SEÇÃO: VARIAÇÕES DO TEXTO PRINCIPAL (ROTAÇÃO ANTI-BAN)              */}
+              {/* ═════════════════════════════════════════════════════════════════ */}
+              <div
+                style={{
+                  border: '1px solid rgba(52,211,153,0.2)',
+                  background: 'rgba(52,211,153,0.02)',
+                  borderRadius: '12px',
+                  padding: '1.25rem',
+                }}
+              >
+                {/* Cabeçalho */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: bodyVariants.length > 0 ? '1rem' : '0', gap: '1rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <div style={{ padding: '0.4rem', borderRadius: '8px', background: 'rgba(52,211,153,0.12)', color: '#34d399' }}>
+                      <Shuffle size={18} />
+                    </div>
+                    <div>
+                      <h4 style={{ fontSize: '0.92rem', fontWeight: 600, color: '#34d399', margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        Variações do Texto Principal
+                        {bodyVariants.length > 0 && (
+                          <span style={{ background: 'rgba(52,211,153,0.15)', color: '#34d399', borderRadius: '99px', fontSize: '0.65rem', padding: '0.1rem 0.4rem', fontWeight: 700 }}>
+                            {bodyVariants.length + 1} versões
+                          </span>
+                        )}
+                      </h4>
+                      <p style={{ fontSize: '0.72rem', color: '#9ca3af', margin: '0.15rem 0 0 0' }}>
+                        O sistema sorteia uma versão diferente para cada contato — parece mais humano e evita ban.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAddBodyVariant}
+                    className="btn btn-secondary"
+                    style={{ fontSize: '0.75rem', padding: '0.3rem 0.7rem', color: '#34d399', borderColor: 'rgba(52,211,153,0.3)', display: 'flex', alignItems: 'center', gap: '0.3rem', flexShrink: 0 }}
+                  >
+                    <Plus size={13} />
+                    + Adicionar Variação
+                  </button>
+                </div>
+
+                {bodyVariants.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '1rem', color: 'rgba(255,255,255,0.25)', fontSize: '0.75rem', border: '1px dashed rgba(52,211,153,0.15)', borderRadius: '8px' }}>
+                    Nenhuma variação extra. Usando apenas o texto principal acima.<br/>
+                    <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.15)' }}>Dica: Spintax {'{'}opcao1|opcao2{'}'} também funciona dentro do texto!</span>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    {bodyVariants.map((variant, index) => (
+                      <div
+                        key={index}
+                        style={{
+                          background: 'rgba(0,0,0,0.15)',
+                          border: '1px solid rgba(52,211,153,0.08)',
+                          borderRadius: '10px',
+                          padding: '0.9rem',
+                          animation: 'fadeBodyVariant 0.2s ease',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <span style={{ fontSize: '0.72rem', color: '#34d399', fontWeight: 700, background: 'rgba(52,211,153,0.1)', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>
+                              Versão {index + 2}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => { handleRemoveBodyVariant(index); }}
+                            style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '0.2rem', display: 'flex', alignItems: 'center', gap: '0.2rem', fontSize: '0.7rem', opacity: 0.8 }}
+                          >
+                            <X size={13} /> Remover
+                          </button>
+                        </div>
+                        <textarea
+                          className="input-control"
+                          rows={6}
+                          placeholder={`Versão alternativa ${index + 2} do texto...\n\nUse {{nome}}, {{link}} e Spintax {op1|op2} para personalizar.`}
+                          value={variant}
+                          onChange={(e) => { handleBodyVariantChange(index, e.target.value); setPreviewBodyIdx(index + 1); }}
+                          onFocus={() => setPreviewBodyIdx(index + 1)}
+                          style={{ fontSize: '0.82rem', resize: 'vertical', width: '100%', background: 'rgba(0,0,0,0.2)', lineHeight: '1.4', fontFamily: 'inherit' }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1rem' }}>
                 <button 
                   type="button" 
@@ -622,25 +747,49 @@ export default function TemplatesPage() {
                 Visualização no WhatsApp
               </h4>
               
-              {enableHook && allHookOptions.length > 1 && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', color: '#9ca3af' }}>
-                  <span>Variação {previewHookIdx + 1} de {allHookOptions.length}</span>
-                  <button
-                    type="button"
-                    onClick={() => setPreviewHookIdx((prev) => (prev > 0 ? prev - 1 : allHookOptions.length - 1))}
-                    style={{ background: 'rgba(255,255,255,0.08)', border: 'none', color: '#e5e7eb', borderRadius: '4px', padding: '2px 4px', cursor: 'pointer' }}
-                  >
-                    <ChevronLeft size={13} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPreviewHookIdx((prev) => (prev + 1) % allHookOptions.length)}
-                    style={{ background: 'rgba(255,255,255,0.08)', border: 'none', color: '#e5e7eb', borderRadius: '4px', padding: '2px 4px', cursor: 'pointer' }}
-                  >
-                    <ChevronRight size={13} />
-                  </button>
-                </div>
-              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                {/* Seletor de variação de body */}
+                {allBodyOptions.length > 1 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.72rem', color: '#34d399' }}>
+                    <Shuffle size={11} />
+                    <span>Body {previewBodyIdx + 1}/{allBodyOptions.length}</span>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewBodyIdx((prev) => (prev > 0 ? prev - 1 : allBodyOptions.length - 1))}
+                      style={{ background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.2)', color: '#34d399', borderRadius: '4px', padding: '1px 4px', cursor: 'pointer' }}
+                    >
+                      <ChevronLeft size={11} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewBodyIdx((prev) => (prev + 1) % allBodyOptions.length)}
+                      style={{ background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.2)', color: '#34d399', borderRadius: '4px', padding: '1px 4px', cursor: 'pointer' }}
+                    >
+                      <ChevronRight size={11} />
+                    </button>
+                  </div>
+                )}
+                {/* Seletor de variação de hook */}
+                {enableHook && allHookOptions.length > 1 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', color: '#9ca3af' }}>
+                    <span>Saudação {previewHookIdx + 1}/{allHookOptions.length}</span>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewHookIdx((prev) => (prev > 0 ? prev - 1 : allHookOptions.length - 1))}
+                      style={{ background: 'rgba(255,255,255,0.08)', border: 'none', color: '#e5e7eb', borderRadius: '4px', padding: '2px 4px', cursor: 'pointer' }}
+                    >
+                      <ChevronLeft size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewHookIdx((prev) => (prev + 1) % allHookOptions.length)}
+                      style={{ background: 'rgba(255,255,255,0.08)', border: 'none', color: '#e5e7eb', borderRadius: '4px', padding: '2px 4px', cursor: 'pointer' }}
+                    >
+                      <ChevronRight size={13} />
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
             
             <div className="wa-preview" style={{ flex: 1, minHeight: '480px', display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '1.25rem' }}>
@@ -689,38 +838,43 @@ export default function TemplatesPage() {
                 </>
               )}
 
-              {/* Balão 2: Template Principal */}
-              <div style={{ alignSelf: 'flex-end', width: '90%', maxWidth: '280px' }}>
-                {enableHook && (
-                  <div style={{ fontSize: '0.675rem', color: '#38bdf8', fontWeight: 600, marginBottom: '0.2rem' }}>
-                    {hookMode === 'ON_REPLY' ? '2ª Mensagem (Enviada após o cliente responder)' : `2ª Mensagem (Enviada após ${hookDelay}s)`}
-                  </div>
-                )}
-                
-                <div className="wa-message" style={{ width: '100%' }}>
-                  {imageUrl && (
-                    <div className="wa-message-media">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img 
-                        src={imageUrl} 
-                        alt="Preview Media" 
-                        className="wa-message-image"
-                        onError={(e) => {
-                          (e.target as HTMLElement).style.display = 'none';
-                        }}
-                      />
+                {/* Balão 2: Template Principal */}
+                <div style={{ alignSelf: 'flex-end', width: '90%', maxWidth: '280px' }}>
+                  {enableHook && (
+                    <div style={{ fontSize: '0.675rem', color: '#38bdf8', fontWeight: 600, marginBottom: '0.2rem' }}>
+                      {hookMode === 'ON_REPLY' ? '2ª Mensagem (Enviada após o cliente responder)' : `2ª Mensagem (Enviada após ${hookDelay}s)`}
+                    </div>
+                  )}
+                  {allBodyOptions.length > 1 && (
+                    <div style={{ fontSize: '0.65rem', color: '#34d399', marginBottom: '0.2rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                      <Shuffle size={10} /> Versão {previewBodyIdx + 1} de {allBodyOptions.length}
                     </div>
                   )}
                   
-                  <div style={{ wordBreak: 'break-word' }}>
-                    {formatBodyPreview(body) || <span style={{ color: '#8696a0', fontStyle: 'italic' }}>Mensagem vazia...</span>}
-                  </div>
-                  
-                  <div className="wa-message-time">
-                    {getFormattedTime(enableHook ? (hookMode === 'ON_REPLY' ? 50 : hookDelay) : 0)}
+                  <div className="wa-message" style={{ width: '100%' }}>
+                    {imageUrl && (
+                      <div className="wa-message-media">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img 
+                          src={imageUrl} 
+                          alt="Preview Media" 
+                          className="wa-message-image"
+                          onError={(e) => {
+                            (e.target as HTMLElement).style.display = 'none';
+                          }}
+                        />
+                      </div>
+                    )}
+                    
+                    <div style={{ wordBreak: 'break-word' }}>
+                      {formatBodyPreview(currentBodyPreview) || <span style={{ color: '#8696a0', fontStyle: 'italic' }}>Mensagem vazia...</span>}
+                    </div>
+                    
+                    <div className="wa-message-time">
+                      {getFormattedTime(enableHook ? (hookMode === 'ON_REPLY' ? 50 : hookDelay) : 0)}
+                    </div>
                   </div>
                 </div>
-              </div>
 
             </div>
           </div>
@@ -768,13 +922,22 @@ export default function TemplatesPage() {
                           <span 
                             className="badge badge-success" 
                             style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.725rem' }}
-                            title={`Modo: ${tmpl.hookMode === 'ON_REPLY' ? 'Ao Responder' : `Após ${tmpl.hookDelay}s`} | ${tmpl.hookVariants?.length ? `${tmpl.hookVariants.length + 1} variações` : '1 variação'}`}
+                            title={`Modo: ${tmpl.hookMode === 'ON_REPLY' ? 'Ao Responder' : `Após ${tmpl.hookDelay}s`} | ${tmpl.hookVariants?.length ? `${tmpl.hookVariants.length + 1} variações de saudação` : '1 variação'}`}
                           >
                             <ShieldCheck size={12} />
                             2 Etapas ({tmpl.hookMode === 'ON_REPLY' ? 'Ao Responder' : `${tmpl.hookDelay}s`})
                           </span>
                         ) : (
                           <span style={{ color: '#6b7280', fontSize: '0.8rem' }}>1 Etapa Direta</span>
+                        )}
+                        {(tmpl.bodyVariants?.length ?? 0) > 0 && (
+                          <span
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.68rem', color: '#34d399', background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.2)', borderRadius: '99px', padding: '0.1rem 0.4rem', marginTop: '0.3rem' }}
+                            title={`${(tmpl.bodyVariants?.length ?? 0) + 1} versões do texto principal`}
+                          >
+                            <Shuffle size={10} />
+                            {(tmpl.bodyVariants?.length ?? 0) + 1} textos
+                          </span>
                         )}
                       </td>
                       <td>
@@ -818,6 +981,10 @@ export default function TemplatesPage() {
         @keyframes spin {
           from { transform: rotate(0deg); }
           to { transform: rotate(360deg); }
+        }
+        @keyframes fadeBodyVariant {
+          from { transform: translateY(6px); opacity: 0; }
+          to   { transform: translateY(0);   opacity: 1; }
         }
         .spin {
           animation: spin 1s linear infinite;

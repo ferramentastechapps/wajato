@@ -42,7 +42,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { id, name, body: messageBody, imageUrl, enableHook, hookMessage, hookVariants, hookMode, hookDelay } = result.data;
+    const { id, name, body: messageBody, imageUrl, enableHook, hookMessage, hookVariants, hookMode, hookDelay, bodyVariants } = result.data;
 
     let template;
     if (id) {
@@ -51,6 +51,7 @@ export async function POST(request: Request) {
         data: {
           name,
           body: messageBody,
+          bodyVariants: bodyVariants || [],
           imageUrl: imageUrl || null,
           enableHook: enableHook ?? false,
           hookMessage: hookMessage || null,
@@ -64,6 +65,7 @@ export async function POST(request: Request) {
         data: {
           name,
           body: messageBody,
+          bodyVariants: bodyVariants || [],
           imageUrl: imageUrl || null,
           enableHook: enableHook ?? false,
           hookMessage: hookMessage || null,

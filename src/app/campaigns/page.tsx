@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { 
   Send, Plus, Trash2, Play, Pause, X, StopCircle,
   AlertCircle, Clock, Eye, Calendar, Smartphone,
-  Shuffle, RefreshCw, Coffee, Shield, MessageSquarePlus
+  Shuffle, RefreshCw, Coffee, Shield
 } from 'lucide-react';
 import AppLayout from '@/components/layout/AppLayout';
 
@@ -91,11 +91,9 @@ export default function CampaignsPage() {
   const [errorMsg, setErrorMsg] = useState('');
   const [isScheduled, setIsScheduled] = useState(false);
   const [scheduledAt, setScheduledAt] = useState('');
-  const [messageVariants, setMessageVariants] = useState<string[]>([]);
   const [batchSize, setBatchSize] = useState(0);
   const [batchCooldown, setBatchCooldown] = useState(600);
   const [batchPresetIdx, setBatchPresetIdx] = useState(0);
-  const [previewVariantIdx, setPreviewVariantIdx] = useState(0);
   const [previewText, setPreviewText] = useState('');
 
   const fetchCampaigns = async () => {
@@ -129,18 +127,19 @@ export default function CampaignsPage() {
   const allVariants = useCallback((): string[] => {
     const sel = templates.find(t => t.id === templateId);
     if (!sel) return [];
-    return [sel.body, ...messageVariants];
-  }, [templates, templateId, messageVariants]);
+    // Usa apenas o body do template para o preview da campanha
+    // As variações ficam no template (bodyVariants) e são gerenciadas lá
+    return [sel.body];
+  }, [templates, templateId]);
 
   const regeneratePreview = useCallback(() => {
     const variants = allVariants();
     if (variants.length === 0) { setPreviewText(''); return; }
-    const idx = previewVariantIdx % variants.length;
-    const raw = variants[idx].replace(/{{nome}}/g, 'João Silva').replace(/{{link}}/g, 'https://wa.me/grupopromo');
+    const raw = variants[0].replace(/{{nome}}/g, 'João Silva').replace(/{{link}}/g, 'https://wa.me/grupopromo');
     setPreviewText(parseSpintax(raw));
-  }, [allVariants, previewVariantIdx]);
+  }, [allVariants]);
 
-  useEffect(() => { regeneratePreview(); }, [templateId, previewVariantIdx, messageVariants, regeneratePreview]);
+  useEffect(() => { regeneratePreview(); }, [templateId, regeneratePreview]);
 
   const getRisk = () => {
     let s = 0;
@@ -160,14 +159,11 @@ export default function CampaignsPage() {
     const defComp = companies.find(c => c.isDefault) || companies[0];
     setCompanyId(defComp?.id || '');
     setDelayMin(20); setDelayMax(60); setDelayPreset('medium');
-    setMessageVariants([]); setBatchSize(0); setBatchCooldown(600); setBatchPresetIdx(0);
-    setIsScheduled(false); setScheduledAt(''); setPreviewVariantIdx(0); setErrorMsg('');
+    setBatchSize(0); setBatchCooldown(600); setBatchPresetIdx(0);
+    setIsScheduled(false); setScheduledAt(''); setErrorMsg('');
     setShowAddCampaign(true);
   };
 
-  const handleAddVariant = () => setMessageVariants(p => [...p, '']);
-  const handleVariantChange = (i: number, v: string) => setMessageVariants(p => p.map((x, j) => j === i ? v : x));
-  const handleRemoveVariant = (i: number) => { setMessageVariants(p => p.filter((_, j) => j !== i)); setPreviewVariantIdx(0); };
   const handlePresetChange = (p: typeof DELAY_PRESETS[0]) => { setDelayPreset(p.id); if (p.id !== 'custom') { setDelayMin(p.min); setDelayMax(p.max); } };
   const handleBatchPreset = (i: number) => { setBatchPresetIdx(i); setBatchSize(BATCH_PRESETS[i].size); setBatchCooldown(BATCH_PRESETS[i].cooldown); };
 
@@ -178,7 +174,6 @@ export default function CampaignsPage() {
     if (isScheduled && !scheduledAt) { setErrorMsg('Selecione data e hora.'); return; }
     if (delayMin < 5) { setErrorMsg('Delay mínimo: 5 segundos.'); return; }
     if (delayMax <= delayMin) { setErrorMsg('Delay máximo deve ser maior que o mínimo.'); return; }
-    const cleanVariants = messageVariants.filter(v => v.trim().length > 0);
     setIsSubmitting(true);
     try {
       const r = await fetch('/api/campaigns', {
@@ -191,7 +186,7 @@ export default function CampaignsPage() {
           templateId,
           delayMin,
           delayMax,
-          messageVariants: cleanVariants,
+          messageVariants: [],  // variações agora ficam no template
           batchSize,
           batchCooldown,
           scheduledAt: isScheduled && scheduledAt ? new Date(scheduledAt).toISOString() : null,
@@ -396,39 +391,14 @@ export default function CampaignsPage() {
                     </div>
                   </div>
 
-                  {/* VARIANTES DE MENSAGEM */}
-                  <div style={{background:'rgba(52,211,153,0.02)',border:'1px solid rgba(52,211,153,0.12)',borderRadius:'10px',padding:'1.2rem'}}>
-                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.8rem',borderBottom:'1px solid rgba(52,211,153,0.1)',paddingBottom:'0.5rem'}}>
-                      <div>
-                        <div style={{fontSize:'0.88rem',fontWeight:700,color:'#34d399',display:'flex',alignItems:'center',gap:'0.4rem'}}>
-                          <Shuffle size={15}/> Variações de Mensagem
-                        </div>
-                        <div style={{fontSize:'0.68rem',color:'rgba(255,255,255,0.4)',marginTop:'2px'}}>
-                          O sistema rotaciona aleatoriamente entre estes textos para evitar bloqueios.
-                        </div>
-                      </div>
-                      <button type="button" onClick={handleAddVariant} className="btn btn-secondary" style={{padding:'0.35rem 0.75rem',fontSize:'0.7rem',borderColor:'rgba(52,211,153,0.3)',color:'#34d399',display:'flex',alignItems:'center',gap:'0.3rem'}}>
-                        <MessageSquarePlus size={13}/> + Texto
-                      </button>
+                  {/* Informação sobre variações no template */}
+                  <div style={{background:'rgba(52,211,153,0.02)',border:'1px solid rgba(52,211,153,0.12)',borderRadius:'10px',padding:'1rem'}}>
+                    <div style={{display:'flex',alignItems:'center',gap:'0.5rem',fontSize:'0.82rem',fontWeight:600,color:'#34d399',marginBottom:'0.35rem'}}>
+                      <Shuffle size={14}/> Variações de Texto Anti-Ban
                     </div>
-
-                    {messageVariants.length === 0 ? (
-                      <div style={{textAlign:'center',padding:'1.5rem',color:'rgba(255,255,255,0.25)',fontSize:'0.75rem',border:'1px dashed rgba(255,255,255,0.08)',borderRadius:'8px',background:'rgba(0,0,0,0.1)'}}>
-                        Nenhuma variação extra. Usando apenas a Mensagem Base.
-                      </div>
-                    ) : (
-                      <div style={{display:'flex',flexDirection:'column',gap:'0.8rem'}}>
-                        {messageVariants.map((v,i)=>(
-                          <div key={i} style={{animation:'wa-fadeUp 0.15s ease',background:'rgba(0,0,0,0.15)',border:'1px solid rgba(255,255,255,0.04)',borderRadius:'8px',padding:'0.8rem'}}>
-                            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.4rem'}}>
-                              <span style={{fontSize:'0.72rem',color:'#34d399',fontWeight:700}}>Variante #{i+2}</span>
-                              <button type="button" onClick={()=>handleRemoveVariant(i)} style={{background:'none',border:'none',color:'#ef4444',cursor:'pointer',padding:'2px',display:'flex',alignItems:'center',gap:'0.2rem',fontSize:'0.65rem',opacity:0.8}}><X size={12}/> Remover</button>
-                            </div>
-                            <textarea className="input-control" placeholder={"Texto alternativo da variante " + (i+2) + "...\\n\\nUse {{nome}} e {{link}} para personalizar."} value={v} onChange={e=>{handleVariantChange(i,e.target.value);setPreviewVariantIdx(i+1);}} onFocus={()=>setPreviewVariantIdx(i+1)} style={{minHeight:'90px',fontSize:'0.78rem',resize:'vertical',width:'100%',background:'rgba(0,0,0,0.2)'}}/>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    <p style={{fontSize:'0.72rem',color:'rgba(255,255,255,0.4)',margin:0,lineHeight:1.5}}>
+                      As variações do texto são configuradas diretamente no <strong style={{color:'#34d399'}}>Template</strong> selecionado. O sistema rotaciona automaticamente entre as versões para cada contato.
+                    </p>
                   </div>
 
                   {/* CONFIGURAÇÕES ANTI-BAN */}
@@ -498,29 +468,14 @@ export default function CampaignsPage() {
                       <Smartphone size={18} color="#25d366"/>
                       <div>
                         <div style={{fontSize:'0.8rem',fontWeight:700,color:'white'}}>Visualização do Cliente</div>
-                        <div style={{fontSize:'0.62rem',color:'#8696a0'}}>
-                          {vars.length > 0 ? "Variante " + (previewVariantIdx + 1) + " de " + vars.length : "Selecione um template"}
-                        </div>
                       </div>
                     </div>
-                    {vars.length>1&&<button type="button" onClick={()=>setPreviewVariantIdx(v=>(v+1)%vars.length)} className="btn btn-secondary" style={{padding:'0.3rem 0.6rem',fontSize:'0.65rem',gap:'0.3rem',display:'flex',alignItems:'center'}}><RefreshCw size={11}/> Próxima</button>}
                   </div>
 
-                  {vars.length>1&&(
-                    <div style={{background:'#182229',display:'flex',overflowX:'auto',borderBottom:'1px solid rgba(255,255,255,0.04)',padding:'0.4rem 0.6rem',gap:'0.4rem'}}>
-                      {vars.map((_,i)=>(
-                        <button key={i} type="button" onClick={()=>setPreviewVariantIdx(i)} style={{background:previewVariantIdx===i?'rgba(37,211,102,0.12)':'transparent',border:`1px solid ${previewVariantIdx===i?'#25d366':'rgba(255,255,255,0.06)'}`,color:previewVariantIdx===i?'#25d366':'#8696a0',borderRadius:'6px',padding:'0.25rem 0.6rem',fontSize:'0.65rem',cursor:'pointer',whiteSpace:'nowrap',transition:'all 0.15s',fontWeight:600}}>
-                          {i===0?'📄 Base':`✏️ Var. ${i+1}`}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* CHAT DISPLAY */}
                   <div style={{flex:1,padding:'1.2rem',display:'flex',flexDirection:'column',backgroundImage:'radial-gradient(circle,rgba(255,255,255,0.015) 1px,transparent 1px)',backgroundSize:'16px 16px',backgroundColor:'#0b141a',minHeight:'240px',overflowY:'auto'}}>
                     {templateId&&previewText?(
                       <div style={{alignSelf:'flex-start',maxWidth:'92%',background:'#005c4b',color:'white',padding:'0.6rem 0.9rem',borderRadius:'0 8px 8px 8px',fontSize:'0.82rem',lineHeight:1.45,boxShadow:'0 1px 2px rgba(0,0,0,0.3)',wordBreak:'break-word',animation:'wa-fadeUp 0.15s ease'}}>
-                        {(()=>{const sel=templates.find(t=>t.id===templateId);return sel?.imageUrl&&previewVariantIdx===0?<img src={sel.imageUrl} alt="Mídia" style={{borderRadius:'6px',width:'100%',maxHeight:'170px',objectFit:'cover',marginBottom:'0.6rem',border:'1px solid rgba(255,255,255,0.05)'}}/>:null;})()}
+                        {(()=>{const sel=templates.find(t=>t.id===templateId);return sel?.imageUrl?<img src={sel.imageUrl} alt="Mídia" style={{borderRadius:'6px',width:'100%',maxHeight:'170px',objectFit:'cover',marginBottom:'0.6rem',border:'1px solid rgba(255,255,255,0.05)'}}/> :null;})()}
                         <div style={{whiteSpace:'pre-wrap'}}>{previewText}</div>
                         <div style={{display:'flex',justifyContent:'flex-end',fontSize:'0.56rem',color:'rgba(255,255,255,0.4)',marginTop:'4px'}}>
                           <span>{new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</span>
@@ -538,7 +493,7 @@ export default function CampaignsPage() {
                     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.6rem',marginBottom:'0.6rem',fontSize:'0.72rem'}}>
                       <div style={{color:'rgba(255,255,255,0.45)',display:'flex',flexDirection:'column',gap:'0.2rem'}}>
                         <span>⏱️ Delay: <strong style={{color:'#f8fafc'}}>{delayMin}s – {delayMax}s</strong></span>
-                        <span>🎲 Textos: <strong style={{color:'#34d399'}}>{vars.length} variantes</strong></span>
+                        <span>🎲 Textos: <strong style={{color:'#34d399'}}>via template</strong></span>
                       </div>
                       <div style={{color:'rgba(255,255,255,0.45)',display:'flex',flexDirection:'column',gap:'0.2rem'}}>
                         <span>☕ Cooldown: <strong style={{color:'#a78bfa'}}>{batchSize>0?`Lote de ${batchSize} msgs`:'Desativado'}</strong></span>
@@ -564,7 +519,7 @@ export default function CampaignsPage() {
               <div className="modal-footer" style={{borderTop:'1px solid rgba(255,255,255,0.08)',padding:'1rem 1.5rem'}}>
                 <button type="button" className="btn btn-secondary" onClick={()=>setShowAddCampaign(false)} disabled={isSubmitting}>Cancelar</button>
                 <button type="submit" className="btn btn-primary" disabled={isSubmitting||(targetType==='GROUP'&&groups.length===0)||(targetType==='SEGMENT'&&segments.length===0)||templates.length===0} style={{display:'flex',alignItems:'center',gap:'0.4rem'}}>
-                  {"🚀 Criar Campanha " + (vars.length > 1 ? "(" + vars.length + " variantes)" : "")}
+                  {'🚀 Criar Campanha'}
                 </button>
               </div>
             </form>

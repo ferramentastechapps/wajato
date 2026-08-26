@@ -32,6 +32,7 @@ export const templateSchema = z.object({
   id: z.preprocess((val) => val === '' ? null : val, z.string().uuid('ID do template inválido').optional().nullable()),
   name: z.string().trim().min(1, 'O nome do template é obrigatório'),
   body: z.string().trim().min(1, 'O texto da mensagem é obrigatório'),
+  bodyVariants: z.array(z.string().trim().min(1)).default([]),  // Variações do texto principal
   imageUrl: z.string().url('URL da imagem inválida').or(z.literal('')).nullable().optional(),
   enableHook: z.boolean().default(false),
   hookMessage: z.string().trim().nullable().optional(),

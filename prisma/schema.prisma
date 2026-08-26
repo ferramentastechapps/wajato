@@ -93,6 +93,7 @@ model Template {
   hookVariants String[]   @default([])        // Variações alternativas de saudações curtas para rotação
   hookMode     String     @default("ON_REPLY") // "ON_REPLY" (ao responder) ou "DELAY" (após X segundos)
   hookDelay    Int        @default(15)        // Segundos de espera se hookMode for DELAY
+  bodyVariants String[]   @default([])        // Variações do texto principal para rotação anti-ban
   campaigns    Campaign[]
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt

@@ -140,8 +140,12 @@ const worker = new Worker(
       }
     }
 
-    // Variantes de mensagem: inclui o corpo do template como opção 0 + todas as variantes cadastradas
-    const allVariants = [template.body, ...(log.campaign.messageVariants || [])];
+    // Variantes de mensagem: inclui o corpo do template + variantes do template (novo) + variantes da campanha (retrocompatibilidade)
+    const allVariants = [
+      template.body,
+      ...(template.bodyVariants || []),        // ← variantes definidas no template
+      ...(log.campaign.messageVariants || []), // ← retrocompatibilidade com campanhas antigas
+    ];
     // Seleciona aleatoriamente uma variante para parecer humano e evitar detecção de spam
     const chosenVariant = allVariants[Math.floor(Math.random() * allVariants.length)];
 
