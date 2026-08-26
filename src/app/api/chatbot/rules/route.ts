@@ -11,7 +11,7 @@ export async function GET() {
     }
 
     const rules = await prisma.chatbotRule.findMany({
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ priority: 'asc' }, { createdAt: 'desc' }],
     });
 
     const logs = await prisma.chatbotLog.findMany({
@@ -46,7 +46,27 @@ export async function POST(request: Request) {
       );
     }
 
-    const { id, trigger, matchType, response, imageUrl, isActive } = result.data;
+    const { id, trigger, matchType, response, imageUrl, isActive, priority, category, action, autoTags } = result.data;
+
+    // Valida REGEX se matchType for REGEX
+    if (matchType === 'REGEX') {
+      try {
+        new RegExp(trigger);
+      } catch {
+        return NextResponse.json(
+          { message: 'Expressão regular inválida' },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Ação TAG_ONLY não precisa de response
+    if (action !== 'TAG_ONLY' && !response?.trim()) {
+      return NextResponse.json(
+        { message: 'A mensagem de resposta é obrigatória para esta ação' },
+        { status: 400 }
+      );
+    }
 
     let rule;
     if (id) {
@@ -55,9 +75,13 @@ export async function POST(request: Request) {
         data: {
           trigger,
           matchType,
-          response,
+          response: response || '',
           imageUrl: imageUrl || null,
           isActive,
+          priority: priority ?? 0,
+          category: category || null,
+          action: action || 'REPLY',
+          autoTags: autoTags || [],
         },
       });
     } else {
@@ -72,13 +96,17 @@ export async function POST(request: Request) {
         );
       }
 
-      rule = await prisma.chatbotRule.create({
+      rule = await (prisma.chatbotRule as any).create({
         data: {
           trigger,
           matchType,
-          response,
+          response: response || '',
           imageUrl: imageUrl || null,
           isActive,
+          priority: priority ?? 0,
+          category: category || null,
+          action: action || 'REPLY',
+          autoTags: autoTags || [],
         },
       });
     }

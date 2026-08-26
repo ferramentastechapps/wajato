@@ -78,10 +78,14 @@ export const companySchema = z.object({
 export const chatbotRuleSchema = z.object({
   id: z.string().uuid('ID inválido').optional().nullable(),
   trigger: z.string().trim().min(1, 'A palavra-chave/gatilho é obrigatória'),
-  matchType: z.enum(['EXACT', 'CONTAINS']),
-  response: z.string().trim().min(1, 'A mensagem de resposta é obrigatória'),
+  matchType: z.enum(['EXACT', 'CONTAINS', 'STARTS_WITH', 'REGEX']),
+  response: z.string().trim().optional().default(''),
   imageUrl: z.string().url('URL da imagem inválida').or(z.literal('')).nullable().optional(),
   isActive: z.boolean().default(true),
+  priority: z.coerce.number().int().min(0).max(999).default(0),
+  category: z.string().trim().nullable().optional(),
+  action: z.enum(['REPLY', 'TAG_AND_REPLY', 'OPTOUT_AND_REPLY', 'TAG_ONLY']).default('REPLY'),
+  autoTags: z.array(z.string().trim().min(1)).default([]),
 });
 
 export const chatbotConfigSchema = z.object({

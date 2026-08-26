@@ -266,25 +266,57 @@ export async function POST(request: Request) {
 
               if (isOptOutRequest) {
                 try {
-                  await prisma.contact.upsert({
+                  // Resolve empresa para mensagem personalizada
+                  let companyName = '';
+                  try {
+                    const contactForCompany = await prisma.contact.findUnique({
+                      where: { phone },
+                      include: { company: true },
+                    });
+                    if (contactForCompany?.company?.name) {
+                      companyName = contactForCompany.company.name;
+                    } else {
+                      // Busca pela última campanha
+                      const lastLog = await prisma.messageLog.findFirst({
+                        where: { contact: { phone }, campaign: { companyId: { not: null } } },
+                        include: { campaign: { include: { company: true } } },
+                        orderBy: { updatedAt: 'desc' },
+                      });
+                      if (lastLog?.campaign?.company?.name) {
+                        companyName = lastLog.campaign.company.name;
+                      }
+                    }
+                  } catch {}
+
+                  // Atualiza contato: opt-out + tag "opt-out"
+                  const existingContact = await (prisma.contact as any).upsert({
                     where: { phone },
                     update: { optOut: true, optOutAt: new Date() },
                     create: { phone, name: pushName || null, optOut: true, optOutAt: new Date() },
                   });
-                  // Envia mensagem de confirmação ao contato
-                  const { evolutionApi } = await import('@/lib/evolution');
-                  const activeInstances = await prisma.whatsAppInstance.findMany({
-                    where: { status: 'CONNECTED' },
-                    select: { name: true },
-                    take: 1,
-                  });
-                  if (activeInstances.length > 0) {
-                    await evolutionApi.sendTextMessage(
-                      instanceName,
-                      phone,
-                      '✅ Você foi removido da nossa lista de contatos e não receberá mais mensagens. Se mudar de ideia, entre em contato conosco.'
-                    );
+
+                  // Adiciona a tag 'opt-out' ao array de tags do contato
+                  try {
+                    const currentTags: string[] = existingContact.tags || [];
+                    if (!currentTags.includes('opt-out')) {
+                      await (prisma.contact as any).update({
+                        where: { phone },
+                        data: { tags: [...currentTags, 'opt-out'] },
+                      });
+                    }
+                  } catch (tagErr: any) {
+                    console.error(`[Webhook] Erro ao adicionar tag opt-out para ${phone}:`, tagErr.message);
                   }
+
+                  // Envia mensagem de confirmação personalizada
+                  const confirmMsg = companyName
+                    ? `✅ Tudo bem! Você foi removido da lista da *${companyName}* e não receberá mais mensagens. Se mudar de ideia, é só responder "quero receber" aqui mesmo! 😊`
+                    : `✅ Você foi removido da nossa lista de contatos e não receberá mais mensagens. Se mudar de ideia, é só responder "quero receber" aqui mesmo! 😊`;
+
+                  await import('@/lib/evolution').then(async ({ evolutionApi }) => {
+                    await evolutionApi.sendTextMessage(instanceName, phone, confirmMsg);
+                  });
+
                   console.log(`[Webhook] Opt-out automático registrado para ${phone} (palavra-chave: "${messageText}")`);
                 } catch (optErr: any) {
                   console.error(`[Webhook] Erro ao registrar opt-out para ${phone}:`, optErr.message);
@@ -363,7 +395,17 @@ export async function POST(request: Request) {
 
                 // Chatbot normal apenas se não foi entrega de hook
                 if (!hookHandled) {
-                  handleChatbotIncoming(phone, messageText, instanceName).catch((err) => {
+                  // Resolve companyId do contato para contexto de IA mais preciso
+                  let contactCompanyId: string | null = null;
+                  try {
+                    const contactRow = await prisma.contact.findUnique({
+                      where: { phone },
+                      select: { companyId: true },
+                    });
+                    contactCompanyId = contactRow?.companyId || null;
+                  } catch {}
+
+                  handleChatbotIncoming(phone, messageText, instanceName, { companyId: contactCompanyId }).catch((err) => {
                     console.error('[Webhook] Erro no processamento do chatbot:', err);
                   });
                 }
