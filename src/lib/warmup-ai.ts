@@ -258,7 +258,10 @@ export async function generateContextualEmoji(
 
     if (isGroq || isOpenRouter) {
       const url = isGroq ? 'https://api.groq.com/openai/v1/chat/completions' : 'https://openrouter.ai/api/v1/chat/completions';
-      const model = isGroq ? 'llama-3.1-8b-instant' : 'google/gemini-2.5-flash';
+      // Aquecimento: modelo primário gratuito + fallback gratuito
+      const WARMUP_PRIMARY_MODEL = 'cohere/north-mini-code:free';
+      const WARMUP_FALLBACK_MODEL = 'poolside/laguna-xs-2.1:free';
+      const model = isGroq ? 'llama-3.1-8b-instant' : WARMUP_PRIMARY_MODEL;
       const headers: Record<string, string> = {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
@@ -267,11 +270,19 @@ export async function generateContextualEmoji(
         headers['HTTP-Referer'] = 'https://wajato.ftech-apps.com.br';
         headers['X-Title'] = 'WaJato';
       }
-      const res = await fetch(url, {
+      let res = await fetch(url, {
         method: 'POST',
         headers,
         body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], temperature: 0.7, max_tokens: 10 }),
       });
+      // Se o modelo primário falhar, tenta o fallback gratuito
+      if (!res.ok && isOpenRouter) {
+        res = await fetch(url, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ model: WARMUP_FALLBACK_MODEL, messages: [{ role: 'user', content: prompt }], temperature: 0.7, max_tokens: 10 }),
+        });
+      }
       const data = await res.json();
       const raw = String(data.choices?.[0]?.message?.content || '').trim();
       // Valida que retornou só emoji(s) — se vier texto, cai no fallback
@@ -419,7 +430,10 @@ RETORNE APENAS A MENSAGEM. Sem aspas, sem prefixo, sem explicação, sem HTML.`;
             : `Responda à última mensagem de forma casual e curta. Máximo 2 frases.`);
 
       const url = isGroq ? 'https://api.groq.com/openai/v1/chat/completions' : 'https://openrouter.ai/api/v1/chat/completions';
-      const modelName = isGroq ? 'llama-3.1-8b-instant' : 'google/gemini-2.5-flash';
+      // Aquecimento: modelo primário gratuito + fallback gratuito
+      const WARMUP_PRIMARY_MODEL = 'cohere/north-mini-code:free';
+      const WARMUP_FALLBACK_MODEL = 'poolside/laguna-xs-2.1:free';
+      const modelName = isGroq ? 'llama-3.1-8b-instant' : WARMUP_PRIMARY_MODEL;
 
       const headers: Record<string, string> = {
         'Authorization': `Bearer ${apiKey}`,
@@ -431,23 +445,27 @@ RETORNE APENAS A MENSAGEM. Sem aspas, sem prefixo, sem explicação, sem HTML.`;
         headers['X-Title'] = 'WaJato';
       }
 
-      const response = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          model: modelName,
-          messages: [
-            { role: 'system', content: systemInstruction },
-            ...sanitizedHistory.map(h => ({
-              role: h.role === 'model' ? 'assistant' : 'user',
-              content: h.parts[0].text,
-            })),
-            { role: 'user', content: prompt }
-          ],
-          temperature: 0.9,
-          max_tokens: 80, // Fixado em 80 para evitar respostas longas com HTML/markdown
-        }),
+      const requestBody = (model: string) => JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: systemInstruction },
+          ...sanitizedHistory.map(h => ({
+            role: h.role === 'model' ? 'assistant' : 'user',
+            content: h.parts[0].text,
+          })),
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.9,
+        max_tokens: 80, // Fixado em 80 para evitar respostas longas com HTML/markdown
       });
+
+      let response = await fetch(url, { method: 'POST', headers, body: requestBody(modelName) });
+
+      // Fallback automático para modelo secundário gratuito se o primário falhar
+      if (!response.ok && isOpenRouter) {
+        console.warn(`[Warmup AI] Modelo primário ${modelName} falhou (${response.status}), tentando fallback: ${WARMUP_FALLBACK_MODEL}`);
+        response = await fetch(url, { method: 'POST', headers, body: requestBody(WARMUP_FALLBACK_MODEL) });
+      }
 
       const data = await response.json();
       if (!response.ok) {
