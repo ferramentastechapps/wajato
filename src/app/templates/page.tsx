@@ -20,10 +20,15 @@ import {
   Sparkles,
   CheckCircle2,
   HelpCircle,
-  MessageSquare
+  MessageSquare,
+  Upload,
+  Check,
+  AlertCircle,
+  RefreshCw
 } from 'lucide-react';
 import AppLayout from '@/components/layout/AppLayout';
 import { parseSpintax } from '@/lib/spintax';
+import { convertImageToWebP, formatBytes, CompressionResult } from '@/lib/image-compressor';
 
 interface Template {
   id: string;
@@ -51,6 +56,12 @@ export default function TemplatesPage() {
   const [body, setBody] = useState('');
   const [bodyVariants, setBodyVariants] = useState<string[]>([]);
   const [imageUrl, setImageUrl] = useState('');
+  const [imageUploadMode, setImageUploadMode] = useState<'upload' | 'url'>('upload');
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState('');
+  const [compressionInfo, setCompressionInfo] = useState<CompressionResult | null>(null);
+  const [imageUploadError, setImageUploadError] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── Estados de Proteção Anti-Bloqueio (Mensagem Prévia / Hook) ──────────────
   const [enableHook, setEnableHook] = useState(false);
@@ -97,6 +108,9 @@ export default function TemplatesPage() {
     setBody('Olá {{nome}},\n\nTemos novas promoções imperdíveis hoje! Clique no link abaixo para entrar no nosso grupo oficial:\n\n👉 {{link}}\n\nTe espero lá!');
     setBodyVariants([]);
     setImageUrl('');
+    setCompressionInfo(null);
+    setImageUploadError('');
+    setImageUploadMode('upload');
     setEnableHook(false);
     setHookMessage('Olá {{nome}}, tudo bem? Posso te passar uma informação rápida?');
     setHookVariants([
@@ -117,6 +131,9 @@ export default function TemplatesPage() {
     setBody(tmpl.body);
     setBodyVariants(Array.isArray(tmpl.bodyVariants) ? tmpl.bodyVariants : []);
     setImageUrl(tmpl.imageUrl || '');
+    setCompressionInfo(null);
+    setImageUploadError('');
+    setImageUploadMode(tmpl.imageUrl && !tmpl.imageUrl.includes('/uploads/') ? 'url' : 'upload');
     setEnableHook(Boolean(tmpl.enableHook));
     setHookMessage(tmpl.hookMessage || 'Olá {{nome}}, tudo bem? Posso te passar uma informação rápida?');
     setHookVariants(Array.isArray(tmpl.hookVariants) && tmpl.hookVariants.length > 0 ? tmpl.hookVariants : []);
@@ -125,6 +142,64 @@ export default function TemplatesPage() {
     setPreviewHookIdx(0);
     setPreviewBodyIdx(0);
     setShowEditor(true);
+  };
+
+  // ── Handlers de Upload e Conversão WebP ─────────────────────────────────────────
+  const processAndUploadFile = async (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      setImageUploadError('Por favor, selecione um arquivo de imagem válido (JPG, PNG, WebP, GIF).');
+      return;
+    }
+
+    setUploadingImage(true);
+    setImageUploadError('');
+    setUploadProgress('⚡ Convertendo e otimizando para WebP...');
+
+    try {
+      // Converte no navegador para WebP ultra-leve (max 1600x1600, qualidade 0.85)
+      const result = await convertImageToWebP(file, { maxWidth: 1600, maxHeight: 1600, quality: 0.85 });
+      setCompressionInfo(result);
+
+      setUploadProgress(`📤 Enviando WebP (${formatBytes(result.compressedSize)})...`);
+
+      const formData = new FormData();
+      formData.append('file', result.file);
+
+      const res = await fetch('/api/uploads', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Falha no upload da imagem');
+
+      setImageUrl(data.url);
+    } catch (err: any) {
+      console.error('Erro ao processar imagem:', err);
+      setImageUploadError(err.message || 'Erro ao converter/enviar imagem');
+    } finally {
+      setUploadingImage(false);
+      setUploadProgress('');
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) processAndUploadFile(file);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const file = e.dataTransfer.files?.[0];
+    if (file) processAndUploadFile(file);
+  };
+
+  const handleRemoveImage = () => {
+    setImageUrl('');
+    setCompressionInfo(null);
+    setImageUploadError('');
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   // ── Handlers para variações do texto principal (body) ───────────────────────────
@@ -563,21 +638,204 @@ export default function TemplatesPage() {
                 )}
               </div>
 
-              {/* Link da Imagem */}
-              <div className="form-group">
-                <label className="form-label">Link da Imagem do Template Principal (Opcional - Mídia)</label>
-                <div style={{ position: 'relative' }}>
-                  <ImageIcon size={16} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#6b7280' }} />
-                  <input
-                    type="url"
-                    className="input-control"
-                    style={{ paddingLeft: '2.5rem' }}
-                    placeholder="URL pública da imagem (.jpg, .png)"
-                    value={imageUrl}
-                    onChange={(e) => setImageUrl(e.target.value)}
-                    disabled={isSubmitting}
-                  />
+              {/* Mídia do Template Principal (Upload com conversão WebP ou URL) */}
+              <div className="form-group" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', borderRadius: '12px', padding: '1rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                  <div>
+                    <label className="form-label" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 600 }}>
+                      <ImageIcon size={16} style={{ color: '#38bdf8' }} />
+                      Imagem do Template Principal (Mídia WhatsApp)
+                    </label>
+                    <p style={{ fontSize: '0.725rem', color: '#9ca3af', margin: '0.15rem 0 0 0' }}>
+                      Opcional. Imagens enviadas são convertidas automaticamente para <strong>WebP ultra-leve</strong> para disparos rápidos.
+                    </p>
+                  </div>
+
+                  {/* Alternador de Modo: Upload vs URL */}
+                  <div style={{ display: 'flex', background: 'rgba(0,0,0,0.3)', borderRadius: '8px', padding: '2px', border: '1px solid var(--border)' }}>
+                    <button
+                      type="button"
+                      onClick={() => setImageUploadMode('upload')}
+                      style={{
+                        padding: '0.25rem 0.6rem',
+                        fontSize: '0.75rem',
+                        fontWeight: imageUploadMode === 'upload' ? 600 : 400,
+                        background: imageUploadMode === 'upload' ? 'rgba(56,189,248,0.2)' : 'transparent',
+                        color: imageUploadMode === 'upload' ? '#38bdf8' : '#9ca3af',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.25rem',
+                      }}
+                    >
+                      <Upload size={12} />
+                      Upload / WebP
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setImageUploadMode('url')}
+                      style={{
+                        padding: '0.25rem 0.6rem',
+                        fontSize: '0.75rem',
+                        fontWeight: imageUploadMode === 'url' ? 600 : 400,
+                        background: imageUploadMode === 'url' ? 'rgba(56,189,248,0.2)' : 'transparent',
+                        color: imageUploadMode === 'url' ? '#38bdf8' : '#9ca3af',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.25rem',
+                      }}
+                    >
+                      <LinkIcon size={12} />
+                      URL Externa
+                    </button>
+                  </div>
                 </div>
+
+                {imageUploadError && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.6rem 0.8rem', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '8px', marginBottom: '0.75rem', color: '#fca5a5', fontSize: '0.8rem' }}>
+                    <AlertCircle size={14} style={{ flexShrink: 0 }} />
+                    {imageUploadError}
+                  </div>
+                )}
+
+                {imageUploadMode === 'upload' ? (
+                  <div>
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleFileChange}
+                      accept="image/png,image/jpeg,image/webp,image/gif,image/bmp"
+                      style={{ display: 'none' }}
+                    />
+
+                    {imageUrl ? (
+                      /* Preview da Imagem Carregada */
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '1rem',
+                        padding: '0.75rem',
+                        background: 'rgba(0,0,0,0.25)',
+                        border: '1px solid rgba(56,189,248,0.2)',
+                        borderRadius: '10px',
+                      }}>
+                        <div style={{ width: '70px', height: '70px', borderRadius: '8px', overflow: 'hidden', flexShrink: 0, background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <img
+                            src={imageUrl}
+                            alt="Mídia"
+                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                            onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+                          />
+                        </div>
+
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#38bdf8' }}>
+                              ⚡ Imagem Otimizada (WebP)
+                            </span>
+                            {compressionInfo && (
+                              <span style={{ background: 'rgba(34,197,94,0.15)', color: '#22c55e', fontSize: '0.65rem', padding: '0.1rem 0.4rem', borderRadius: '999px', fontWeight: 700 }}>
+                                -{compressionInfo.savingsPercent}% mais leve
+                              </span>
+                            )}
+                          </div>
+
+                          {compressionInfo ? (
+                            <p style={{ fontSize: '0.72rem', color: '#9ca3af', margin: '0.25rem 0 0 0' }}>
+                              Original: <span style={{ textDecoration: 'line-through' }}>{formatBytes(compressionInfo.originalSize)}</span> ➔ <strong>{formatBytes(compressionInfo.compressedSize)}</strong> ({compressionInfo.width}x{compressionInfo.height}px)
+                            </p>
+                          ) : (
+                            <p style={{ fontSize: '0.72rem', color: '#9ca3af', margin: '0.25rem 0 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {imageUrl}
+                            </p>
+                          )}
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '0.4rem' }}>
+                          <button
+                            type="button"
+                            onClick={() => fileInputRef.current?.click()}
+                            className="btn btn-secondary"
+                            style={{ fontSize: '0.75rem', padding: '0.35rem 0.65rem' }}
+                            disabled={uploadingImage}
+                          >
+                            Trocar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleRemoveImage}
+                            className="btn btn-danger"
+                            style={{ fontSize: '0.75rem', padding: '0.35rem 0.65rem' }}
+                            disabled={uploadingImage}
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      /* Dropzone para selecionar */
+                      <div
+                        onClick={() => fileInputRef.current?.click()}
+                        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                        onDrop={handleDrop}
+                        style={{
+                          border: '2px dashed rgba(56,189,248,0.3)',
+                          borderRadius: '10px',
+                          padding: '1.5rem',
+                          textAlign: 'center',
+                          cursor: 'pointer',
+                          background: 'rgba(56,189,248,0.03)',
+                          transition: 'all 0.2s',
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#38bdf8')}
+                        onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'rgba(56,189,248,0.3)')}
+                      >
+                        {uploadingImage ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                            <div style={{ width: '28px', height: '28px', border: '3px solid rgba(56,189,248,0.2)', borderTopColor: '#38bdf8', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                            <span style={{ fontSize: '0.85rem', color: '#38bdf8', fontWeight: 500 }}>
+                              {uploadProgress || '⚡ Convertendo e otimizando para WebP...'}
+                            </span>
+                            <span style={{ fontSize: '0.72rem', color: '#6b7280' }}>
+                              Reduzindo tamanho para envios ultra-rápidos
+                            </span>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.35rem' }}>
+                            <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: 'rgba(56,189,248,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#38bdf8', marginBottom: '0.2rem' }}>
+                              <Upload size={18} />
+                            </div>
+                            <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#e5e7eb' }}>
+                              Clique para escolher uma imagem ou arraste até aqui
+                            </span>
+                            <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>
+                              Suporta JPG, PNG, WEBP, GIF · <strong>Conversão automática para WebP leve</strong>
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  /* Modo URL Externa */
+                  <div style={{ position: 'relative' }}>
+                    <LinkIcon size={16} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#6b7280' }} />
+                    <input
+                      type="url"
+                      className="input-control"
+                      style={{ paddingLeft: '2.5rem' }}
+                      placeholder="https://exemplo.com/imagem.webp ou .jpg"
+                      value={imageUrl}
+                      onChange={(e) => { setImageUrl(e.target.value); setCompressionInfo(null); }}
+                      disabled={isSubmitting}
+                    />
+                  </div>
+                )}
               </div>
 
               {/* Texto do Template Principal */}

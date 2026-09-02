@@ -373,7 +373,7 @@ export default function CampaignsPage() {
 
                     <div className="form-group">
                       <label className="form-label" style={{fontWeight:600,fontSize:'0.8rem',color:'#e2e8f0',marginBottom:'0.4rem',display:'block'}}>Mensagem Base (Template) *</label>
-                      <select className="input-control" value={templateId} onChange={e=>{setTemplateId(e.target.value);setPreviewVariantIdx(0);}} required style={{width:'100%'}}>
+                      <select className="input-control" value={templateId} onChange={e=>setTemplateId(e.target.value)} required style={{width:'100%'}}>
                         {templates.length===0?<option value="">Crie um template primeiro!</option>:templates.map(t=><option key={t.id} value={t.id}>{t.name} {t.enableHook ? '🛡️ (2 Etapas)' : ''}</option>)}
                       </select>
                       {(() => {

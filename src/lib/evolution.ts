@@ -236,17 +236,29 @@ export const evolutionApi = {
     try {
       const formattedPhone = this.formatPhone(phone);
       
-      // Determina o nome do arquivo padrão com base no tipo
+      // Converte URLs relativas (/api/uploads/...) em URLs públicas absolutas
+      let finalMediaUrl = mediaUrl;
+      if (finalMediaUrl.startsWith('/')) {
+        const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://wajato.ftech-apps.com.br').replace(/\/$/, '');
+        finalMediaUrl = `${baseUrl}${finalMediaUrl}`;
+      }
+
+      // Determina o nome do arquivo padrão com base no tipo e extensão
       let fileName = 'file';
-      if (mediaType === 'image') fileName = 'image.jpg';
-      else if (mediaType === 'video') fileName = 'video.mp4';
-      else if (mediaType === 'audio') fileName = 'audio.mp3';
-      else if (mediaType === 'document') fileName = 'document.pdf';
+      if (mediaType === 'image') {
+        fileName = finalMediaUrl.includes('.webp') ? 'image.webp' : (finalMediaUrl.includes('.png') ? 'image.png' : 'image.jpg');
+      } else if (mediaType === 'video') {
+        fileName = 'video.mp4';
+      } else if (mediaType === 'audio') {
+        fileName = 'audio.mp3';
+      } else if (mediaType === 'document') {
+        fileName = 'document.pdf';
+      }
 
       const response = await evolutionClient.post(`/message/sendMedia/${instanceName}`, {
         number: formattedPhone,
         mediatype: mediaType,
-        media: mediaUrl,
+        media: finalMediaUrl,
         caption: caption || '',
         fileName: fileName
       });
