@@ -126,9 +126,16 @@ const worker = new Worker(
       return;
     }
 
+    // Determina as instâncias permitidas para esta campanha
+    const campaignAllowedInstances =
+      log.campaign.instanceMode === 'SPECIFIC' && log.campaign.instanceNames?.length > 0
+        ? log.campaign.instanceNames
+        : null;
+    const isOnlyMature = log.campaign.instanceMode !== 'SPECIFIC';
+
     // 2e. Pre-flight Check Just-in-Time: Valida se o número possui conta ativa no WhatsApp antes de qualquer disparo
     try {
-      const probeInstance = await getNextWhatsAppInstance();
+      const probeInstance = await getNextWhatsAppInstance([], campaignAllowedInstances, isOnlyMature);
       if (probeInstance) {
         const waCheck = await evolutionApi.checkWhatsAppNumber(probeInstance, phone);
         if (!waCheck.exists) {
@@ -152,7 +159,7 @@ const worker = new Worker(
             where: { id: messageLogId },
             data: {
               status: 'FAILED',
-              error: 'Número não possui conta ativa no WhatsApp (Pre-flight check automático)',
+              error: 'Número de telefone não possui conta ativa no WhatsApp',
             },
           });
 
@@ -168,13 +175,6 @@ const worker = new Worker(
     const contactName = log.contact.name || 'Cliente';
     // Se houver {{link}} no template, substitui pela descrição do grupo (onde salvamos o link do grupo)
     const groupLink = log.campaign.group?.description || '';
-
-    // Determina as instâncias permitidas para esta campanha
-    const campaignAllowedInstances =
-      log.campaign.instanceMode === 'SPECIFIC' && log.campaign.instanceNames?.length > 0
-        ? log.campaign.instanceNames
-        : null;
-    const isOnlyMature = log.campaign.instanceMode !== 'SPECIFIC';
 
     // ── 3a. Proteção Anti-Bloqueio (Envio em 2 Etapas / Mensagem Prévia) ──────
     const template = log.campaign.template;
