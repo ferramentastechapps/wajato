@@ -200,7 +200,8 @@ export async function GET() {
 
         // 7. Verificar se está em cooldown (descanso ativo)
         let isInCooldown = false;
-        if (campaign?.restPeriodUntil && new Date(campaign.restPeriodUntil) > new Date()) {
+        const activeCampaign = userCampaigns.find(c => c.status === 'RUNNING');
+        if (activeCampaign?.restPeriodUntil && new Date(activeCampaign.restPeriodUntil) > new Date()) {
           isInCooldown = true;
         }
 
