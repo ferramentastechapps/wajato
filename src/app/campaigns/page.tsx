@@ -301,7 +301,7 @@ export default function CampaignsPage() {
                       {camp.company && <span>Empresa: <strong style={{color:'#38bdf8'}}>{camp.company.name}</strong></span>}
                       <span>Template: <strong>{camp.template.name}</strong></span>
                       {camp.group ? <span>Grupo: <strong>{camp.group.name}</strong></span> : camp.segment ? <span>Segmento: <strong>{camp.segment.name}</strong></span> : null}
-                      <span style={{display:'flex',alignItems:'center',gap:'0.25rem'}}><Clock size={12}/>{camp.delayMin}s–{camp.delayMax}s</span>
+                      <span style={{display:'flex',alignItems:'center',gap:'0.25rem'}} translate="no"><Clock size={12}/>{camp.delayMin} seg – {camp.delayMax} seg</span>
                       <span style={{display:'flex',alignItems:'center',gap:'0.25rem',color:'#38bdf8',fontWeight:600}} title="Janela de Horário Permitido">
                         ⏰ {String(camp.startHour ?? 8).padStart(2,'0')}h–{String(camp.endHour ?? 20).padStart(2,'0')}h
                       </span>
@@ -609,11 +609,11 @@ export default function CampaignsPage() {
                       </div>
                       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'1rem'}}>
                         <div>
-                          <label style={{fontSize:'0.68rem',color:'#94a3b8',display:'flex',justifyContent: 'space-between',marginBottom:'0.3rem'}}><span>Mínimo</span><strong style={{color:'#e2e8f0'}}>{delayMin}s</strong></label>
+                          <label style={{fontSize:'0.68rem',color:'#94a3b8',display:'flex',justifyContent: 'space-between',marginBottom:'0.3rem'}}><span>Mínimo</span><strong style={{color:'#e2e8f0'}} translate="no">{delayMin} seg</strong></label>
                           <input type="range" min={5} max={120} step={1} value={delayMin} onChange={e=>{const v=parseInt(e.target.value);setDelayMin(v);if(v>=delayMax)setDelayMax(v+5);setDelayPreset('custom');}} style={{width:'100%',accentColor:'#25d366'}}/>
                         </div>
                         <div>
-                          <label style={{fontSize:'0.68rem',color:'#94a3b8',display:'flex',justifyContent: 'space-between',marginBottom:'0.3rem'}}><span>Máximo</span><strong style={{color:'#e2e8f0'}}>{delayMax}s</strong></label>
+                          <label style={{fontSize:'0.68rem',color:'#94a3b8',display:'flex',justifyContent: 'space-between',marginBottom:'0.3rem'}}><span>Máximo</span><strong style={{color:'#e2e8f0'}} translate="no">{delayMax} seg</strong></label>
                           <input type="range" min={6} max={180} step={1} value={delayMax} onChange={e=>{const v=parseInt(e.target.value);setDelayMax(v);if(v<=delayMin)setDelayMin(v-5);setDelayPreset('custom');}} style={{width:'100%',accentColor:'#25d366'}}/>
                         </div>
                       </div>
@@ -844,7 +844,7 @@ export default function CampaignsPage() {
                   <div style={{background:'rgba(255,255,255,0.02)',borderTop:'1px solid rgba(255,255,255,0.05)',padding:'1rem'}}>
                     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.6rem',marginBottom:'0.6rem',fontSize:'0.72rem'}}>
                       <div style={{color:'rgba(255,255,255,0.45)',display:'flex',flexDirection:'column',gap:'0.2rem'}}>
-                        <span>⏱️ Delay: <strong style={{color:'#f8fafc'}}>{delayMin}s – {delayMax}s</strong></span>
+                        <span translate="no">⏱️ Delay: <strong style={{color:'#f8fafc'}}>{delayMin} seg – {delayMax} seg</strong></span>
                         <span>🎲 Textos: <strong style={{color:'#34d399'}}>via template</strong></span>
                       </div>
                       <div style={{color:'rgba(255,255,255,0.45)',display:'flex',flexDirection:'column',gap:'0.2rem'}}>

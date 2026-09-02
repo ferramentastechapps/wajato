@@ -216,9 +216,9 @@ export default function CampaignDetailsPage({ params }: { params: Promise<{ id: 
             <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', fontSize: '0.875rem', color: '#9ca3af' }}>
               <span>Grupo de Contatos: <strong>{campaign.group.name}</strong></span>
               <span>Template: <strong>{campaign.template.name}</strong></span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }} translate="no">
                 <Clock size={14} />
-                Atraso por mensagem: {campaign.delayMin}s a {campaign.delayMax}s
+                Atraso por mensagem: {campaign.delayMin} seg a {campaign.delayMax} seg
               </span>
               <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: '#38bdf8' }}>
                 ⏰ Janela de Horários: {String((campaign as any).startHour ?? 8).padStart(2, '0')}:00 às {String((campaign as any).endHour ?? 20).padStart(2, '0')}:00
