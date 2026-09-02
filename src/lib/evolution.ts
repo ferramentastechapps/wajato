@@ -768,6 +768,12 @@ export const evolutionApi = {
         };
       }
       return { exists: false, jid: null, name: null };
+    } catch (error: any) {
+      console.error(`Erro ao verificar WhatsApp para ${phone}:`, error?.response?.data || error.message);
+      return { exists: false, jid: null, name: null };
+    }
+  },
+
   /**
    * Verifica em lote uma lista de telefones no WhatsApp.
    * Utiliza o endpoint POST /chat/whatsappNumbers/{instanceName}
