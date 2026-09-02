@@ -7,23 +7,76 @@ const MAX_DAILY_MESSAGES_PER_CHIP = 200;
 /**
  * Seleciona a melhor instância de WhatsApp conectada e saudável para envio.
  * @param excludeInstances Lista de nomes de instâncias a serem ignoradas nesta tentativa (ex: após falha em chip anterior)
+ * @param allowedInstances Se especificado, restringe a seleção APENAS a essas instâncias (para campanhas com chips fixos)
+ * @param onlyMature Se true (padrão em campanhas em massa), exclui automaticamente qualquer chip que ainda esteja em aquecimento ativo!
  */
-export async function getNextWhatsAppInstance(excludeInstances: string[] = []): Promise<string> {
+export async function getNextWhatsAppInstance(
+  excludeInstances: string[] = [],
+  allowedInstances?: string[] | null,
+  onlyMature: boolean = true
+): Promise<string> {
   try {
+    // Se onlyMature = true e não há restrição manual de instâncias, identifica e bloqueia chips em aquecimento ativo
+    let warmingInstancesToExclude: string[] = [];
+    if (onlyMature && (!allowedInstances || allowedInstances.length === 0)) {
+      try {
+        const [runningWarmups, runningPools] = await Promise.all([
+          prisma.warmupCampaign.findMany({
+            where: { status: 'RUNNING' },
+            select: { sourceInstance: true, currentDay: true, totalDays: true, continuousMode: true },
+          }),
+          prisma.warmupPool.findMany({
+            where: { status: 'RUNNING' },
+            select: { instanceNames: true, currentDay: true, totalDays: true, continuousMode: true },
+          }),
+        ]);
+
+        const fromWarmups = runningWarmups
+          .filter((w) => !w.continuousMode && w.currentDay < w.totalDays)
+          .map((w) => w.sourceInstance);
+
+        const fromPools = runningPools
+          .filter((p) => !p.continuousMode && p.currentDay < p.totalDays)
+          .flatMap((p) => p.instanceNames);
+
+        warmingInstancesToExclude = Array.from(new Set([...fromWarmups, ...fromPools]));
+        if (warmingInstancesToExclude.length > 0) {
+          console.log(
+            `🛡️ [ChipRouter] Proteção Anti-Ban: ${warmingInstancesToExclude.length} chips em aquecimento ativo foram preservados e excluídos da rotação de campanhas em massa: [${warmingInstancesToExclude.join(', ')}]`
+          );
+        }
+      } catch (err: any) {
+        console.warn('[ChipRouter] Erro ao verificar campanhas de aquecimento:', err?.message);
+      }
+    }
+
+    const finalExcluded = Array.from(new Set([...excludeInstances, ...warmingInstancesToExclude]));
+
     // 1. Buscar todas as instâncias conectadas que estão saudáveis e abaixo do limite diário
+    const whereClause: any = {
+      status: 'CONNECTED',
+      healthScore: { gt: 20 },
+      dailyMsgCount: { lt: MAX_DAILY_MESSAGES_PER_CHIP },
+    };
+
+    if (allowedInstances && allowedInstances.length > 0) {
+      whereClause.name = { in: allowedInstances, ...(excludeInstances.length > 0 ? { notIn: excludeInstances } : {}) };
+    } else if (finalExcluded.length > 0) {
+      whereClause.name = { notIn: finalExcluded };
+    }
+
     const healthyInstances = await prisma.whatsAppInstance.findMany({
-      where: {
-        status: 'CONNECTED',
-        healthScore: { gt: 20 },
-        dailyMsgCount: { lt: MAX_DAILY_MESSAGES_PER_CHIP },
-        ...(excludeInstances.length > 0 ? { name: { notIn: excludeInstances } } : {}),
-      },
+      where: whereClause,
     });
 
     if (healthyInstances.length === 0) {
-      // Se filtramos com exclusões e não sobrou nada, tenta sem exclusões se permitido
-      if (excludeInstances.length > 0) {
-        console.warn(`[ChipRouter] Nenhuma instância saudável disponível fora de [${excludeInstances.join(', ')}].`);
+      // Se filtramos com exclusões e não sobrou nada, tenta fallback
+      if (allowedInstances && allowedInstances.length > 0) {
+        console.warn(`[ChipRouter] Nenhuma instância disponível dentro das permitidas: [${allowedInstances.join(', ')}]. Usando primeira permitida.`);
+        return allowedInstances[0];
+      }
+      if (finalExcluded.length > 0) {
+        console.warn(`[ChipRouter] Nenhum chip maturado disponível fora de [${finalExcluded.join(', ')}].`);
       } else {
         console.warn(`[ChipRouter] Nenhuma instância saudável/conectada encontrada no banco. Usando fallback padrão: ${DEFAULT_INSTANCE}`);
       }

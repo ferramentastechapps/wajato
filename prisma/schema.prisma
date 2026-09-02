@@ -120,6 +120,8 @@ model Campaign {
   startHour        Int             @default(8)   // Horário de início permitido (0-23, padrão 8h)
   endHour          Int             @default(20)  // Horário de término permitido (0-23, padrão 20h)
   allowedDays      Int[]           @default([1, 2, 3, 4, 5, 6]) // Dias permitidos: 0=Dom, 1=Seg, ..., 6=Sáb (padrão: Seg a Sáb)
+  instanceMode     String          @default("AUTO_MATURE") // "AUTO_MATURE" (Apenas chips 100% maturados) | "SPECIFIC" (Chips selecionados)
+  instanceNames    String[]        @default([]) // Se SPECIFIC, lista de instâncias permitidas
   scheduledAt      DateTime?
   logs             MessageLog[]
   createdAt        DateTime        @default(now())

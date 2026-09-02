@@ -88,7 +88,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { name, templateId, groupId, segmentId, companyId, delayMin, delayMax, messageVariants, batchSize, batchCooldown, startHour, endHour, allowedDays, scheduledAt } = result.data;
+    const { name, templateId, groupId, segmentId, companyId, delayMin, delayMax, messageVariants, batchSize, batchCooldown, startHour, endHour, allowedDays, instanceMode, instanceNames, scheduledAt } = result.data;
 
     // Se companyId não foi informado, busca a empresa padrão
     let finalCompanyId = companyId;
@@ -116,6 +116,8 @@ export async function POST(request: Request) {
         startHour: startHour ?? 8,
         endHour: endHour ?? 20,
         allowedDays: allowedDays || [1, 2, 3, 4, 5, 6],
+        instanceMode: instanceMode || 'AUTO_MATURE',
+        instanceNames: instanceNames || [],
         scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
         status: 'DRAFT',
       },

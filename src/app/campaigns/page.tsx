@@ -20,6 +20,8 @@ interface Campaign {
   startHour?: number;
   endHour?: number;
   allowedDays?: number[];
+  instanceMode?: string;
+  instanceNames?: string[];
   messageVariants?: string[];
   groupId?: string | null;
   segmentId?: string | null;
@@ -33,6 +35,15 @@ interface Campaign {
   scheduledAt?: string | null;
 }
 interface Group { id: string; name: string; _count?: { contacts: number }; }
+interface InstanceOption {
+  name: string;
+  phone?: string | null;
+  status: string;
+  healthScore: number;
+  warmupProgress?: number;
+  activeWarmupType?: string;
+  isMatured?: boolean;
+}
 interface Template { 
   id: string; 
   name: string; 
@@ -78,6 +89,7 @@ export default function CampaignsPage() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [segments, setSegments] = useState<any[]>([]);
   const [companies, setCompanies] = useState<CompanyOption[]>([]);
+  const [instances, setInstances] = useState<InstanceOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showAddCampaign, setShowAddCampaign] = useState(false);
@@ -95,6 +107,8 @@ export default function CampaignsPage() {
   const [endHour, setEndHour] = useState(20);
   const [allowedDays, setAllowedDays] = useState<number[]>([1, 2, 3, 4, 5, 6]);
   const [hourPreset, setHourPreset] = useState<'business' | 'expanded' | 'wide' | 'all' | 'custom'>('expanded');
+  const [instanceMode, setInstanceMode] = useState<'AUTO_MATURE' | 'SPECIFIC'>('AUTO_MATURE');
+  const [selectedInstances, setSelectedInstances] = useState<string[]>([]);
   const [errorMsg, setErrorMsg] = useState('');
   const [isScheduled, setIsScheduled] = useState(false);
   const [scheduledAt, setScheduledAt] = useState('');
@@ -111,11 +125,12 @@ export default function CampaignsPage() {
 
   const fetchData = async () => {
     try {
-      const [cr, tr, sr, cor] = await Promise.all([
+      const [cr, tr, sr, cor, ir] = await Promise.all([
         fetch('/api/contacts'),
         fetch('/api/templates'),
         fetch('/api/contacts/segments'),
         fetch('/api/companies'),
+        fetch('/api/whatsapp/instances'),
       ]);
       if (cr.ok) setGroups((await cr.json()).groups || []);
       if (tr.ok) setTemplates((await tr.json()).templates || []);
@@ -125,6 +140,10 @@ export default function CampaignsPage() {
         setCompanies(cos);
         const def = cos.find((c) => c.isDefault) || cos[0];
         if (def) setCompanyId(def.id);
+      }
+      if (ir.ok) {
+        const instData = await ir.json();
+        setInstances(instData.instances || []);
       }
     } catch (e) { console.error(e); }
   };
@@ -168,6 +187,7 @@ export default function CampaignsPage() {
     setDelayMin(20); setDelayMax(60); setDelayPreset('medium');
     setBatchSize(0); setBatchCooldown(600); setBatchPresetIdx(0);
     setStartHour(8); setEndHour(20); setAllowedDays([1, 2, 3, 4, 5, 6]); setHourPreset('expanded');
+    setInstanceMode('AUTO_MATURE'); setSelectedInstances([]);
     setIsScheduled(false); setScheduledAt(''); setErrorMsg('');
     setShowAddCampaign(true);
   };
@@ -184,6 +204,7 @@ export default function CampaignsPage() {
     if (delayMax <= delayMin) { setErrorMsg('Delay máximo deve ser maior que o mínimo.'); return; }
     if (startHour >= endHour && !(startHour === 0 && endHour === 23)) { setErrorMsg('Horário de início deve ser menor que o horário de término.'); return; }
     if (allowedDays.length === 0) { setErrorMsg('Selecione ao menos um dia da semana permitido.'); return; }
+    if (instanceMode === 'SPECIFIC' && selectedInstances.length === 0) { setErrorMsg('Selecione ao menos um chip/instância de envio.'); return; }
     setIsSubmitting(true);
     try {
       const r = await fetch('/api/campaigns', {
@@ -202,6 +223,8 @@ export default function CampaignsPage() {
           startHour,
           endHour,
           allowedDays,
+          instanceMode,
+          instanceNames: instanceMode === 'SPECIFIC' ? selectedInstances : [],
           scheduledAt: isScheduled && scheduledAt ? new Date(scheduledAt).toISOString() : null,
         }),
       });
@@ -279,6 +302,9 @@ export default function CampaignsPage() {
                       <span style={{display:'flex',alignItems:'center',gap:'0.25rem'}}><Clock size={12}/>{camp.delayMin}s–{camp.delayMax}s</span>
                       <span style={{display:'flex',alignItems:'center',gap:'0.25rem',color:'#38bdf8',fontWeight:600}} title="Janela de Horário Permitido">
                         ⏰ {String(camp.startHour ?? 8).padStart(2,'0')}h–{String(camp.endHour ?? 20).padStart(2,'0')}h
+                      </span>
+                      <span style={{display:'flex',alignItems:'center',gap:'0.25rem',color:camp.instanceMode==='SPECIFIC'?'#a78bfa':'#22c55e',fontWeight:600}} title="Chip / Instância de Disparo">
+                        📱 {camp.instanceMode === 'SPECIFIC' && camp.instanceNames?.length ? `${camp.instanceNames.length} chip(s) fixo(s)` : '⚡ Rotação 100% Maturados'}
                       </span>
                       {(camp.batchSize??0)>0 && <span style={{display:'flex',alignItems:'center',gap:'0.25rem',color:'#a78bfa'}}><Coffee size={12}/>Pausa a cada {camp.batchSize} msgs</span>}
                       {(camp.messageVariants?.length??0)>0 && <span style={{display:'flex',alignItems:'center',gap:'0.25rem',color:'#34d399'}}><Shuffle size={12}/>{(camp.messageVariants?.length??0)+1} variantes</span>}
@@ -378,7 +404,7 @@ export default function CampaignsPage() {
                       </div>
                       {targetType==='GROUP'?(
                         <select className="input-control" value={groupId} onChange={e=>setGroupId(e.target.value)} required style={{width:'100%'}}>
-                          {groups.length===0?<option value="">Crie um grupo primeiro!</option>:groups.map(g=><option key={g.id} value={g.id}>{g.name} ({g._count?.contacts||0} contatos)</option>)}
+                        {groups.length===0?<option value="">Crie um grupo primeiro!</option>:groups.map(g=><option key={g.id} value={g.id}>{g.name} ({g._count?.contacts||0} contatos)</option>)}
                         </select>
                       ):(
                         <select className="input-control" value={segmentId} onChange={e=>setSegmentId(e.target.value)} required style={{width:'100%'}}>
@@ -415,6 +441,149 @@ export default function CampaignsPage() {
                     <p style={{fontSize:'0.72rem',color:'rgba(255,255,255,0.4)',margin:0,lineHeight:1.5}}>
                       As variações do texto são configuradas diretamente no <strong style={{color:'#34d399'}}>Template</strong> selecionado. O sistema rotaciona automaticamente entre as versões para cada contato.
                     </p>
+                  </div>
+
+                  {/* CHIP / INSTÂNCIAS DE DISPARO (COM BLINDAGEM DE MATURAÇÃO) */}
+                  <div style={{background:'rgba(255,255,255,0.02)',border:'1px solid rgba(255,255,255,0.05)',borderRadius:'10px',padding:'1.2rem',display:'flex',flexDirection:'column',gap:'1rem'}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:'1px solid rgba(255,255,255,0.05)',paddingBottom:'0.5rem'}}>
+                      <div style={{fontSize:'0.88rem',fontWeight:700,color:'#f1f5f9',display:'flex',alignItems:'center',gap:'0.4rem'}}>
+                        📱 Chip / Instâncias de Envio
+                      </div>
+                      <span style={{fontSize:'0.7rem',color:'#22c55e',background:'rgba(34,197,94,0.1)',padding:'0.15rem 0.5rem',borderRadius:'999px',fontWeight:600}}>
+                        🛡️ Chips em Aquecimento Protegidos
+                      </span>
+                    </div>
+
+                    {/* Alternador de Modo */}
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.6rem'}}>
+                      <div
+                        onClick={() => setInstanceMode('AUTO_MATURE')}
+                        style={{
+                          padding:'0.75rem',
+                          borderRadius:'8px',
+                          border: instanceMode === 'AUTO_MATURE' ? '1.5px solid #25d366' : '1px solid var(--border)',
+                          background: instanceMode === 'AUTO_MATURE' ? 'rgba(37,211,102,0.08)' : 'rgba(255,255,255,0.02)',
+                          cursor:'pointer',
+                          transition:'all 0.2s',
+                        }}
+                      >
+                        <div style={{display:'flex',alignItems:'center',gap:'0.4rem',fontWeight:700,color:instanceMode==='AUTO_MATURE'?'#25d366':'#e2e8f0',fontSize:'0.8rem'}}>
+                          ⚡ Rotação Automática (Recomendado)
+                        </div>
+                        <p style={{fontSize:'0.68rem',color:'#94a3b8',margin:'0.3rem 0 0 0',lineHeight:1.35}}>
+                          Dispara apenas usando chips <strong>100% maturados</strong>. Chips que ainda estão aquecendo são ignorados para evitar ban.
+                        </p>
+                      </div>
+
+                      <div
+                        onClick={() => setInstanceMode('SPECIFIC')}
+                        style={{
+                          padding:'0.75rem',
+                          borderRadius:'8px',
+                          border: instanceMode === 'SPECIFIC' ? '1.5px solid #38bdf8' : '1px solid var(--border)',
+                          background: instanceMode === 'SPECIFIC' ? 'rgba(56,189,248,0.08)' : 'rgba(255,255,255,0.02)',
+                          cursor:'pointer',
+                          transition:'all 0.2s',
+                        }}
+                      >
+                        <div style={{display:'flex',alignItems:'center',gap:'0.4rem',fontWeight:700,color:instanceMode==='SPECIFIC'?'#38bdf8':'#e2e8f0',fontSize:'0.8rem'}}>
+                          🎯 Escolher Chip(s) Específico(s)
+                        </div>
+                        <p style={{fontSize:'0.68rem',color:'#94a3b8',margin:'0.3rem 0 0 0',lineHeight:1.35}}>
+                          Selecione manualmente qual(is) instância(s) quer usar exclusivamente nesta campanha.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Lista de Seleção de Chips Manuais */}
+                    {instanceMode === 'SPECIFIC' && (
+                      <div style={{marginTop:'0.4rem',display:'flex',flexDirection:'column',gap:'0.5rem',animation:'wa-fadeUp 0.15s ease'}}>
+                        <div style={{fontSize:'0.75rem',color:'#94a3b8',fontWeight:600}}>
+                          Selecione os chips para esta campanha:
+                        </div>
+
+                        {instances.length === 0 ? (
+                          <div style={{padding:'0.75rem',fontSize:'0.75rem',color:'#9ca3af',textAlign:'center',background:'rgba(255,255,255,0.02)',borderRadius:'6px'}}>
+                            Nenhuma instância cadastrada. O sistema usará a sessão padrão.
+                          </div>
+                        ) : (
+                          <div style={{display:'flex',flexDirection:'column',gap:'0.4rem',maxHeight:'180px',overflowY:'auto'}}>
+                            {instances.map((inst) => {
+                              const isSelected = selectedInstances.includes(inst.name);
+                              const isWarming = inst.activeWarmupType === 'SINGLE' || inst.activeWarmupType === 'POOL';
+                              const isConnected = inst.status === 'CONNECTED';
+
+                              return (
+                                <div
+                                  key={inst.name}
+                                  onClick={() => {
+                                    setSelectedInstances(prev =>
+                                      prev.includes(inst.name)
+                                        ? prev.filter(x => x !== inst.name)
+                                        : [...prev, inst.name]
+                                    );
+                                  }}
+                                  style={{
+                                    display:'flex',
+                                    justifyContent:'space-between',
+                                    alignItems:'center',
+                                    padding:'0.55rem 0.8rem',
+                                    borderRadius:'6px',
+                                    border: isSelected ? '1px solid #38bdf8' : '1px solid rgba(255,255,255,0.06)',
+                                    background: isSelected ? 'rgba(56,189,248,0.12)' : 'rgba(0,0,0,0.2)',
+                                    cursor:'pointer',
+                                    transition:'all 0.15s',
+                                  }}
+                                >
+                                  <div style={{display:'flex',alignItems:'center',gap:'0.6rem'}}>
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={() => {}}
+                                      style={{accentColor:'#38bdf8',cursor:'pointer'}}
+                                    />
+                                    <div>
+                                      <div style={{fontSize:'0.8rem',fontWeight:600,color:'#f8fafc',display:'flex',alignItems:'center',gap:'0.35rem'}}>
+                                        {inst.name}
+                                        {inst.phone && <span style={{fontSize:'0.7rem',color:'#94a3b8',fontWeight:400}}>({inst.phone})</span>}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div style={{display:'flex',alignItems:'center',gap:'0.4rem'}}>
+                                    {isConnected ? (
+                                      isWarming ? (
+                                        <span style={{fontSize:'0.65rem',color:'#eab308',background:'rgba(234,179,8,0.12)',padding:'0.1rem 0.4rem',borderRadius:'4px',fontWeight:700}} title="Em fase de aquecimento">
+                                          ⚠️ Em Aquecimento ({inst.warmupProgress || 0}%)
+                                        </span>
+                                      ) : (
+                                        <span style={{fontSize:'0.65rem',color:'#22c55e',background:'rgba(34,197,94,0.12)',padding:'0.1rem 0.4rem',borderRadius:'4px',fontWeight:700}}>
+                                          🟢 100% Maturado (Pronto)
+                                        </span>
+                                      )
+                                    ) : (
+                                      <span style={{fontSize:'0.65rem',color:'#ef4444',background:'rgba(239,68,68,0.12)',padding:'0.1rem 0.4rem',borderRadius:'4px'}}>
+                                        🔴 Desconectado
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {selectedInstances.some(name => {
+                          const inst = instances.find(i => i.name === name);
+                          return inst?.activeWarmupType === 'SINGLE' || inst?.activeWarmupType === 'POOL';
+                        }) && (
+                          <div style={{padding:'0.5rem 0.75rem',borderRadius:'6px',background:'rgba(234,179,8,0.1)',border:'1px solid rgba(234,179,8,0.3)',color:'#fde047',fontSize:'0.72rem',display:'flex',alignItems:'center',gap:'0.4rem'}}>
+                            <AlertCircle size={14} style={{flexShrink:0}}/>
+                            <span><strong>Aviso Anti-Ban:</strong> Você selecionou um chip em aquecimento ativo. Recomendamos usar apenas chips 100% maturados para campanhas frias.</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* CONFIGURAÇÕES ANTI-BAN */}

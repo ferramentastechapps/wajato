@@ -169,6 +169,13 @@ const worker = new Worker(
     // Se houver {{link}} no template, substitui pela descrição do grupo (onde salvamos o link do grupo)
     const groupLink = log.campaign.group?.description || '';
 
+    // Determina as instâncias permitidas para esta campanha
+    const campaignAllowedInstances =
+      log.campaign.instanceMode === 'SPECIFIC' && log.campaign.instanceNames?.length > 0
+        ? log.campaign.instanceNames
+        : null;
+    const isOnlyMature = log.campaign.instanceMode !== 'SPECIFIC';
+
     // ── 3a. Proteção Anti-Bloqueio (Envio em 2 Etapas / Mensagem Prévia) ──────
     const template = log.campaign.template;
     const hasHookEnabled = template.enableHook && (template.hookMessage || (template.hookVariants && template.hookVariants.length > 0));
@@ -178,7 +185,7 @@ const worker = new Worker(
       const chosenHook = allHooks.length > 0 ? allHooks[Math.floor(Math.random() * allHooks.length)] : 'Olá {{nome}}, tudo bem?';
       const hookText = formatMessageText(chosenHook, { name: contactName, link: groupLink });
 
-      let hookInstanceName = await getNextWhatsAppInstance();
+      let hookInstanceName = await getNextWhatsAppInstance([], campaignAllowedInstances, isOnlyMature);
       let hookSentSuccess = false;
 
       try {
@@ -190,7 +197,7 @@ const worker = new Worker(
         logger.warn('Falha no envio da mensagem prévia anti-bloqueio com chip primário, tentando fallback...', { error: hookErr?.message });
         await reportChipFailure(hookInstanceName, hookErr?.message);
 
-        const fallback = await getNextWhatsAppInstance([hookInstanceName]);
+        const fallback = await getNextWhatsAppInstance([hookInstanceName], campaignAllowedInstances, isOnlyMature);
         if (fallback && fallback !== hookInstanceName) {
           try {
             await evolutionApi.sendTextMessage(fallback, phone, hookText);
@@ -237,8 +244,8 @@ const worker = new Worker(
 
     let messageText = formatMessageText(chosenVariant, { name: contactName, link: groupLink });
 
-    // 4. Seleciona dinamicamente o chip ativo / saudável
-    let activeInstanceName = await getNextWhatsAppInstance();
+    // 4. Seleciona dinamicamente o chip ativo / saudável respeitando a maturação
+    let activeInstanceName = await getNextWhatsAppInstance([], campaignAllowedInstances, isOnlyMature);
 
     // 5. Executa o envio pela Evolution API com suporte a fallback de chip alternativo
     let sentSuccess = false;
@@ -274,7 +281,7 @@ const worker = new Worker(
       await reportChipFailure(activeInstanceName, lastErrorMsg);
 
       // Tenta obter um chip secundário diferente do que falhou
-      const fallbackInstance = await getNextWhatsAppInstance([activeInstanceName]);
+      const fallbackInstance = await getNextWhatsAppInstance([activeInstanceName], campaignAllowedInstances, isOnlyMature);
       if (fallbackInstance && fallbackInstance !== activeInstanceName) {
         try {
           if (log.campaign.template.imageUrl) {

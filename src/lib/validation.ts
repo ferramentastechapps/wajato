@@ -56,6 +56,8 @@ export const campaignSchema = z.object({
   startHour: z.coerce.number().int().min(0).max(23).default(8),
   endHour: z.coerce.number().int().min(0).max(23).default(20),
   allowedDays: z.array(z.coerce.number().int().min(0).max(6)).default([1, 2, 3, 4, 5, 6]),
+  instanceMode: z.enum(['AUTO_MATURE', 'SPECIFIC']).default('AUTO_MATURE'),
+  instanceNames: z.array(z.string().trim()).default([]),
   scheduledAt: z.preprocess((val) => val === '' || val === null ? null : val, z.string().datetime().nullable().optional()),
 }).refine(data => data.groupId || data.segmentId, {
   message: "Selecione um grupo de contatos ou uma segmentação para a campanha",
