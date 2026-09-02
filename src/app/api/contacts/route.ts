@@ -42,13 +42,15 @@ export async function GET(request: Request) {
     const take = limit;
 
 
+    // Modo exportação CSV — retorna todos os contatos filtrados em CSV
+    const exportCsv = searchParams.get('export') === 'csv';
+
     // Busca os contatos da página atual, o total e os grupos de filtros
     const [contacts, total, groups] = await Promise.all([
       prisma.contact.findMany({
         where,
         orderBy: { updatedAt: 'desc' },
-        skip,
-        take,
+        ...(exportCsv ? {} : { skip, take }),
         include: { group: { select: { id: true, name: true } } },
       }),
       prisma.contact.count({ where }),
@@ -57,6 +59,26 @@ export async function GET(request: Request) {
         include: { _count: { select: { contacts: true } } },
       }),
     ]);
+
+    // Retorna CSV se solicitado
+    if (exportCsv) {
+      const header = 'nome,telefone,grupo,tags,status,criado_em';
+      const rows = contacts.map((c: any) => [
+        `"${(c.name || '').replace(/"/g, '""')}"`,
+        c.phone,
+        `"${(c.group?.name || '').replace(/"/g, '""')}"`,
+        `"${(c.tags || []).join('|').replace(/"/g, '""')}"`,
+        c.optOut ? 'opt-out' : 'ativo',
+        new Date(c.createdAt).toLocaleDateString('pt-BR'),
+      ].join(','));
+      const csv = [header, ...rows].join('\n');
+      return new Response(csv, {
+        headers: {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': `attachment; filename="contatos_${new Date().toISOString().slice(0,10)}.csv"`,
+        },
+      });
+    }
 
     // Conta contatos ativos (sem opt-out) para exibir no painel
     const activeCount = await prisma.contact.count({

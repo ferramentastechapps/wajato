@@ -65,7 +65,50 @@ export async function POST(request: Request) {
   }
 }
 
+export async function PATCH(request: Request) {
+  try {
+    const user = await getSessionUser();
+    if (!user) {
+      return NextResponse.json({ message: 'Não autorizado' }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+
+    if (!id) {
+      return NextResponse.json({ message: 'ID do grupo não informado' }, { status: 400 });
+    }
+
+    const { name, description } = await request.json();
+
+    if (!name) {
+      return NextResponse.json({ message: 'Nome do grupo é obrigatório' }, { status: 400 });
+    }
+
+    const group = await prisma.contactGroup.update({
+      where: { id },
+      data: {
+        name,
+        description: description ?? null,
+      },
+      include: { _count: { select: { contacts: true } } },
+    });
+
+    return NextResponse.json({ success: true, group });
+  } catch (error: any) {
+    if (error.code === 'P2002') {
+      return NextResponse.json({ message: 'Já existe um grupo com este nome' }, { status: 409 });
+    }
+    if (error.code === 'P2025') {
+      return NextResponse.json({ message: 'Grupo não encontrado' }, { status: 404 });
+    }
+    console.error('Erro ao atualizar grupo:', error);
+    return NextResponse.json({ message: 'Erro interno no servidor' }, { status: 500 });
+  }
+}
+
 export async function DELETE(request: Request) {
+
   try {
     const user = await getSessionUser();
     if (!user) {

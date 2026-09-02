@@ -748,6 +748,33 @@ export const evolutionApi = {
   },
 
   /**
+   * Verifica se um número de telefone está registrado no WhatsApp.
+   * Utiliza o endpoint POST /chat/whatsappNumbers/{instanceName}
+   */
+  async checkWhatsAppNumber(instanceName: string, phone: string): Promise<{ exists: boolean; jid: string | null; name: string | null }> {
+    try {
+      const formattedPhone = this.formatPhone(phone);
+      const response = await evolutionClient.post(`/chat/whatsappNumbers/${instanceName}`, {
+        numbers: [formattedPhone],
+      });
+      const data = response.data;
+      const results: any[] = Array.isArray(data) ? data : (data?.numbers || []);
+      const found = results.find((r: any) => r.exists === true);
+      if (found) {
+        return {
+          exists: true,
+          jid: found.jid ?? `${formattedPhone}@s.whatsapp.net`,
+          name: found.name ?? null,
+        };
+      }
+      return { exists: false, jid: null, name: null };
+    } catch (error: any) {
+      console.error(`Erro ao verificar WhatsApp para ${phone}:`, error?.response?.data || error.message);
+      return { exists: false, jid: null, name: null };
+    }
+  },
+
+  /**
    * Formata o número do telefone para o padrão do WhatsApp (sem caracteres especiais)
    * Garante o DDI (55 para Brasil). Retorna intacto se contiver '@'.
    */

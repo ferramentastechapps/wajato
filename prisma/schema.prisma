@@ -59,6 +59,7 @@ model Contact {
   chatbotPausedUntil DateTime?
   optOut             Boolean       @default(false)  // Contato optou por não receber mensagens
   optOutAt           DateTime?                      // Quando foi registrado o opt-out
+  notes              String?                        // Notas/anotações internas sobre o contato
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
 }
