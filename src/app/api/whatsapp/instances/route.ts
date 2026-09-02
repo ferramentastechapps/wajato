@@ -115,93 +115,67 @@ export async function GET() {
         // 4. Calcular o Grau de Aquecimento (%) e saúde da instância
         let warmupProgress = 0;
         let heatScore = 0;
-        let activeWarmupType: 'SINGLE' | 'POOL' | 'WARMED' | 'NONE' = 'NONE';
+        let activeWarmupType: 'SINGLE' | 'POOL' | 'MATURED' | 'NONE' = 'NONE';
         let warmupCampaignId: string | null = null;
         let warmupPoolId: string | null = null;
+        let isMatured = false;
 
-        // 4.1 Busca se tem alguma campanha individual rodando ou pausada (como origem ou destino)
-        const campaign = await prisma.warmupCampaign.findFirst({
-          where: {
-            OR: [
-              { sourceInstance: dbInst.name },
-              { targetInstance: dbInst.name },
-            ],
-            status: { in: ['RUNNING', 'PAUSED'] },
-          },
-          orderBy: { updatedAt: 'desc' },
-        });
-
-        if (campaign) {
-          warmupProgress = Math.min(100, Math.round((Math.min(campaign.currentDay, campaign.totalDays) / campaign.totalDays) * 100));
-          heatScore = campaign.heatScore;
-          activeWarmupType = 'SINGLE';
-          warmupCampaignId = campaign.id;
-        } else {
-          // 4.2 Se não encontrou campanha individual ativa, busca se está em algum pool ativo
-          const pool = await prisma.warmupPool.findFirst({
+        // Busca TODAS as campanhas onde a instância participa
+        const [userCampaigns, userPools] = await Promise.all([
+          prisma.warmupCampaign.findMany({
+            where: {
+              OR: [
+                { sourceInstance: dbInst.name },
+                { targetInstance: dbInst.name },
+              ],
+            },
+            orderBy: { currentDay: 'desc' },
+          }),
+          prisma.warmupPool.findMany({
             where: {
               instanceNames: { has: dbInst.name },
-              status: { in: ['RUNNING', 'PAUSED'] },
             },
-            orderBy: { updatedAt: 'desc' },
-          });
+            orderBy: { currentDay: 'desc' },
+          }),
+        ]);
 
-          if (pool) {
-            warmupProgress = Math.min(100, Math.round((Math.min(pool.currentDay, pool.totalDays) / pool.totalDays) * 100));
-            heatScore = pool.heatScore;
-            activeWarmupType = 'POOL';
-            warmupPoolId = pool.id;
-          } else {
-            // 4.3 Busca campanhas ou pools completados para esta instância (Chip já aquecido)
-            const completedCampaign = await prisma.warmupCampaign.findFirst({
-              where: {
-                OR: [
-                  { sourceInstance: dbInst.name },
-                  { targetInstance: dbInst.name },
-                ],
-                status: 'COMPLETED',
-              },
-              orderBy: { updatedAt: 'desc' },
-            });
+        if (userCampaigns.length > 0 || userPools.length > 0) {
+          // Calcula o melhor progresso e score entre todas as campanhas em que o chip participa
+          let bestProgress = 0;
+          let bestHeat = 0;
+          let hasCompletedOrContinuous = false;
 
-            const completedPool = await prisma.warmupPool.findFirst({
-              where: {
-                instanceNames: { has: dbInst.name },
-                status: 'COMPLETED',
-              },
-              orderBy: { updatedAt: 'desc' },
-            });
-
-            if (completedCampaign || completedPool) {
-              const bestScore = Math.max(
-                completedCampaign?.heatScore ?? 0,
-                completedPool?.heatScore ?? 0,
-                100
-              );
-              heatScore = bestScore;
-              warmupProgress = 100;
-              activeWarmupType = 'WARMED';
-              warmupCampaignId = completedCampaign?.id || null;
-              warmupPoolId = completedPool?.id || null;
-            } else {
-              // 4.4 Busca histórico de qualquer campanha/pool que deixou histórico de heatScore
-              const pastCampaign = await prisma.warmupCampaign.findFirst({
-                where: {
-                  OR: [
-                    { sourceInstance: dbInst.name },
-                    { targetInstance: dbInst.name },
-                  ],
-                },
-                orderBy: { updatedAt: 'desc' },
-              });
-
-              if (pastCampaign && pastCampaign.heatScore > 0) {
-                heatScore = pastCampaign.heatScore;
-                warmupProgress = Math.min(100, Math.round((Math.min(pastCampaign.currentDay, pastCampaign.totalDays) / pastCampaign.totalDays) * 100));
-                activeWarmupType = pastCampaign.heatScore >= 80 ? 'WARMED' : 'NONE';
-                warmupCampaignId = pastCampaign.id;
-              }
+          for (const c of userCampaigns) {
+            const prog = Math.min(100, Math.round((Math.min(c.currentDay, c.totalDays) / c.totalDays) * 100));
+            if (prog > bestProgress) bestProgress = prog;
+            if (c.heatScore > bestHeat) bestHeat = c.heatScore;
+            if (c.status === 'COMPLETED' || c.currentDay >= c.totalDays || (c.continuousMode && c.currentDay >= c.totalDays)) {
+              hasCompletedOrContinuous = true;
             }
+            if (!warmupCampaignId) warmupCampaignId = c.id;
+          }
+
+          for (const p of userPools) {
+            const prog = Math.min(100, Math.round((Math.min(p.currentDay, p.totalDays) / p.totalDays) * 100));
+            if (prog > bestProgress) bestProgress = prog;
+            if (p.heatScore > bestHeat) bestHeat = p.heatScore;
+            if (p.status === 'COMPLETED' || p.currentDay >= p.totalDays || (p.continuousMode && p.currentDay >= p.totalDays)) {
+              hasCompletedOrContinuous = true;
+            }
+            if (!warmupPoolId) warmupPoolId = p.id;
+          }
+
+          warmupProgress = bestProgress;
+          heatScore = bestHeat || (bestProgress >= 100 ? 100 : 0);
+
+          if (hasCompletedOrContinuous || bestProgress >= 100) {
+            isMatured = true;
+            activeWarmupType = 'MATURED';
+            warmupProgress = 100;
+          } else if (userCampaigns.some(c => c.status === 'RUNNING' || c.status === 'PAUSED')) {
+            activeWarmupType = 'SINGLE';
+          } else if (userPools.some(p => p.status === 'RUNNING' || p.status === 'PAUSED')) {
+            activeWarmupType = 'POOL';
           }
         }
 
@@ -286,6 +260,7 @@ export async function GET() {
           warmupProgress,
           heatScore,
           activeWarmupType,
+          isMatured,
           warmupCampaignId,
           warmupPoolId,
           proxy: dbInst.proxy,

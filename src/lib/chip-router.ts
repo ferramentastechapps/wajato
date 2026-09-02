@@ -23,7 +23,7 @@ export async function getNextWhatsAppInstance(
         const [runningWarmups, runningPools] = await Promise.all([
           prisma.warmupCampaign.findMany({
             where: { status: 'RUNNING' },
-            select: { sourceInstance: true, currentDay: true, totalDays: true, continuousMode: true },
+            select: { sourceInstance: true, targetInstance: true, currentDay: true, totalDays: true, continuousMode: true },
           }),
           prisma.warmupPool.findMany({
             where: { status: 'RUNNING' },
@@ -31,13 +31,28 @@ export async function getNextWhatsAppInstance(
           }),
         ]);
 
+        // Instâncias que atingiram maturação em qualquer campanha
+        const matureSet = new Set<string>();
+        for (const w of runningWarmups) {
+          if (w.currentDay >= w.totalDays) {
+            matureSet.add(w.sourceInstance);
+            if (w.targetInstance) matureSet.add(w.targetInstance);
+          }
+        }
+        for (const p of runningPools) {
+          if (p.currentDay >= p.totalDays) {
+            p.instanceNames.forEach((n) => matureSet.add(n));
+          }
+        }
+
         const fromWarmups = runningWarmups
-          .filter((w) => !w.continuousMode && w.currentDay < w.totalDays)
+          .filter((w) => w.currentDay < w.totalDays && !matureSet.has(w.sourceInstance))
           .map((w) => w.sourceInstance);
 
         const fromPools = runningPools
-          .filter((p) => !p.continuousMode && p.currentDay < p.totalDays)
-          .flatMap((p) => p.instanceNames);
+          .filter((p) => p.currentDay < p.totalDays)
+          .flatMap((p) => p.instanceNames)
+          .filter((n) => !matureSet.has(n));
 
         warmingInstancesToExclude = Array.from(new Set([...fromWarmups, ...fromPools]));
         if (warmingInstancesToExclude.length > 0) {

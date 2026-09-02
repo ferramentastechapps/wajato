@@ -512,7 +512,8 @@ export default function CampaignsPage() {
                           <div style={{display:'flex',flexDirection:'column',gap:'0.4rem',maxHeight:'180px',overflowY:'auto'}}>
                             {instances.map((inst) => {
                               const isSelected = selectedInstances.includes(inst.name);
-                              const isWarming = inst.activeWarmupType === 'SINGLE' || inst.activeWarmupType === 'POOL';
+                              const isMatured = inst.isMatured || (inst.warmupProgress ?? 0) >= 100;
+                              const isWarming = !isMatured && (inst.activeWarmupType === 'SINGLE' || inst.activeWarmupType === 'POOL');
                               const isConnected = inst.status === 'CONNECTED';
 
                               return (
@@ -554,13 +555,17 @@ export default function CampaignsPage() {
 
                                   <div style={{display:'flex',alignItems:'center',gap:'0.4rem'}}>
                                     {isConnected ? (
-                                      isWarming ? (
+                                      isMatured ? (
+                                        <span style={{fontSize:'0.65rem',color:'#22c55e',background:'rgba(34,197,94,0.12)',padding:'0.1rem 0.4rem',borderRadius:'4px',fontWeight:700}}>
+                                          🟢 100% Maturado (Pronto)
+                                        </span>
+                                      ) : isWarming ? (
                                         <span style={{fontSize:'0.65rem',color:'#eab308',background:'rgba(234,179,8,0.12)',padding:'0.1rem 0.4rem',borderRadius:'4px',fontWeight:700}} title="Em fase de aquecimento">
                                           ⚠️ Em Aquecimento ({inst.warmupProgress || 0}%)
                                         </span>
                                       ) : (
-                                        <span style={{fontSize:'0.65rem',color:'#22c55e',background:'rgba(34,197,94,0.12)',padding:'0.1rem 0.4rem',borderRadius:'4px',fontWeight:700}}>
-                                          🟢 100% Maturado (Pronto)
+                                        <span style={{fontSize:'0.65rem',color:'#94a3b8',background:'rgba(255,255,255,0.06)',padding:'0.1rem 0.4rem',borderRadius:'4px'}}>
+                                          ⚪ Sem Aquecimento
                                         </span>
                                       )
                                     ) : (
@@ -577,7 +582,8 @@ export default function CampaignsPage() {
 
                         {selectedInstances.some(name => {
                           const inst = instances.find(i => i.name === name);
-                          return inst?.activeWarmupType === 'SINGLE' || inst?.activeWarmupType === 'POOL';
+                          const isMatured = inst?.isMatured || (inst?.warmupProgress ?? 0) >= 100;
+                          return !isMatured && (inst?.activeWarmupType === 'SINGLE' || inst?.activeWarmupType === 'POOL');
                         }) && (
                           <div style={{padding:'0.5rem 0.75rem',borderRadius:'6px',background:'rgba(234,179,8,0.1)',border:'1px solid rgba(234,179,8,0.3)',color:'#fde047',fontSize:'0.72rem',display:'flex',alignItems:'center',gap:'0.4rem'}}>
                             <AlertCircle size={14} style={{flexShrink:0}}/>
