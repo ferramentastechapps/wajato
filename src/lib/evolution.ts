@@ -768,9 +768,46 @@ export const evolutionApi = {
         };
       }
       return { exists: false, jid: null, name: null };
+  /**
+   * Verifica em lote uma lista de telefones no WhatsApp.
+   * Utiliza o endpoint POST /chat/whatsappNumbers/{instanceName}
+   */
+  async checkWhatsAppNumbers(instanceName: string, phones: string[]): Promise<Array<{ phone: string; formattedPhone: string; exists: boolean; jid: string | null; name: string | null }>> {
+    try {
+      const formattedList = phones.map(p => ({ original: p, formatted: this.formatPhone(p) }));
+      const numbersToSend = formattedList.map(item => item.formatted).filter(Boolean);
+      
+      if (numbersToSend.length === 0) return [];
+
+      const response = await evolutionClient.post(`/chat/whatsappNumbers/${instanceName}`, {
+        numbers: numbersToSend,
+      });
+      const data = response.data;
+      const results: any[] = Array.isArray(data) ? data : (data?.numbers || []);
+
+      return formattedList.map(item => {
+        const match = results.find((r: any) => {
+          const rNum = String(r.number || r.jid || '').replace(/\D/g, '');
+          const myNum = item.formatted.replace(/\D/g, '');
+          return rNum.includes(myNum) || myNum.includes(rNum);
+        });
+        return {
+          phone: item.original,
+          formattedPhone: item.formatted,
+          exists: match?.exists === true,
+          jid: match?.jid ?? (match?.exists ? `${item.formatted}@s.whatsapp.net` : null),
+          name: match?.name ?? null,
+        };
+      });
     } catch (error: any) {
-      console.error(`Erro ao verificar WhatsApp para ${phone}:`, error?.response?.data || error.message);
-      return { exists: false, jid: null, name: null };
+      console.error(`Erro ao verificar lote de números no WhatsApp:`, error?.response?.data || error.message);
+      return phones.map(p => ({
+        phone: p,
+        formattedPhone: this.formatPhone(p),
+        exists: false,
+        jid: null,
+        name: null,
+      }));
     }
   },
 

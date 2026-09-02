@@ -31,6 +31,7 @@ import {
   Layers,
   BarChart2,
   Merge,
+  ShieldCheck,
 } from 'lucide-react';
 import AppLayout from '@/components/layout/AppLayout';
 
@@ -309,6 +310,22 @@ export default function ContactsPage() {
   const [duplicates, setDuplicates] = useState<DuplicateGroup[]>([]);
   const [duplicatesTotal, setDuplicatesTotal] = useState(0);
   const [loadingDuplicates, setLoadingDuplicates] = useState(false);
+
+  // Higienização / Validação em Lote WhatsApp
+  const [showSanitizeModal, setShowSanitizeModal] = useState(false);
+  const [sanitizeInstance, setSanitizeInstance] = useState('');
+  const [sanitizeScope, setSanitizeScope] = useState<'all' | 'group' | 'selected'>('all');
+  const [sanitizeGroupId, setSanitizeGroupId] = useState('');
+  const [sanitizeAction, setSanitizeAction] = useState<'tag_and_optout' | 'optout' | 'tag' | 'delete'>('tag_and_optout');
+  const [sanitizeLoading, setSanitizeLoading] = useState(false);
+  const [sanitizeError, setSanitizeError] = useState('');
+  const [sanitizeResult, setSanitizeResult] = useState<{
+    totalChecked: number;
+    validCount: number;
+    invalidCount: number;
+    updatedCount: number;
+    deletedCount: number;
+  } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [debouncedSearch, setDebouncedSearch] = useState(search);
@@ -865,6 +882,50 @@ export default function ContactsPage() {
     } catch (err) { console.error(err); }
   };
 
+  // ── Higienização em Lote de WhatsApp ─────────────────────────────────────────
+  const handleSanitizeSubmit = async () => {
+    if (!sanitizeInstance) {
+      setSanitizeError('Selecione uma instância conectada.');
+      return;
+    }
+    if (sanitizeScope === 'group' && !sanitizeGroupId) {
+      setSanitizeError('Selecione o grupo que deseja validar.');
+      return;
+    }
+    if (sanitizeScope === 'selected' && selectedContacts.length === 0) {
+      setSanitizeError('Nenhum contato selecionado.');
+      return;
+    }
+
+    setSanitizeLoading(true);
+    setSanitizeError('');
+    setSanitizeResult(null);
+
+    try {
+      const res = await fetch('/api/contacts/validate-whatsapp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          instanceName: sanitizeInstance,
+          ids: sanitizeScope === 'selected' ? selectedContacts : undefined,
+          groupId: sanitizeScope === 'group' ? sanitizeGroupId : undefined,
+          validateAll: sanitizeScope === 'all',
+          actionOnInvalid: sanitizeAction,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Erro ao validar contatos');
+
+      setSanitizeResult(data.stats);
+      fetchData();
+    } catch (err: any) {
+      setSanitizeError(err.message || 'Erro na validação.');
+    } finally {
+      setSanitizeLoading(false);
+    }
+  };
+
   // ── Stats sem grupo ──────────────────────────────────────────────────────────
   const ungroupedCount = contacts.filter(c => !c.groupId).length;
 
@@ -961,6 +1022,22 @@ export default function ContactsPage() {
                 >
                   <Smartphone size={15} /> Importar do WhatsApp
                 </button>
+                <button
+                  onClick={() => {
+                    setSanitizeScope(selectedContacts.length > 0 ? 'selected' : 'all');
+                    setSanitizeResult(null);
+                    setSanitizeError('');
+                    if (waInstances2.length > 0 && !sanitizeInstance) {
+                      setSanitizeInstance(waInstances2[0].name);
+                    }
+                    setShowSanitizeModal(true);
+                  }}
+                  className="btn btn-secondary"
+                  style={{ color: '#10b981', borderColor: 'rgba(16,185,129,0.3)', background: 'rgba(16,185,129,0.06)' }}
+                  title="Validar se os números possuem conta ativa no WhatsApp"
+                >
+                  <ShieldCheck size={15} /> Validar WhatsApp (Lote)
+                </button>
                 <button onClick={handleExportCSV} className="btn btn-secondary" title="Exportar contatos filtrados como CSV">
                   <Download size={15} /> Exportar CSV
                 </button>
@@ -1017,6 +1094,21 @@ export default function ContactsPage() {
                 <span style={{ fontSize: '0.85rem', color: '#9ca3af' }}>
                   <strong style={{ color: '#25d366' }}>{selectedContacts.length}</strong> selecionado(s)
                 </span>
+                <button
+                  onClick={() => {
+                    setSanitizeScope('selected');
+                    setSanitizeResult(null);
+                    setSanitizeError('');
+                    if (waInstances2.length > 0 && !sanitizeInstance) {
+                      setSanitizeInstance(waInstances2[0].name);
+                    }
+                    setShowSanitizeModal(true);
+                  }}
+                  className="btn btn-secondary"
+                  style={{ fontSize: '0.8rem', padding: '0.3rem 0.8rem', color: '#10b981', borderColor: 'rgba(16,185,129,0.3)' }}
+                >
+                  <ShieldCheck size={13} /> Validar WhatsApp ({selectedContacts.length})
+                </button>
                 <button onClick={() => setShowMoveGroup(true)} className="btn btn-secondary" style={{ fontSize: '0.8rem', padding: '0.3rem 0.8rem' }}>
                   <ArrowRight size={13} /> Mover para Grupo
                 </button>
@@ -2107,6 +2199,208 @@ export default function ContactsPage() {
                 <button className="btn btn-primary" onClick={() => setShowImportWA(false)} style={{ background: '#25d366', borderColor: '#25d366', width: '100%' }}>
                   <Check size={15} /> {waResult ? 'Ver Contatos' : 'Fechar'}
                 </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Higienizador / Validador de WhatsApp em Lote */}
+      {showSanitizeModal && (
+        <div className="modal-overlay" onClick={() => !sanitizeLoading && setShowSanitizeModal(false)}>
+          <div className="modal-content" style={{ maxWidth: 540 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(16,185,129,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <ShieldCheck size={18} color="#10b981" />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 600 }}>Higienizador de Base WhatsApp</h3>
+                  <p style={{ margin: 0, fontSize: '0.78rem', color: '#6b7280' }}>Valide números e proteja seus disparos de banimento</p>
+                </div>
+              </div>
+              <X className="modal-close" onClick={() => !sanitizeLoading && setShowSanitizeModal(false)} />
+            </div>
+
+            <div className="modal-body">
+              {sanitizeError && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 1rem', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, marginBottom: '1rem', color: '#fca5a5', fontSize: '0.85rem' }}>
+                  <AlertCircle size={16} style={{ flexShrink: 0 }} />{sanitizeError}
+                </div>
+              )}
+
+              {sanitizeLoading ? (
+                <div style={{ textAlign: 'center', padding: '3rem 0', color: '#9ca3af' }}>
+                  <div style={{ width: 44, height: 44, border: '4px solid rgba(16,185,129,0.15)', borderTopColor: '#10b981', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 1.5rem' }} />
+                  <p style={{ fontWeight: 600, fontSize: '1rem', color: '#e5e7eb', marginBottom: '0.35rem' }}>Consultando a rede do WhatsApp...</p>
+                  <p style={{ fontSize: '0.82rem', color: '#6b7280' }}>Verificando números em lotes de 50. Por favor, aguarde.</p>
+                </div>
+              ) : sanitizeResult ? (
+                <div>
+                  <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
+                    <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'rgba(16,185,129,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
+                      <Check size={26} color="#10b981" />
+                    </div>
+                    <p style={{ fontWeight: 700, fontSize: '1.1rem', color: '#e5e7eb', margin: 0 }}>Higienização Concluída!</p>
+                    <p style={{ fontSize: '0.82rem', color: '#6b7280', marginTop: '0.25rem' }}>Sua base foi verificada diretamente na rede do WhatsApp.</p>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem', marginBottom: '1.25rem' }}>
+                    <div style={{ textAlign: 'center', padding: '0.85rem 0.5rem', background: 'rgba(255,255,255,0.03)', borderRadius: 10, border: '1px solid var(--border)' }}>
+                      <p style={{ fontSize: '1.4rem', fontWeight: 700, margin: 0, color: '#e5e7eb' }}>{sanitizeResult.totalChecked}</p>
+                      <p style={{ fontSize: '0.72rem', color: '#9ca3af', margin: '0.2rem 0 0' }}>Total Verificado</p>
+                    </div>
+                    <div style={{ textAlign: 'center', padding: '0.85rem 0.5rem', background: 'rgba(16,185,129,0.08)', borderRadius: 10, border: '1px solid rgba(16,185,129,0.2)' }}>
+                      <p style={{ fontSize: '1.4rem', fontWeight: 700, margin: 0, color: '#10b981' }}>{sanitizeResult.validCount}</p>
+                      <p style={{ fontSize: '0.72rem', color: '#10b981', margin: '0.2rem 0 0' }}>✅ Com WhatsApp</p>
+                    </div>
+                    <div style={{ textAlign: 'center', padding: '0.85rem 0.5rem', background: 'rgba(239,68,68,0.08)', borderRadius: 10, border: '1px solid rgba(239,68,68,0.2)' }}>
+                      <p style={{ fontSize: '1.4rem', fontWeight: 700, margin: 0, color: '#ef4444' }}>{sanitizeResult.invalidCount}</p>
+                      <p style={{ fontSize: '0.72rem', color: '#ef4444', margin: '0.2rem 0 0' }}>❌ Sem WhatsApp</p>
+                    </div>
+                  </div>
+
+                  {sanitizeResult.invalidCount > 0 && (
+                    <div style={{ padding: '0.85rem 1rem', background: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.25)', borderRadius: 8, fontSize: '0.8rem', color: '#fbbf24', lineHeight: 1.5 }}>
+                      🛡️ <strong>{sanitizeResult.invalidCount} contatos inválidos</strong> foram {sanitizeAction === 'delete' ? 'excluídos' : 'marcados com Opt-Out e tag sem-whatsapp'}. Seus disparos automáticos agora estão protegidos contra envios para esses números!
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                  {/* Instância */}
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label" style={{ fontWeight: 600 }}>1. Instância do WhatsApp para consulta</label>
+                    <select
+                      className="input-control"
+                      value={sanitizeInstance}
+                      onChange={e => { setSanitizeInstance(e.target.value); setSanitizeError(''); }}
+                    >
+                      <option value="">Selecione uma instância conectada...</option>
+                      {waInstances2.map(i => (
+                        <option key={i.name} value={i.name}>{i.name} (Conectado)</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Escopo */}
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label" style={{ fontWeight: 600 }}>2. Quais contatos você quer validar?</label>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.4rem' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.85rem' }}>
+                        <input
+                          type="radio"
+                          name="sanitizeScope"
+                          checked={sanitizeScope === 'all'}
+                          onChange={() => setSanitizeScope('all')}
+                        />
+                        Todos os contatos ativos ({stats?.active.toLocaleString() || 'base inteira'})
+                      </label>
+
+                      {selectedContacts.length > 0 && (
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.85rem' }}>
+                          <input
+                            type="radio"
+                            name="sanitizeScope"
+                            checked={sanitizeScope === 'selected'}
+                            onChange={() => setSanitizeScope('selected')}
+                          />
+                          Apenas os contatos selecionados ({selectedContacts.length})
+                        </label>
+                      )}
+
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.85rem' }}>
+                        <input
+                          type="radio"
+                          name="sanitizeScope"
+                          checked={sanitizeScope === 'group'}
+                          onChange={() => setSanitizeScope('group')}
+                        />
+                        Contatos de um grupo específico
+                      </label>
+                    </div>
+
+                    {sanitizeScope === 'group' && (
+                      <select
+                        className="input-control"
+                        style={{ marginTop: '0.5rem' }}
+                        value={sanitizeGroupId}
+                        onChange={e => setSanitizeGroupId(e.target.value)}
+                      >
+                        <option value="">Selecione o grupo...</option>
+                        {groups.map(g => (
+                          <option key={g.id} value={g.id}>{g.name} ({g._count?.contacts || 0})</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+
+                  {/* Ação para números sem WhatsApp */}
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label" style={{ fontWeight: 600 }}>3. O que fazer com quem NÃO tiver WhatsApp?</label>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.4rem' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.85rem' }}>
+                        <input
+                          type="radio"
+                          name="sanitizeAction"
+                          checked={sanitizeAction === 'tag_and_optout'}
+                          onChange={() => setSanitizeAction('tag_and_optout')}
+                        />
+                        <span><strong style={{ color: '#10b981' }}>Marcar como Opt-Out + Tag "sem-whatsapp"</strong> (Recomendado — impede disparos)</span>
+                      </label>
+
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.85rem' }}>
+                        <input
+                          type="radio"
+                          name="sanitizeAction"
+                          checked={sanitizeAction === 'tag'}
+                          onChange={() => setSanitizeAction('tag')}
+                        />
+                        <span>Apenas adicionar tag "sem-whatsapp"</span>
+                      </label>
+
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.85rem' }}>
+                        <input
+                          type="radio"
+                          name="sanitizeAction"
+                          checked={sanitizeAction === 'delete'}
+                          onChange={() => setSanitizeAction('delete')}
+                        />
+                        <span style={{ color: '#ef4444' }}>Excluir contatos sem WhatsApp permanentemente</span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="modal-footer">
+              {sanitizeResult ? (
+                <button
+                  className="btn btn-primary"
+                  onClick={() => { setShowSanitizeModal(false); setSanitizeResult(null); }}
+                  style={{ width: '100%', background: '#10b981', borderColor: '#10b981' }}
+                >
+                  <Check size={15} /> Concluir e Ver Contatos
+                </button>
+              ) : (
+                <>
+                  <button
+                    className="btn btn-secondary"
+                    onClick={() => setShowSanitizeModal(false)}
+                    disabled={sanitizeLoading}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    className="btn btn-primary"
+                    onClick={handleSanitizeSubmit}
+                    disabled={sanitizeLoading || !sanitizeInstance}
+                    style={{ background: '#10b981', borderColor: '#10b981' }}
+                  >
+                    <ShieldCheck size={15} /> Iniciar Validação
+                  </button>
+                </>
               )}
             </div>
           </div>
