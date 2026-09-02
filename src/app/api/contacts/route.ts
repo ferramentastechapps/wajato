@@ -29,6 +29,8 @@ export async function GET(request: Request) {
       where.optOut = false;
     } else if (statusFilter === 'optout') {
       where.optOut = true;
+    } else if (statusFilter === 'no_whatsapp') {
+      where.tags = { has: 'sem-whatsapp' };
     }
 
     if (search) {
@@ -292,6 +294,18 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ 
         success: true, 
         message: 'Contatos avulsos excluídos.', 
+        count: result.count 
+      });
+    }
+
+    // Ação: Excluir contatos sem WhatsApp (marcados automaticamente pelo pre-flight check)
+    if (body.action === 'delete_no_whatsapp') {
+      const result = await prisma.contact.deleteMany({
+        where: { tags: { has: 'sem-whatsapp' } },
+      });
+      return NextResponse.json({ 
+        success: true, 
+        message: `${result.count} contatos sem WhatsApp foram excluídos com sucesso.`, 
         count: result.count 
       });
     }

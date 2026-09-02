@@ -292,7 +292,7 @@ export default function ContactsPage() {
   const [stats, setStats] = useState<{ total: number; active: number; optOut: number } | null>(null);
 
   // Exclusão massa
-  const [bulkDeleteAction, setBulkDeleteAction] = useState<'clear_all' | 'delete_by_group' | 'delete_ungrouped'>('clear_all');
+  const [bulkDeleteAction, setBulkDeleteAction] = useState<'clear_all' | 'delete_by_group' | 'delete_ungrouped' | 'delete_no_whatsapp'>('clear_all');
   const [bulkDeleteGroupId, setBulkDeleteGroupId] = useState('');
   const [bulkDeleteConfirmText, setBulkDeleteConfirmText] = useState('');
   const [bulkDeleteError, setBulkDeleteError] = useState('');
@@ -1055,11 +1055,12 @@ export default function ContactsPage() {
                   value={statusFilter}
                   onChange={e => setStatusFilter(e.target.value)}
                   className="input-control"
-                  style={{ maxWidth: 140, padding: '0.45rem' }}
+                  style={{ maxWidth: 160, padding: '0.45rem' }}
                 >
                   <option value="">Todos</option>
                   <option value="active">✅ Ativos</option>
                   <option value="optout">🚫 Opt-Out</option>
+                  <option value="no_whatsapp">❌ Sem WhatsApp</option>
                 </select>
                 <select
                   value={selectedGroupFilter}
@@ -1915,6 +1916,7 @@ export default function ContactsPage() {
                       { value: 'clear_all', label: `Excluir TODOS os contatos (${totalContacts.toLocaleString()})` },
                       { value: 'delete_by_group', label: 'Excluir contatos de um Grupo específico' },
                       { value: 'delete_ungrouped', label: 'Excluir contatos Avulsos (sem grupo)' },
+                      { value: 'delete_no_whatsapp', label: 'Excluir contatos marcados SEM WHATSAPP' },
                     ].map(opt => (
                       <label key={opt.value} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.85rem', color: 'white' }}>
                         <input type="radio" name="bulkDeleteAction" checked={bulkDeleteAction === opt.value as any} onChange={() => setBulkDeleteAction(opt.value as any)} />

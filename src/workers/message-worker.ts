@@ -77,6 +77,43 @@ const worker = new Worker(
       return;
     }
 
+    // 2d. Pre-flight Check Just-in-Time: Valida se o número possui conta ativa no WhatsApp antes de qualquer disparo
+    try {
+      const probeInstance = await getNextWhatsAppInstance();
+      if (probeInstance) {
+        const waCheck = await evolutionApi.checkWhatsAppNumber(probeInstance, phone);
+        if (!waCheck.exists) {
+          logger.warn('🚫 [Pre-flight Check] Número sem WhatsApp ativo detectado antes do envio — disparo cancelado e contato marcado!', { phone, contactId, messageLogId });
+
+          // Marca o contato no banco com tag 'sem-whatsapp' e opt-out automático para nunca mais tentar
+          const currentTags = log.contact.tags || [];
+          const updatedTags = currentTags.includes('sem-whatsapp') ? currentTags : [...currentTags, 'sem-whatsapp'];
+
+          await prisma.contact.update({
+            where: { id: contactId },
+            data: {
+              tags: updatedTags,
+              optOut: true,
+              optOutAt: new Date(),
+            },
+          });
+
+          // Registra falha clara no log da campanha
+          await prisma.messageLog.update({
+            where: { id: messageLogId },
+            data: {
+              status: 'FAILED',
+              error: 'Número não possui conta ativa no WhatsApp (Pre-flight check automático)',
+            },
+          });
+
+          await checkAndUpdateCampaignStatus(campaignId);
+          return;
+        }
+      }
+    } catch (checkErr: any) {
+      logger.warn('[Pre-flight Check] Erro ao verificar WhatsApp (prosseguindo com envio normal):', checkErr?.message);
+    }
 
     // 3. Monta a mensagem interpolando variáveis
     const contactName = log.contact.name || 'Cliente';
