@@ -143,7 +143,8 @@ export default function CampaignsPage() {
       }
       if (ir.ok) {
         const instData = await ir.json();
-        setInstances(instData.instances || []);
+        const list: InstanceOption[] = Array.isArray(instData) ? instData : (instData.instances || []);
+        setInstances(list);
       }
     } catch (e) { console.error(e); }
   };
@@ -179,6 +180,7 @@ export default function CampaignsPage() {
   const riskLabel = risk <= 1 ? 'Muito Seguro' : risk <= 2 ? 'Seguro' : risk <= 3 ? 'Moderado' : risk <= 4 ? 'Arriscado' : 'Perigoso';
 
   const handleOpenModal = () => {
+    fetchData();
     setName(''); setTargetType('GROUP');
     setGroupId(groups[0]?.id || ''); setSegmentId(segments[0]?.id || '');
     setTemplateId(templates[0]?.id || '');
