@@ -132,14 +132,26 @@ export default function CampaignsPage() {
         fetch('/api/companies'),
         fetch('/api/whatsapp/instances'),
       ]);
-      if (cr.ok) setGroups((await cr.json()).groups || []);
-      if (tr.ok) setTemplates((await tr.json()).templates || []);
-      if (sr.ok) setSegments((await sr.json()).segments || []);
+      if (cr.ok) {
+        const gList = (await cr.json()).groups || [];
+        setGroups(gList);
+        setGroupId(prev => (prev && gList.some((g: any) => g.id === prev) ? prev : (gList[0]?.id || '')));
+      }
+      if (tr.ok) {
+        const tList = (await tr.json()).templates || [];
+        setTemplates(tList);
+        setTemplateId(prev => (prev && tList.some((t: any) => t.id === prev) ? prev : (tList[0]?.id || '')));
+      }
+      if (sr.ok) {
+        const sList = (await sr.json()).segments || [];
+        setSegments(sList);
+        setSegmentId(prev => (prev && sList.some((s: any) => s.id === prev) ? prev : (sList[0]?.id || '')));
+      }
       if (cor.ok) {
         const cos: CompanyOption[] = (await cor.json()).companies || [];
         setCompanies(cos);
         const def = cos.find((c) => c.isDefault) || cos[0];
-        if (def) setCompanyId(def.id);
+        if (def) setCompanyId(prev => prev || def.id);
       }
       if (ir.ok) {
         const instData = await ir.json();
@@ -152,21 +164,21 @@ export default function CampaignsPage() {
   useEffect(() => { fetchCampaigns(); fetchData(); }, []);
 
   const allVariants = useCallback((): string[] => {
-    const sel = templates.find(t => t.id === templateId);
+    const sel = templates.find(t => t.id === templateId) || templates[0];
     if (!sel) return [];
-    // Usa apenas o body do template para o preview da campanha
-    // As variações ficam no template (bodyVariants) e são gerenciadas lá
-    return [sel.body];
+    return [sel.body, ...(sel.bodyVariants || [])].filter(Boolean);
   }, [templates, templateId]);
 
   const regeneratePreview = useCallback(() => {
-    const variants = allVariants();
-    if (variants.length === 0) { setPreviewText(''); return; }
-    const raw = variants[0].replace(/{{nome}}/g, 'João Silva').replace(/{{link}}/g, 'https://wa.me/grupopromo');
+    const sel = templates.find(t => t.id === templateId) || templates[0];
+    if (!sel) { setPreviewText(''); return; }
+    const allBodies = [sel.body, ...(sel.bodyVariants || [])].filter(Boolean);
+    const chosenBody = allBodies[Math.floor(Math.random() * allBodies.length)] || sel.body || '';
+    const raw = chosenBody.replace(/{{nome}}/g, 'João Silva').replace(/{{link}}/g, 'https://wa.me/grupopromo');
     setPreviewText(parseSpintax(raw));
-  }, [allVariants]);
+  }, [templates, templateId]);
 
-  useEffect(() => { regeneratePreview(); }, [templateId, regeneratePreview]);
+  useEffect(() => { regeneratePreview(); }, [templateId, templates, regeneratePreview]);
 
   const getRisk = () => {
     let s = 0;
@@ -180,18 +192,19 @@ export default function CampaignsPage() {
   const riskLabel = risk <= 1 ? 'Muito Seguro' : risk <= 2 ? 'Seguro' : risk <= 3 ? 'Moderado' : risk <= 4 ? 'Arriscado' : 'Perigoso';
 
   const handleOpenModal = () => {
-    fetchData();
     setName(''); setTargetType('GROUP');
-    setGroupId(groups[0]?.id || ''); setSegmentId(segments[0]?.id || '');
-    setTemplateId(templates[0]?.id || '');
+    if (groups[0]) setGroupId(groups[0].id);
+    if (segments[0]) setSegmentId(segments[0].id);
+    if (templates[0]) setTemplateId(templates[0].id);
     const defComp = companies.find(c => c.isDefault) || companies[0];
-    setCompanyId(defComp?.id || '');
+    if (defComp) setCompanyId(defComp.id);
     setDelayMin(20); setDelayMax(60); setDelayPreset('medium');
     setBatchSize(0); setBatchCooldown(600); setBatchPresetIdx(0);
     setStartHour(8); setEndHour(20); setAllowedDays([1, 2, 3, 4, 5, 6]); setHourPreset('expanded');
     setInstanceMode('AUTO_MATURE'); setSelectedInstances([]);
     setIsScheduled(false); setScheduledAt(''); setErrorMsg('');
     setShowAddCampaign(true);
+    fetchData();
   };
 
   const handlePresetChange = (p: typeof DELAY_PRESETS[0]) => { setDelayPreset(p.id); if (p.id !== 'custom') { setDelayMin(p.min); setDelayMax(p.max); } };
@@ -206,34 +219,39 @@ export default function CampaignsPage() {
     if (delayMax <= delayMin) { setErrorMsg('Delay máximo deve ser maior que o mínimo.'); return; }
     if (startHour >= endHour && !(startHour === 0 && endHour === 23)) { setErrorMsg('Horário de início deve ser menor que o horário de término.'); return; }
     if (allowedDays.length === 0) { setErrorMsg('Selecione ao menos um dia da semana permitido.'); return; }
-    if (instanceMode === 'SPECIFIC' && selectedInstances.length === 0) { setErrorMsg('Selecione ao menos um chip/instância de envio.'); return; }
+
     setIsSubmitting(true);
     try {
-      const r = await fetch('/api/campaigns', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+      const res = await fetch('/api/campaigns', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name,
-          groupId: targetType === 'GROUP' ? groupId : null,
-          segmentId: targetType === 'SEGMENT' ? segmentId : null,
-          companyId: companyId || null,
+          companyId,
+          targetType,
+          targetId,
           templateId,
           delayMin,
           delayMax,
-          messageVariants: [],  // variações agora ficam no template
-          batchSize,
-          batchCooldown,
+          batchSize: batchSize > 0 ? batchSize : undefined,
+          batchCooldown: batchSize > 0 ? batchCooldown : undefined,
           startHour,
           endHour,
           allowedDays,
           instanceMode,
-          instanceNames: instanceMode === 'SPECIFIC' ? selectedInstances : [],
-          scheduledAt: isScheduled && scheduledAt ? new Date(scheduledAt).toISOString() : null,
+          instanceNames: instanceMode === 'SPECIFIC' ? selectedInstances : undefined,
+          scheduledAt: isScheduled && scheduledAt ? new Date(scheduledAt).toISOString() : undefined,
         }),
       });
-      if (r.ok) { setShowAddCampaign(false); fetchCampaigns(); }
-      else setErrorMsg((await r.json()).message || 'Erro ao criar campanha.');
-    } catch { setErrorMsg('Erro de conexão.'); }
-    finally { setIsSubmitting(false); }
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Erro ao criar campanha');
+      setShowAddCampaign(false);
+      fetchCampaigns();
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleAction = async (id: string, action: 'START' | 'PAUSE' | 'CANCEL') => {
@@ -258,15 +276,26 @@ export default function CampaignsPage() {
     return <span className="badge badge-info">{status}</span>;
   };
 
-  const selGroup = groups.find(g => g.id === groupId);
-  const contactsCount = targetType === 'GROUP' && selGroup ? selGroup._count?.contacts || 0 : 0;
-  const fmt = (sec: number) => { if (sec < 60) return `${sec}s`; const m = Math.floor(sec/60); if (m < 60) return `${m}min`; return `${Math.floor(m/60)}h${m%60>0?` ${m%60}min`:''}`; };
+  const selectedTemplate = templates.find(t => t.id === templateId) || templates[0];
+  const contactsCount = targetType === 'GROUP'
+    ? (groups.find(g => g.id === groupId)?._count?.contacts || 0)
+    : 0;
+
   const timeEst = () => {
-    if (contactsCount <= 0) return null;
-    const avg = (delayMin + delayMax) / 2;
-    let tot = contactsCount * avg;
-    if (batchSize > 0) tot += Math.floor(contactsCount / batchSize) * batchCooldown;
-    return { min: fmt(contactsCount * delayMin), max: fmt(Math.round(tot + contactsCount * (delayMax - avg))) };
+    if (contactsCount === 0) return null;
+    const avgSec = (delayMin + delayMax) / 2;
+    let totalSec = contactsCount * avgSec;
+    if (batchSize > 0) {
+      const batches = Math.floor(contactsCount / batchSize);
+      totalSec += batches * batchCooldown;
+    }
+    const fmt = (s: number) => {
+      const h = Math.floor(s / 3600);
+      const m = Math.floor((s % 3600) / 60);
+      if (h > 0) return `${h}h ${m}m`;
+      return `${m}m`;
+    };
+    return { min: fmt(totalSec * 0.9), max: fmt(totalSec * 1.1) };
   };
   const est = timeEst();
   const vars = allVariants();
@@ -309,7 +338,6 @@ export default function CampaignsPage() {
                         📱 {camp.instanceMode === 'SPECIFIC' && camp.instanceNames?.length ? `${camp.instanceNames.length} chip(s) fixo(s)` : '⚡ Rotação 100% Maturados'}
                       </span>
                       {(camp.batchSize??0)>0 && <span style={{display:'flex',alignItems:'center',gap:'0.25rem',color:'#a78bfa'}}><Coffee size={12}/>Pausa a cada {camp.batchSize} msgs</span>}
-                      {(camp.messageVariants?.length??0)>0 && <span style={{display:'flex',alignItems:'center',gap:'0.25rem',color:'#34d399'}}><Shuffle size={12}/>{(camp.messageVariants?.length??0)+1} variantes</span>}
                       {camp.scheduledAt && <span style={{display:'flex',alignItems:'center',gap:'0.3rem',color:'#818cf8',fontWeight:600}}><Calendar size={12}/>{new Date(camp.scheduledAt).toLocaleString('pt-BR')}</span>}
                     </div>
                   </div>
@@ -323,14 +351,6 @@ export default function CampaignsPage() {
                       <button onClick={()=>handleDelete(camp.id)} className="btn btn-secondary" style={{padding:'0.375rem',color:'#ef4444'}} disabled={camp.status==='SENDING'}><Trash2 size={12}/></button>
                     </div>
                   </div>
-                </div>
-                <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(100px,1fr))',gap:'1rem',marginBottom:'1rem'}}>
-                  {[{l:'Total',v:camp.stats.total,c:'#9ca3af'},{l:'Enviadas',v:camp.stats.sent,c:'#25d366'},{l:'Entregues',v:camp.stats.delivered,c:'#3b82f6'},{l:'Lidas',v:camp.stats.read,c:'#10b981'},{l:'Falhas',v:camp.stats.failed,c:'#ef4444'}].map(s=>(
-                    <div key={s.l} style={{textAlign:'center',padding:'0.5rem',backgroundColor:'rgba(255,255,255,0.01)',borderRadius:'8px'}}>
-                      <span style={{fontSize:'0.75rem',color:s.c}}>{s.l}</span>
-                      <p style={{fontSize:'1.25rem',fontWeight:700,marginTop:'0.25rem',color:s.c}}>{s.v}</p>
-                    </div>
-                  ))}
                 </div>
                 <div>
                   <div style={{display:'flex',justifyContent:'space-between',fontSize:'0.75rem',color:'#9ca3af',marginBottom:'0.25rem'}}>
@@ -348,7 +368,7 @@ export default function CampaignsPage() {
 
       {showAddCampaign && (
         <div className="modal-overlay" style={{zIndex:1000}}>
-          <div className="modal-content" style={{maxWidth:'1000px',width:'100%',animation:'modalIn 0.22s cubic-bezier(0.16,1,0.3,1)',border:'1px solid rgba(255,255,255,0.08)'}}>
+          <div className="modal-content" style={{maxWidth:'1080px',width:'95vw',animation:'modalIn 0.22s cubic-bezier(0.16,1,0.3,1)',border:'1px solid rgba(255,255,255,0.08)'}}>
             <div className="modal-header" style={{borderBottom:'1px solid rgba(255,255,255,0.08)'}}>
               <h3 className="modal-title" style={{fontSize:'1.2rem',fontWeight:700,color:'#f8fafc',display:'flex',alignItems:'center',gap:'0.5rem'}}>
                 🚀 Configurar Campanha de Disparos
@@ -356,7 +376,7 @@ export default function CampaignsPage() {
               <X className="modal-close" onClick={()=>setShowAddCampaign(false)}/>
             </div>
             <form onSubmit={handleCreate}>
-              <div className="modal-body" style={{display:'grid',gridTemplateColumns:'1.3fr 1fr',gap:'2rem',padding:'1.5rem',alignItems:'start',maxHeight:'80vh',overflowY:'auto'}}>
+              <div className="modal-body" style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(360px, 1fr))',gap:'1.5rem',padding:'1.5rem',alignItems:'start',maxHeight:'82vh',overflowY:'auto'}}>
 
                 {/* COLUNA 1: DADOS DO FORMULÁRIO */}
                 <div style={{display:'flex',flexDirection:'column',gap:'1.2rem'}}>
@@ -814,30 +834,85 @@ export default function CampaignsPage() {
                 </div>
 
                 {/* COLUNA 2: PREVIEW E ESTIMATIVAS */}
-                <div style={{display:'flex',flexDirection:'column',background:'#0b141a',borderRadius:'12px',border:'1px solid rgba(255,255,255,0.06)',overflow:'hidden',position:'sticky',top:'1rem',boxShadow:'0 10px 30px rgba(0,0,0,0.5)'}}>
-                  <div style={{background:'#202c33',padding:'0.8rem 1rem',display:'flex',alignItems:'center',justifyContent:'space-between',borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
+                <div style={{display:'flex',flexDirection:'column',background:'#0b141a',borderRadius:'12px',border:'1px solid rgba(255,255,255,0.06)',overflow:'hidden',position:'sticky',top:'0.5rem',boxShadow:'0 10px 30px rgba(0,0,0,0.5)'}}>
+                  <div style={{background:'#202c33',padding:'0.75rem 1rem',display:'flex',alignItems:'center',justifyContent:'space-between',borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
                     <div style={{display:'flex',alignItems:'center',gap:'0.65rem'}}>
                       <Smartphone size={18} color="#25d366"/>
                       <div>
                         <div style={{fontSize:'0.8rem',fontWeight:700,color:'white'}}>Visualização do Cliente</div>
+                        <div style={{fontSize:'0.62rem',color:'#94a3b8'}}>Simulação em tempo real</div>
                       </div>
                     </div>
+                    {templates.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={regeneratePreview}
+                        className="btn btn-secondary"
+                        style={{padding:'0.25rem 0.6rem',fontSize:'0.65rem',display:'flex',alignItems:'center',gap:'0.3rem',background:'rgba(255,255,255,0.06)'}}
+                        title="Sortear outra variação de texto"
+                      >
+                        <Shuffle size={11}/>
+                        <span>Nova Variação</span>
+                      </button>
+                    )}
                   </div>
 
-                  <div style={{flex:1,padding:'1.2rem',display:'flex',flexDirection:'column',backgroundImage:'radial-gradient(circle,rgba(255,255,255,0.015) 1px,transparent 1px)',backgroundSize:'16px 16px',backgroundColor:'#0b141a',minHeight:'240px',overflowY:'auto'}}>
-                    {templateId&&previewText?(
-                      <div style={{alignSelf:'flex-start',maxWidth:'92%',background:'#005c4b',color:'white',padding:'0.6rem 0.9rem',borderRadius:'0 8px 8px 8px',fontSize:'0.82rem',lineHeight:1.45,boxShadow:'0 1px 2px rgba(0,0,0,0.3)',wordBreak:'break-word',animation:'wa-fadeUp 0.15s ease'}}>
-                        {(()=>{const sel=templates.find(t=>t.id===templateId);return sel?.imageUrl?<img src={sel.imageUrl} alt="Mídia" style={{borderRadius:'6px',width:'100%',maxHeight:'170px',objectFit:'cover',marginBottom:'0.6rem',border:'1px solid rgba(255,255,255,0.05)'}}/> :null;})()}
-                        <div style={{whiteSpace:'pre-wrap'}}>{previewText}</div>
-                        <div style={{display:'flex',justifyContent:'flex-end',fontSize:'0.56rem',color:'rgba(255,255,255,0.4)',marginTop:'4px'}}>
-                          <span>{new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</span>
-                        </div>
-                      </div>
-                    ):(
-                      <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',color:'rgba(255,255,255,0.2)',fontSize:'0.75rem',textAlign:'center',padding:'2rem'}}>
-                        Selecione um template de mensagem para ver a simulação da entrega aqui.
-                      </div>
-                    )}
+                  <div style={{flex:1,padding:'1.2rem',display:'flex',flexDirection:'column',gap:'0.75rem',backgroundImage:'radial-gradient(circle,rgba(255,255,255,0.015) 1px,transparent 1px)',backgroundSize:'16px 16px',backgroundColor:'#0b141a',minHeight:'240px',overflowY:'auto'}}>
+                    {(() => {
+                      const curTmpl = templates.find(t => t.id === templateId) || templates[0];
+                      if (!curTmpl) {
+                        return (
+                          <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',color:'rgba(255,255,255,0.3)',fontSize:'0.75rem',textAlign:'center',padding:'2rem'}}>
+                            Selecione um template de mensagem para ver a simulação da entrega aqui.
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <>
+                          {/* Se o template possui Proteção Hook (2 etapas) */}
+                          {curTmpl.enableHook && (
+                            <>
+                              <div style={{alignSelf:'flex-start',maxWidth:'92%',background:'#005c4b',color:'white',padding:'0.55rem 0.85rem',borderRadius:'0 8px 8px 8px',fontSize:'0.78rem',lineHeight:1.4,boxShadow:'0 1px 2px rgba(0,0,0,0.3)',animation:'wa-fadeUp 0.15s ease'}}>
+                                <div style={{fontSize:'0.6rem',color:'#34d399',fontWeight:700,marginBottom:'0.2rem',textTransform:'uppercase',letterSpacing:'0.04em'}}>
+                                  1️⃣ Saudação Inicial (Anti-Ban)
+                                </div>
+                                <div>{curTmpl.hookMessage || 'Olá, tudo bem? Posso te passar uma informação rápida?'}</div>
+                                <div style={{display:'flex',justifyContent:'flex-end',fontSize:'0.54rem',color:'rgba(255,255,255,0.4)',marginTop:'3px'}}>
+                                  <span>{new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</span>
+                                </div>
+                              </div>
+
+                              <div style={{alignSelf:'flex-end',maxWidth:'85%',background:'#202c33',color:'#e9edef',padding:'0.5rem 0.75rem',borderRadius:'8px 0 8px 8px',fontSize:'0.76rem',lineHeight:1.35,boxShadow:'0 1px 2px rgba(0,0,0,0.3)'}}>
+                                <div style={{fontSize:'0.6rem',color:'#38bdf8',fontWeight:600,marginBottom:'0.15rem'}}>
+                                  Cliente (Resposta simulada)
+                                </div>
+                                <div>Oi! Tudo bem, pode falar 😊</div>
+                                <div style={{display:'flex',justifyContent:'flex-end',fontSize:'0.54rem',color:'rgba(255,255,255,0.4)',marginTop:'3px'}}>
+                                  <span>{new Date(Date.now() + 12000).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</span>
+                                </div>
+                              </div>
+                            </>
+                          )}
+
+                          {/* Mensagem Principal (com mídia se houver) */}
+                          <div style={{alignSelf:'flex-start',maxWidth:'92%',background:'#005c4b',color:'white',padding:'0.6rem 0.9rem',borderRadius:'0 8px 8px 8px',fontSize:'0.82rem',lineHeight:1.45,boxShadow:'0 1px 2px rgba(0,0,0,0.3)',wordBreak:'break-word',animation:'wa-fadeUp 0.15s ease'}}>
+                            {curTmpl.enableHook && (
+                              <div style={{fontSize:'0.6rem',color:'#34d399',fontWeight:700,marginBottom:'0.35rem',textTransform:'uppercase',letterSpacing:'0.04em'}}>
+                                2️⃣ Mensagem Principal / Oferta
+                              </div>
+                            )}
+                            {curTmpl.imageUrl && (
+                              <img src={curTmpl.imageUrl} alt="Mídia da Campanha" style={{borderRadius:'6px',width:'100%',maxHeight:'180px',objectFit:'cover',marginBottom:'0.6rem',border:'1px solid rgba(255,255,255,0.05)'}}/>
+                            )}
+                            <div style={{whiteSpace:'pre-wrap'}}>{previewText || curTmpl.body}</div>
+                            <div style={{display:'flex',justifyContent:'flex-end',fontSize:'0.56rem',color:'rgba(255,255,255,0.4)',marginTop:'4px'}}>
+                              <span>{new Date(Date.now() + (curTmpl.enableHook ? 20000 : 0)).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</span>
+                            </div>
+                          </div>
+                        </>
+                      );
+                    })()}
                   </div>
 
                   {/* ESTIMATIVAS E METADADOS */}
