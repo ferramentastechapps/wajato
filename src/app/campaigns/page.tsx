@@ -376,10 +376,10 @@ export default function CampaignsPage() {
               <X className="modal-close" onClick={()=>setShowAddCampaign(false)}/>
             </div>
             <form onSubmit={handleCreate}>
-              <div className="modal-body" style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(360px, 1fr))',gap:'1.5rem',padding:'1.5rem',alignItems:'start',maxHeight:'82vh',overflowY:'auto'}}>
+              <div className="modal-body" style={{display:'grid',gridTemplateColumns:'1.25fr 1fr',gap:'1.5rem',padding:'1.5rem',alignItems:'start',maxHeight:'80vh',overflow:'hidden'}}>
 
-                {/* COLUNA 1: DADOS DO FORMULÁRIO */}
-                <div style={{display:'flex',flexDirection:'column',gap:'1.2rem'}}>
+                {/* COLUNA 1: DADOS DO FORMULÁRIO (ROLAGEM INDEPENDENTE) */}
+                <div style={{display:'flex',flexDirection:'column',gap:'1.2rem',maxHeight:'74vh',overflowY:'auto',paddingRight:'0.6rem'}}>
                   {errorMsg && (
                     <div style={{display:'flex',alignItems:'center',gap:'0.5rem',backgroundColor:'rgba(239,68,68,0.1)',border:'1px solid rgba(239,68,68,0.2)',color:'#ef4444',padding:'0.75rem',borderRadius:'8px',fontSize:'0.8125rem'}}>
                       <AlertCircle size={16}/><span>{errorMsg}</span>
@@ -834,8 +834,8 @@ export default function CampaignsPage() {
                 </div>
 
                 {/* COLUNA 2: PREVIEW E ESTIMATIVAS */}
-                <div style={{display:'flex',flexDirection:'column',background:'#0b141a',borderRadius:'12px',border:'1px solid rgba(255,255,255,0.06)',overflow:'hidden',position:'sticky',top:'0.5rem',boxShadow:'0 10px 30px rgba(0,0,0,0.5)'}}>
-                  <div style={{background:'#202c33',padding:'0.75rem 1rem',display:'flex',alignItems:'center',justifyContent:'space-between',borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
+                <div style={{display:'flex',flexDirection:'column',background:'#0b141a',borderRadius:'12px',border:'1px solid rgba(255,255,255,0.06)',overflow:'hidden',maxHeight:'74vh',boxShadow:'0 10px 30px rgba(0,0,0,0.5)'}}>
+                  <div style={{background:'#202c33',padding:'0.75rem 1rem',display:'flex',alignItems:'center',justifyContent:'space-between',borderBottom:'1px solid rgba(255,255,255,0.04)',flexShrink:0}}>
                     <div style={{display:'flex',alignItems:'center',gap:'0.65rem'}}>
                       <Smartphone size={18} color="#25d366"/>
                       <div>
@@ -857,7 +857,8 @@ export default function CampaignsPage() {
                     )}
                   </div>
 
-                  <div style={{flex:1,padding:'1.2rem',display:'flex',flexDirection:'column',gap:'0.75rem',backgroundImage:'radial-gradient(circle,rgba(255,255,255,0.015) 1px,transparent 1px)',backgroundSize:'16px 16px',backgroundColor:'#0b141a',minHeight:'240px',overflowY:'auto'}}>
+                  {/* JANELA DA CONVERSA (ROLAGEM DEDICADA SÓ AQUI) */}
+                  <div style={{flex:1,padding:'1.2rem',display:'flex',flexDirection:'column',gap:'0.75rem',backgroundImage:'radial-gradient(circle,rgba(255,255,255,0.015) 1px,transparent 1px)',backgroundSize:'16px 16px',backgroundColor:'#0b141a',minHeight:'220px',maxHeight:'350px',overflowY:'auto'}}>
                     {(() => {
                       const curTmpl = templates.find(t => t.id === templateId) || templates[0];
                       if (!curTmpl) {
