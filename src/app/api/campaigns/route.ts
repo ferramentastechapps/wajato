@@ -88,7 +88,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { name, templateId, groupId, segmentId, companyId, delayMin, delayMax, messageVariants, batchSize, batchCooldown, scheduledAt } = result.data;
+    const { name, templateId, groupId, segmentId, companyId, delayMin, delayMax, messageVariants, batchSize, batchCooldown, startHour, endHour, allowedDays, scheduledAt } = result.data;
 
     // Se companyId não foi informado, busca a empresa padrão
     let finalCompanyId = companyId;
@@ -113,6 +113,9 @@ export async function POST(request: Request) {
         messageVariants: messageVariants || [],
         batchSize: batchSize || 0,
         batchCooldown: batchCooldown || 600,
+        startHour: startHour ?? 8,
+        endHour: endHour ?? 20,
+        allowedDays: allowedDays || [1, 2, 3, 4, 5, 6],
         scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
         status: 'DRAFT',
       },

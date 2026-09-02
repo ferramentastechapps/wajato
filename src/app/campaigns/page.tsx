@@ -17,6 +17,9 @@ interface Campaign {
   delayMax: number;
   batchSize?: number;
   batchCooldown?: number;
+  startHour?: number;
+  endHour?: number;
+  allowedDays?: number[];
   messageVariants?: string[];
   groupId?: string | null;
   segmentId?: string | null;
@@ -88,6 +91,10 @@ export default function CampaignsPage() {
   const [delayMin, setDelayMin] = useState(20);
   const [delayMax, setDelayMax] = useState(60);
   const [delayPreset, setDelayPreset] = useState<string>('medium');
+  const [startHour, setStartHour] = useState(8);
+  const [endHour, setEndHour] = useState(20);
+  const [allowedDays, setAllowedDays] = useState<number[]>([1, 2, 3, 4, 5, 6]);
+  const [hourPreset, setHourPreset] = useState<'business' | 'expanded' | 'wide' | 'all' | 'custom'>('expanded');
   const [errorMsg, setErrorMsg] = useState('');
   const [isScheduled, setIsScheduled] = useState(false);
   const [scheduledAt, setScheduledAt] = useState('');
@@ -160,6 +167,7 @@ export default function CampaignsPage() {
     setCompanyId(defComp?.id || '');
     setDelayMin(20); setDelayMax(60); setDelayPreset('medium');
     setBatchSize(0); setBatchCooldown(600); setBatchPresetIdx(0);
+    setStartHour(8); setEndHour(20); setAllowedDays([1, 2, 3, 4, 5, 6]); setHourPreset('expanded');
     setIsScheduled(false); setScheduledAt(''); setErrorMsg('');
     setShowAddCampaign(true);
   };
@@ -174,6 +182,8 @@ export default function CampaignsPage() {
     if (isScheduled && !scheduledAt) { setErrorMsg('Selecione data e hora.'); return; }
     if (delayMin < 5) { setErrorMsg('Delay mínimo: 5 segundos.'); return; }
     if (delayMax <= delayMin) { setErrorMsg('Delay máximo deve ser maior que o mínimo.'); return; }
+    if (startHour >= endHour && !(startHour === 0 && endHour === 23)) { setErrorMsg('Horário de início deve ser menor que o horário de término.'); return; }
+    if (allowedDays.length === 0) { setErrorMsg('Selecione ao menos um dia da semana permitido.'); return; }
     setIsSubmitting(true);
     try {
       const r = await fetch('/api/campaigns', {
@@ -189,6 +199,9 @@ export default function CampaignsPage() {
           messageVariants: [],  // variações agora ficam no template
           batchSize,
           batchCooldown,
+          startHour,
+          endHour,
+          allowedDays,
           scheduledAt: isScheduled && scheduledAt ? new Date(scheduledAt).toISOString() : null,
         }),
       });
@@ -264,6 +277,9 @@ export default function CampaignsPage() {
                       <span>Template: <strong>{camp.template.name}</strong></span>
                       {camp.group ? <span>Grupo: <strong>{camp.group.name}</strong></span> : camp.segment ? <span>Segmento: <strong>{camp.segment.name}</strong></span> : null}
                       <span style={{display:'flex',alignItems:'center',gap:'0.25rem'}}><Clock size={12}/>{camp.delayMin}s–{camp.delayMax}s</span>
+                      <span style={{display:'flex',alignItems:'center',gap:'0.25rem',color:'#38bdf8',fontWeight:600}} title="Janela de Horário Permitido">
+                        ⏰ {String(camp.startHour ?? 8).padStart(2,'0')}h–{String(camp.endHour ?? 20).padStart(2,'0')}h
+                      </span>
                       {(camp.batchSize??0)>0 && <span style={{display:'flex',alignItems:'center',gap:'0.25rem',color:'#a78bfa'}}><Coffee size={12}/>Pausa a cada {camp.batchSize} msgs</span>}
                       {(camp.messageVariants?.length??0)>0 && <span style={{display:'flex',alignItems:'center',gap:'0.25rem',color:'#34d399'}}><Shuffle size={12}/>{(camp.messageVariants?.length??0)+1} variantes</span>}
                       {camp.scheduledAt && <span style={{display:'flex',alignItems:'center',gap:'0.3rem',color:'#818cf8',fontWeight:600}}><Calendar size={12}/>{new Date(camp.scheduledAt).toLocaleString('pt-BR')}</span>}
@@ -443,6 +459,165 @@ export default function CampaignsPage() {
                           <button key={i} type="button" onClick={()=>handleBatchPreset(i)} className={`btn ${batchPresetIdx===i?'btn-primary':'btn-secondary'}`} style={{padding:'0.45rem 0',fontSize:'0.65rem',fontWeight:700,width:'100%',borderColor:batchPresetIdx===i?'':'rgba(167,139,250,0.2)'}}>{p.label}</button>
                         ))}
                       </div>
+                    </div>
+                  </div>
+
+                  {/* JANELA DE HORÁRIOS E DIAS PERMITIDOS */}
+                  <div style={{background:'rgba(255,255,255,0.02)',border:'1px solid rgba(255,255,255,0.05)',borderRadius:'10px',padding:'1.2rem',display:'flex',flexDirection:'column',gap:'1rem'}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:'1px solid rgba(255,255,255,0.05)',paddingBottom:'0.5rem'}}>
+                      <div style={{fontSize:'0.88rem',fontWeight:700,color:'#f1f5f9',display:'flex',alignItems:'center',gap:'0.4rem'}}>
+                        ⏰ Janela de Horários e Dias de Envio
+                      </div>
+                      <span style={{fontSize:'0.7rem',color:'#22c55e',background:'rgba(34,197,94,0.1)',padding:'0.15rem 0.5rem',borderRadius:'999px',fontWeight:600}}>
+                        🌙 Pausa Noturna Ativa
+                      </span>
+                    </div>
+
+                    {/* Presets de Horário */}
+                    <div>
+                      <label className="form-label" style={{fontWeight:600,fontSize:'0.8rem',color:'#e2e8f0',marginBottom:'0.4rem',display:'block'}}>
+                        Horário Permitido de Disparo
+                      </label>
+                      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'0.35rem',marginBottom:'0.75rem'}}>
+                        {[
+                          { id: 'business', label: '💼 08h às 18h', start: 8, end: 18 },
+                          { id: 'expanded', label: '⚡ 08h às 20h', start: 8, end: 20 },
+                          { id: 'wide', label: '🌅 07h às 22h', start: 7, end: 22 },
+                          { id: 'all', label: '🌐 24 Horas', start: 0, end: 23 },
+                        ].map((hp) => (
+                          <button
+                            key={hp.id}
+                            type="button"
+                            onClick={() => { setHourPreset(hp.id as any); setStartHour(hp.start); setEndHour(hp.end); }}
+                            className={`btn ${hourPreset === hp.id ? 'btn-primary' : 'btn-secondary'}`}
+                            style={{ padding: '0.4rem 0', fontSize: '0.65rem', fontWeight: 700, width: '100%' }}
+                          >
+                            {hp.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'1rem'}}>
+                        <div>
+                          <label style={{fontSize:'0.68rem',color:'#94a3b8',display:'flex',justifyContent:'space-between',marginBottom:'0.3rem'}}>
+                            <span>Início dos envios</span>
+                            <strong style={{color:'#38bdf8'}}>{String(startHour).padStart(2,'0')}:00</strong>
+                          </label>
+                          <input
+                            type="range"
+                            min={0}
+                            max={22}
+                            step={1}
+                            value={startHour}
+                            onChange={(e) => {
+                              const v = parseInt(e.target.value);
+                              setStartHour(v);
+                              if (v >= endHour) setEndHour(Math.min(23, v + 1));
+                              setHourPreset('custom');
+                            }}
+                            style={{width:'100%',accentColor:'#38bdf8'}}
+                          />
+                        </div>
+                        <div>
+                          <label style={{fontSize:'0.68rem',color:'#94a3b8',display:'flex',justifyContent:'space-between',marginBottom:'0.3rem'}}>
+                            <span>Pausa dos envios</span>
+                            <strong style={{color:'#38bdf8'}}>{String(endHour).padStart(2,'0')}:00</strong>
+                          </label>
+                          <input
+                            type="range"
+                            min={1}
+                            max={23}
+                            step={1}
+                            value={endHour}
+                            onChange={(e) => {
+                              const v = parseInt(e.target.value);
+                              setEndHour(v);
+                              if (v <= startHour) setStartHour(Math.max(0, v - 1));
+                              setHourPreset('custom');
+                            }}
+                            style={{width:'100%',accentColor:'#38bdf8'}}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Dias da Semana Permitidos */}
+                    <div style={{borderTop:'1px solid rgba(255,255,255,0.05)',paddingTop:'0.8rem'}}>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.4rem'}}>
+                        <label className="form-label" style={{fontWeight:600,fontSize:'0.8rem',color:'#e2e8f0',margin:0}}>
+                          Dias da Semana Permitidos
+                        </label>
+                        <div style={{display:'flex',gap:'0.3rem'}}>
+                          <button
+                            type="button"
+                            onClick={() => setAllowedDays([1, 2, 3, 4, 5])}
+                            className="btn btn-secondary"
+                            style={{fontSize:'0.65rem',padding:'0.2rem 0.45rem'}}
+                          >
+                            Seg-Sex
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setAllowedDays([1, 2, 3, 4, 5, 6])}
+                            className="btn btn-secondary"
+                            style={{fontSize:'0.65rem',padding:'0.2rem 0.45rem'}}
+                          >
+                            Seg-Sáb
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setAllowedDays([0, 1, 2, 3, 4, 5, 6])}
+                            className="btn btn-secondary"
+                            style={{fontSize:'0.65rem',padding:'0.2rem 0.45rem'}}
+                          >
+                            Todos
+                          </button>
+                        </div>
+                      </div>
+
+                      <div style={{display:'grid',gridTemplateColumns:'repeat(7, 1fr)',gap:'0.3rem'}}>
+                        {[
+                          { day: 1, label: 'Seg' },
+                          { day: 2, label: 'Ter' },
+                          { day: 3, label: 'Qua' },
+                          { day: 4, label: 'Qui' },
+                          { day: 5, label: 'Sex' },
+                          { day: 6, label: 'Sáb' },
+                          { day: 0, label: 'Dom' },
+                        ].map((d) => {
+                          const active = allowedDays.includes(d.day);
+                          return (
+                            <button
+                              key={d.day}
+                              type="button"
+                              onClick={() => {
+                                setAllowedDays((prev) =>
+                                  prev.includes(d.day)
+                                    ? prev.length > 1 ? prev.filter((x) => x !== d.day) : prev
+                                    : [...prev, d.day]
+                                );
+                              }}
+                              style={{
+                                padding:'0.45rem 0',
+                                fontSize:'0.72rem',
+                                fontWeight: active ? 700 : 500,
+                                borderRadius:'6px',
+                                border: active ? '1px solid #25d366' : '1px solid rgba(255,255,255,0.08)',
+                                background: active ? 'rgba(37,211,102,0.15)' : 'rgba(255,255,255,0.02)',
+                                color: active ? '#25d366' : '#9ca3af',
+                                cursor:'pointer',
+                                transition:'all 0.15s',
+                              }}
+                            >
+                              {d.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <p style={{fontSize:'0.68rem',color:'#9ca3af',margin:'0.6rem 0 0 0',lineHeight:1.4}}>
+                        🌙 <strong>Anti-Incômodo:</strong> Se a campanha estiver rodando e passar das {String(endHour).padStart(2,'0')}:00 (ou em dia desmarcado), os disparos pausam sozinhos e retornam no próximo dia permitido às {String(startHour).padStart(2,'0')}:00.
+                      </p>
                     </div>
                   </div>
 

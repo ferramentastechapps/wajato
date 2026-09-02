@@ -220,6 +220,9 @@ export default function CampaignDetailsPage({ params }: { params: Promise<{ id: 
                 <Clock size={14} />
                 Atraso por mensagem: {campaign.delayMin}s a {campaign.delayMax}s
               </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: '#38bdf8' }}>
+                ⏰ Janela de Horários: {String((campaign as any).startHour ?? 8).padStart(2, '0')}:00 às {String((campaign as any).endHour ?? 20).padStart(2, '0')}:00
+              </span>
             </div>
           </div>
           <div>

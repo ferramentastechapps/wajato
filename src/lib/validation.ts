@@ -53,10 +53,16 @@ export const campaignSchema = z.object({
   messageVariants: z.array(z.string().trim().min(1)).default([]), // Variantes de texto adicionais
   batchSize: z.coerce.number().int().min(0).default(0),           // 0 = desabilitado
   batchCooldown: z.coerce.number().int().min(0).default(600),     // segundos de pausa entre lotes
+  startHour: z.coerce.number().int().min(0).max(23).default(8),
+  endHour: z.coerce.number().int().min(0).max(23).default(20),
+  allowedDays: z.array(z.coerce.number().int().min(0).max(6)).default([1, 2, 3, 4, 5, 6]),
   scheduledAt: z.preprocess((val) => val === '' || val === null ? null : val, z.string().datetime().nullable().optional()),
 }).refine(data => data.groupId || data.segmentId, {
   message: "Selecione um grupo de contatos ou uma segmentação para a campanha",
   path: ["groupId"]
+}).refine(data => data.startHour < data.endHour || (data.startHour === 0 && data.endHour === 23), {
+  message: "O horário de início deve ser anterior ao horário de término",
+  path: ["startHour"]
 });
 
 // Schema para Empresas / Base de Conhecimento de IA

@@ -2,7 +2,7 @@ import { Worker, Job } from 'bullmq';
 import { redisConfiguration } from '../lib/redis';
 import { prisma } from '../lib/prisma';
 import { evolutionApi } from '../lib/evolution';
-import { MessageJobData } from '../lib/queue';
+import { MessageJobData, queueMessage } from '../lib/queue';
 import { getNextWhatsAppInstance, reportChipSuccess, reportChipFailure } from '../lib/chip-router';
 import { logger } from '../lib/logger';
 import { formatMessageText } from '../lib/spintax';
@@ -77,7 +77,56 @@ const worker = new Worker(
       return;
     }
 
-    // 2d. Pre-flight Check Just-in-Time: Valida se o número possui conta ativa no WhatsApp antes de qualquer disparo
+    // 2d. Janela de Horários e Dias Permitidos (Pausa Automática Noturna / Fim de Semana)
+    const startHour = log.campaign.startHour ?? 8;
+    const endHour = log.campaign.endHour ?? 20;
+    const allowedDays = log.campaign.allowedDays?.length ? log.campaign.allowedDays : [1, 2, 3, 4, 5, 6];
+
+    // Obtém data e hora atuais no fuso de Brasília (America/Sao_Paulo)
+    const nowBRT = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+    const currentHour = nowBRT.getHours();
+    const currentDay = nowBRT.getDay(); // 0 = Dom, 1 = Seg, ..., 6 = Sáb
+
+    const isDayAllowed = allowedDays.includes(currentDay);
+    const isHourAllowed = currentHour >= startHour && currentHour < endHour;
+
+    if (!isDayAllowed || !isHourAllowed) {
+      // Calcula a data exata da próxima janela válida para retomar
+      let nextAllowedDate = new Date(nowBRT);
+
+      if (currentHour >= endHour) {
+        // Passou do horário de término de hoje: agenda para o início de amanhã
+        nextAllowedDate.setDate(nextAllowedDate.getDate() + 1);
+        nextAllowedDate.setHours(startHour, 0, 0, 0);
+      } else if (currentHour < startHour) {
+        // Antes do horário de início de hoje: agenda para o início de hoje
+        nextAllowedDate.setHours(startHour, 0, 0, 0);
+      }
+
+      // Se o dia da semana não for permitido, avança dia a dia até encontrar um dia permitido
+      while (!allowedDays.includes(nextAllowedDate.getDay())) {
+        nextAllowedDate.setDate(nextAllowedDate.getDate() + 1);
+        nextAllowedDate.setHours(startHour, 0, 0, 0);
+      }
+
+      const delayMs = Math.max(60_000, nextAllowedDate.getTime() - nowBRT.getTime());
+
+      logger.info(
+        `🌙 [Janela de Horários] Fora do horário permitido (${startHour}h-${endHour}h). Pausando e reagendando mensagem para ${nextAllowedDate.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`,
+        {
+          campaignId,
+          messageLogId,
+          phone,
+          delayMinutes: Math.round(delayMs / 60000),
+        }
+      );
+
+      // Re-agenda o envio no BullMQ sem marcar falha
+      await queueMessage({ messageLogId, campaignId, contactId, phone }, delayMs);
+      return;
+    }
+
+    // 2e. Pre-flight Check Just-in-Time: Valida se o número possui conta ativa no WhatsApp antes de qualquer disparo
     try {
       const probeInstance = await getNextWhatsAppInstance();
       if (probeInstance) {

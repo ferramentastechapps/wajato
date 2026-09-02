@@ -117,6 +117,9 @@ model Campaign {
   messageVariants  String[]        @default([]) // Variantes de texto adicionais (rotação automática)
   batchSize        Int             @default(0)  // Nº de msgs por lote (0 = desabilitado)
   batchCooldown    Int             @default(600) // Pausa entre lotes em segundos (padrão 10min)
+  startHour        Int             @default(8)   // Horário de início permitido (0-23, padrão 8h)
+  endHour          Int             @default(20)  // Horário de término permitido (0-23, padrão 20h)
+  allowedDays      Int[]           @default([1, 2, 3, 4, 5, 6]) // Dias permitidos: 0=Dom, 1=Seg, ..., 6=Sáb (padrão: Seg a Sáb)
   scheduledAt      DateTime?
   logs             MessageLog[]
   createdAt        DateTime        @default(now())
