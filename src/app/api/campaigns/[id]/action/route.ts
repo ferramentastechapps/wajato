@@ -5,8 +5,6 @@ import { queueMessage, cancelCampaignJobs } from '@/lib/queue';
 import { evolutionApi } from '@/lib/evolution';
 import { resolveContactsForSegment } from '@/lib/segment-resolver';
 
-const INSTANCE_NAME = process.env.EVOLUTION_INSTANCE_NAME || 'wajato-session';
-
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -30,11 +28,24 @@ export async function POST(
     }
 
     if (action === 'START') {
-      // 1. Verifica se o WhatsApp está conectado
-      const waStatus = await evolutionApi.getConnectionState(INSTANCE_NAME);
-      if (waStatus !== 'CONNECTED') {
+      // 1. Verifica se há instâncias de WhatsApp conectadas para envio
+      let connectedCount = 0;
+      if (campaign.instanceMode === 'SPECIFIC' && campaign.instanceNames && campaign.instanceNames.length > 0) {
+        connectedCount = await prisma.whatsAppInstance.count({
+          where: {
+            name: { in: campaign.instanceNames },
+            status: 'CONNECTED',
+          },
+        });
+      } else {
+        connectedCount = await prisma.whatsAppInstance.count({
+          where: { status: 'CONNECTED' },
+        });
+      }
+
+      if (connectedCount === 0) {
         return NextResponse.json(
-          { message: 'WhatsApp desconectado. Conecte no dashboard antes de disparar.' },
+          { message: 'Nenhuma instância de WhatsApp conectada. Conecte ao menos um chip antes de disparar.' },
           { status: 400 }
         );
       }
