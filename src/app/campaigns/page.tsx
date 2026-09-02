@@ -219,6 +219,7 @@ export default function CampaignsPage() {
     if (delayMax <= delayMin) { setErrorMsg('Delay máximo deve ser maior que o mínimo.'); return; }
     if (startHour >= endHour && !(startHour === 0 && endHour === 23)) { setErrorMsg('Horário de início deve ser menor que o horário de término.'); return; }
     if (allowedDays.length === 0) { setErrorMsg('Selecione ao menos um dia da semana permitido.'); return; }
+    if (instanceMode === 'SPECIFIC' && selectedInstances.length === 0) { setErrorMsg('Selecione ao menos um chip/instância para a campanha.'); return; }
 
     setIsSubmitting(true);
     try {
@@ -227,9 +228,9 @@ export default function CampaignsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name,
-          companyId,
-          targetType,
-          targetId,
+          companyId: companyId || undefined,
+          groupId: targetType === 'GROUP' ? targetId : undefined,
+          segmentId: targetType === 'SEGMENT' ? targetId : undefined,
           templateId,
           delayMin,
           delayMax,
@@ -239,7 +240,7 @@ export default function CampaignsPage() {
           endHour,
           allowedDays,
           instanceMode,
-          instanceNames: instanceMode === 'SPECIFIC' ? selectedInstances : undefined,
+          instanceNames: instanceMode === 'SPECIFIC' ? selectedInstances : [],
           scheduledAt: isScheduled && scheduledAt ? new Date(scheduledAt).toISOString() : undefined,
         }),
       });
