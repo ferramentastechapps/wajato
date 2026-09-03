@@ -176,9 +176,11 @@ export async function reportChipFailure(instanceName: string, errorMsg: string):
         errorMsg.toLowerCase().includes('401') || 
         errorMsg.toLowerCase().includes('unauthorized') || 
         errorMsg.toLowerCase().includes('session closed') || 
+        errorMsg.toLowerCase().includes('connection closed') || 
+        errorMsg.toLowerCase().includes('precondition required') || 
         errorMsg.toLowerCase().includes('logout');
 
-      const penalty = isRealDisconnection ? 20 : 4; // penalidade leve (4%) para erros genéricos, pesada (20%) para queda real
+      const penalty = isRealDisconnection ? 20 : 4; // desconexão real desconecta o chip imediatamente
       const newScore = Math.max(0, instance.healthScore - penalty);
       
       await prisma.whatsAppInstance.update({
