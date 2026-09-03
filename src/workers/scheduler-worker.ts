@@ -74,58 +74,46 @@ async function dispatchScheduledCampaigns() {
           data: { status: 'SENDING' },
         });
 
-        const delayMin = campaign.delayMin ?? 5;
-        const delayMax = campaign.delayMax ?? 15;
-        const batchSize = campaign.batchSize ?? 0;    // 0 = sem pausa de lote
-        const batchCooldown = campaign.batchCooldown ?? 600; // segundos de pausa padrão
-        let cumulativeDelay = 0;
-        let msgsSinceLastBatch = 0;
-
+        // Prepara os logs dos contatos da campanha
         for (const contact of contacts) {
-          // Cria o MessageLog
-          const messageLog = await prisma.messageLog.create({
+          await prisma.messageLog.create({
             data: {
               campaignId: campaign.id,
               contactId: contact.id,
               status: 'PENDING',
             },
           });
-
-          // Delay aleatório entre mensagens para parecer humano
-          const individualDelay =
-            Math.floor(Math.random() * (delayMax - delayMin + 1) + delayMin) * 1000;
-          cumulativeDelay += individualDelay;
-          msgsSinceLastBatch++;
-
-          // ── Batch Cooldown: pausa longa a cada N mensagens ────────────
-          if (batchSize > 0 && msgsSinceLastBatch >= batchSize) {
-            // Jitter de ±2 minutos para não parecer automático
-            const jitterMs = (Math.floor(Math.random() * 240) - 120) * 1000;
-            const cooldownMs = (batchCooldown * 1000) + jitterMs;
-            cumulativeDelay += cooldownMs;
-            msgsSinceLastBatch = 0;
-            logger.info('Pausa de lote inserida na fila', {
-              campaignId: campaign.id,
-              cooldownSeconds: Math.round(cooldownMs / 1000),
-            });
-          }
-
-          await messageQueue.add(
-            `send-message-${messageLog.id}`,
-            {
-              messageLogId: messageLog.id,
-              campaignId: campaign.id,
-              contactId: contact.id,
-              phone: contact.phone,
-            },
-            {
-              delay: cumulativeDelay,
-              jobId: messageLog.id,
-            }
-          );
         }
 
-        logger.info('Campanha agendada despachada para a fila', {
+        // Inicia a esteira dinâmica: enfileira apenas o primeiro contato imediatamente
+        const firstPending = await prisma.messageLog.findFirst({
+          where: { campaignId: campaign.id, status: 'PENDING' },
+          orderBy: { updatedAt: 'asc' },
+          include: { contact: true },
+        });
+
+        if (firstPending) {
+          await messageQueue.add(
+            `send-message-${firstPending.id}`,
+            {
+              messageLogId: firstPending.id,
+              campaignId: campaign.id,
+              contactId: firstPending.contactId,
+              phone: firstPending.contact.phone,
+            },
+            {
+              delay: 0,
+              jobId: firstPending.id,
+            }
+          );
+        } else {
+          await prisma.campaign.update({
+            where: { id: campaign.id },
+            data: { status: 'COMPLETED' },
+          });
+        }
+
+        logger.info('Campanha agendada despachada para a esteira dinâmica', {
           campaignId: campaign.id,
           campaignName: campaign.name,
           contactsCount: contacts.length,
@@ -138,6 +126,58 @@ async function dispatchScheduledCampaigns() {
     logger.error('Erro crítico no loop de agendamento do Scheduler', { error: err.message });
   }
 }
+
+/**
+ * Auto-Healer de Campanhas:
+ * Verifica periodicamente se há campanhas no status SENDING que tenham mensagens PENDING,
+ * mas por qualquer motivo (reboot, erro transitório) não possuem nenhum job ativo/agendado na fila.
+ */
+async function runCampaignAutoHealer() {
+  try {
+    const runningCampaigns = await prisma.campaign.findMany({
+      where: { status: 'SENDING' },
+    });
+
+    for (const camp of runningCampaigns) {
+      const nextPending = await prisma.messageLog.findFirst({
+        where: { campaignId: camp.id, status: 'PENDING' },
+        orderBy: { updatedAt: 'asc' },
+        include: { contact: true },
+      });
+
+      if (nextPending) {
+        const jobs = await messageQueue.getJobs(['active', 'delayed', 'waiting']);
+        const hasJob = jobs.some(j => j.data?.campaignId === camp.id);
+        if (!hasJob) {
+          logger.info(`[Auto-Healer] Campanha ${camp.name} estava ativa com contatos pendentes mas sem job na fila. Reativando...`);
+          await messageQueue.add(
+            `send-message-${nextPending.id}`,
+            {
+              messageLogId: nextPending.id,
+              campaignId: camp.id,
+              contactId: nextPending.contactId,
+              phone: nextPending.contact.phone,
+            },
+            {
+              delay: 0,
+              jobId: nextPending.id,
+            }
+          );
+        }
+      } else {
+        await prisma.campaign.update({
+          where: { id: camp.id },
+          data: { status: 'COMPLETED' },
+        });
+      }
+    }
+  } catch (healerErr: any) {
+    logger.error('[Auto-Healer] Erro no verificador de campanhas:', healerErr?.message);
+  }
+}
+
+// Executa imediatamente na inicialização e depois a cada 30 segundos
+setInterval(runCampaignAutoHealer, 30_000);
 
 // Executa imediatamente na inicialização e depois a cada intervalo
 dispatchScheduledCampaigns();

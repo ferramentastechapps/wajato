@@ -38,12 +38,12 @@ export async function queueMessage(data: MessageJobData, delayMs: number) {
  * Remove todas as mensagens pendentes de uma campanha da fila (usado ao pausar/cancelar)
  */
 export async function cancelCampaignJobs(campaignId: string) {
-  // Busca todos os jobs em espera ou agendados
-  const jobs = await messageQueue.getJobs(['delayed', 'waiting']);
+  // Busca todos os jobs em espera, agendados ou ativos
+  const jobs = await messageQueue.getJobs(['delayed', 'waiting', 'active']);
   
   for (const job of jobs) {
     if (job.data?.campaignId === campaignId) {
-      await job.remove();
+      await job.remove().catch(() => {});
     }
   }
 }

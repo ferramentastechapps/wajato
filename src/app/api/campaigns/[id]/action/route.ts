@@ -79,11 +79,7 @@ export async function POST(
       // 4. Limpa quaisquer jobs pendentes residuais no BullMQ por precaução
       await cancelCampaignJobs(id);
 
-      // 5. Agenda os disparos com delay progressivo
-      let accumulatedDelayMs = 0;
-      const delayMinMs = campaign.delayMin * 1000;
-      const delayMaxMs = campaign.delayMax * 1000;
-
+      // 5. Prepara os logs dos contatos da campanha
       for (const contact of contacts) {
         // Verifica se já existe um log de sucesso/falha definitiva para evitar re-enviar
         let log = await prisma.messageLog.findFirst({
@@ -98,9 +94,9 @@ export async function POST(
           continue;
         }
 
-        // Se for um log falho ou inexistente, vamos processar (ou re-tentar)
+        // Se for um log falho ou inexistente, cria ou reseta para PENDING
         if (!log) {
-          log = await prisma.messageLog.create({
+          await prisma.messageLog.create({
             data: {
               campaignId: id,
               contactId: contact.id,
@@ -108,31 +104,38 @@ export async function POST(
             },
           });
         } else {
-          // Se já existia (mas falhou), volta para PENDING
-          log = await prisma.messageLog.update({
+          await prisma.messageLog.update({
             where: { id: log.id },
             data: { status: 'PENDING', error: null },
           });
         }
-
-        // Adiciona à fila com delay progressivo
-        // Ex: Contato 1 = delay 0ms. Contato 2 = 10s. Contato 3 = 22s.
-        await queueMessage(
-          {
-            messageLogId: log.id,
-            campaignId: id,
-            contactId: contact.id,
-            phone: contact.phone,
-          },
-          accumulatedDelayMs
-        );
-
-        // Gera delay aleatório entre min e max para o próximo contato
-        const randomDelay = Math.floor(Math.random() * (delayMaxMs - delayMinMs + 1)) + delayMinMs;
-        accumulatedDelayMs += randomDelay;
       }
 
-      console.log(`[Campanha] ${campaign.name} iniciada/retomada. Disparos agendados.`);
+      // 6. Enfileira o primeiro disparo pendente imediatamente (a esteira encadeia os seguintes dinamicamente)
+      const firstPending = await prisma.messageLog.findFirst({
+        where: { campaignId: id, status: 'PENDING' },
+        orderBy: { updatedAt: 'asc' },
+        include: { contact: true },
+      });
+
+      if (firstPending) {
+        await queueMessage(
+          {
+            messageLogId: firstPending.id,
+            campaignId: id,
+            contactId: firstPending.contactId,
+            phone: firstPending.contact.phone,
+          },
+          0
+        );
+      } else {
+        await prisma.campaign.update({
+          where: { id },
+          data: { status: 'COMPLETED' },
+        });
+      }
+
+      console.log(`[Campanha] ${campaign.name} iniciada/retomada. Disparos agendados dinamicamente.`);
       return NextResponse.json({ success: true, message: 'Campanha iniciada com sucesso' });
     }
 

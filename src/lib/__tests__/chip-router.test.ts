@@ -59,7 +59,6 @@ describe('Chip Router Unit Tests', () => {
       await expect(getNextWhatsAppInstance()).rejects.toThrow();
       expect(prisma.whatsAppInstance.findMany).toHaveBeenCalledTimes(1);
     });
-    });
 
     it('deve priorizar a instância com menor dailyMsgCount e maior healthScore', async () => {
       const mockInstances = [

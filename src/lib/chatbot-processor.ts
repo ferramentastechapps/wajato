@@ -42,6 +42,10 @@ function markResponded(phone: string): void {
   }
 }
 
+export function _resetRateLimits(): void {
+  lastResponseMap.clear();
+}
+
 // ── Helpers de matching de regras ─────────────────────────────────────────────
 
 function matchesRule(cleanText: string, rule: any): boolean {

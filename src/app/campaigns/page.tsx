@@ -55,6 +55,7 @@ interface Template {
   hookVariants?: string[]; 
   hookMode?: 'ON_REPLY' | 'DELAY'; 
   hookDelay?: number; 
+  bodyVariants?: string[];
 }
 interface CompanyOption { id: string; name: string; segment?: string | null; isDefault: boolean; }
 

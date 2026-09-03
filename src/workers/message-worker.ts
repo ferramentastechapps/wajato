@@ -37,6 +37,49 @@ const worker = new Worker(
       return;
     }
 
+    // Função auxiliar para agendar o próximo disparo da campanha dinamicamente
+    const scheduleNextInCampaign = async (delayMs: number) => {
+      try {
+        const currentCampaign = await prisma.campaign.findUnique({
+          where: { id: campaignId },
+          select: { status: true },
+        });
+
+        // Se a campanha não estiver em SENDING, interrompe o encadeamento
+        if (!currentCampaign || currentCampaign.status !== 'SENDING') {
+          logger.info(`[Worker] Campanha ${campaignId} com status "${currentCampaign?.status}". Encadeamento pausado.`);
+          return;
+        }
+
+        const nextLog = await prisma.messageLog.findFirst({
+          where: { campaignId, status: 'PENDING' },
+          orderBy: { updatedAt: 'asc' },
+          include: { contact: true },
+        });
+
+        if (nextLog) {
+          logger.info(`[Worker] ⏭️ Próximo contato da campanha agendado em ${Math.round(delayMs / 1000)}s: ${nextLog.contact.name || nextLog.contact.phone}`);
+          await queueMessage(
+            {
+              messageLogId: nextLog.id,
+              campaignId,
+              contactId: nextLog.contactId,
+              phone: nextLog.contact.phone,
+            },
+            delayMs
+          );
+        } else {
+          await prisma.campaign.update({
+            where: { id: campaignId },
+            data: { status: 'COMPLETED' },
+          });
+          logger.info(`[Worker] 🏁 Campanha ${campaignId} concluída com sucesso! Todos os contatos processados.`);
+        }
+      } catch (err: any) {
+        logger.error('[Worker] Erro ao agendar próximo contato da campanha:', err?.message);
+      }
+    };
+
     // 2a. Bloqueia envio se contato está em opt-out
     if (log.contact.optOut) {
       logger.info('Contato em opt-out — envio bloqueado', { contactId, phone, messageLogId });
@@ -45,6 +88,7 @@ const worker = new Worker(
         data: { status: 'FAILED', error: 'Contato em opt-out (não deseja receber mensagens)' },
       });
       await checkAndUpdateCampaignStatus(campaignId);
+      await scheduleNextInCampaign(1000);
       return;
     }
 
@@ -64,6 +108,7 @@ const worker = new Worker(
         data: { status: 'FAILED', error: 'Mensagem já enviada anteriormente nesta campanha' },
       });
       await checkAndUpdateCampaignStatus(campaignId);
+      await scheduleNextInCampaign(1000);
       return;
     }
 
@@ -164,6 +209,8 @@ const worker = new Worker(
           });
 
           await checkAndUpdateCampaignStatus(campaignId);
+          // Número sem WhatsApp não realizou envio no chip! Avança para o próximo contato em apenas 2 segundos!
+          await scheduleNextInCampaign(2000);
           return;
         }
       }
@@ -221,6 +268,24 @@ const worker = new Worker(
         // Se o modo for ON_REPLY, pausa o envio para este contato até ele responder via webhook
         if (template.hookMode === 'ON_REPLY') {
           logger.info('Aguardando resposta do contato para disparar o template principal', { phone, messageLogId });
+          await checkAndUpdateCampaignStatus(campaignId);
+
+          // Mensagem de gancho enviada com sucesso no chip! Aplica o delay anti-ban antes de chamar o próximo contato
+          const delayMinMs = (log.campaign.delayMin || 5) * 1000;
+          const delayMaxMs = (log.campaign.delayMax || 15) * 1000;
+          let nextDelayMs = Math.floor(Math.random() * (delayMaxMs - delayMinMs + 1)) + delayMinMs;
+
+          if (log.campaign.batchSize > 0) {
+            const sentCount = await prisma.messageLog.count({
+              where: { campaignId, status: { in: ['SENT', 'DELIVERED', 'READ'] } },
+            });
+            if (sentCount % log.campaign.batchSize === 0) {
+              nextDelayMs = (log.campaign.batchCooldown || 600) * 1000;
+              logger.info(`[Worker] Pausa de lote atingida (${sentCount} mensagens enviadas). Aguardando ${nextDelayMs / 1000}s.`);
+            }
+          }
+
+          await scheduleNextInCampaign(nextDelayMs);
           return;
         }
 
@@ -332,6 +397,23 @@ const worker = new Worker(
 
       // 7. Verifica se esta foi a última mensagem da campanha para finalizá-la
       await checkAndUpdateCampaignStatus(campaignId);
+
+      // 8. Mensagem enviada com sucesso no chip! Aplica o delay anti-ban antes de chamar o próximo contato
+      const delayMinMs = (log.campaign.delayMin || 5) * 1000;
+      const delayMaxMs = (log.campaign.delayMax || 15) * 1000;
+      let nextDelayMs = Math.floor(Math.random() * (delayMaxMs - delayMinMs + 1)) + delayMinMs;
+
+      if (log.campaign.batchSize > 0) {
+        const sentCount = await prisma.messageLog.count({
+          where: { campaignId, status: { in: ['SENT', 'DELIVERED', 'READ'] } },
+        });
+        if (sentCount % log.campaign.batchSize === 0) {
+          nextDelayMs = (log.campaign.batchCooldown || 600) * 1000;
+          logger.info(`[Worker] Pausa de lote atingida (${sentCount} mensagens enviadas). Aguardando ${nextDelayMs / 1000}s.`);
+        }
+      }
+
+      await scheduleNextInCampaign(nextDelayMs);
     } else {
       logger.error('Erro ao enviar mensagem após todas as tentativas', {
         messageLogId,
@@ -351,6 +433,9 @@ const worker = new Worker(
       await checkCampaignDegradation(campaignId);
       await checkAndUpdateCampaignStatus(campaignId);
 
+      // Em caso de erro de envio, aguarda 5 segundos de segurança e tenta o próximo
+      await scheduleNextInCampaign(5000);
+
       throw new Error(lastErrorMsg); // Lança para que o BullMQ registre a falha no job
     }
   },
@@ -361,7 +446,7 @@ const worker = new Worker(
 );
 
 /**
- * Circuit Breaker: Pausa a campanha automaticamente se a taxa de falha for excessiva (>15%)
+ * Circuit Breaker: Pausa a campanha automaticamente se a taxa de falha de envio real for excessiva (>15%)
  */
 async function checkCampaignDegradation(campaignId: string) {
   try {
@@ -369,6 +454,8 @@ async function checkCampaignDegradation(campaignId: string) {
       where: {
         campaignId,
         status: { in: ['SENT', 'FAILED', 'DELIVERED', 'READ'] },
+        // Ignora números que apenas não têm WhatsApp para não travar lista de clientes
+        error: { not: 'Número de telefone não possui conta ativa no WhatsApp' },
       },
     });
 
@@ -377,6 +464,7 @@ async function checkCampaignDegradation(campaignId: string) {
         where: {
           campaignId,
           status: 'FAILED',
+          error: { not: 'Número de telefone não possui conta ativa no WhatsApp' },
         },
       });
 
@@ -386,7 +474,7 @@ async function checkCampaignDegradation(campaignId: string) {
           where: { id: campaignId },
           data: { status: 'PAUSED' },
         });
-        logger.warn('⚠️ Circuit Breaker: Campanha pausada automaticamente devido à taxa de falha excessiva (>15%)', {
+        logger.warn('⚠️ Circuit Breaker: Campanha pausada automaticamente devido à taxa de falha de envio excessiva (>15%)', {
           campaignId,
           totalFailed,
           totalProcessed,

@@ -118,6 +118,7 @@ describe('Company Knowledge Base & Chatbot Integration Tests', () => {
       chatbotPausedUntil: null,
       optOut: false,
       optOutAt: null,
+      notes: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     });
@@ -185,6 +186,7 @@ describe('Company Knowledge Base & Chatbot Integration Tests', () => {
       chatbotPausedUntil: null,
       optOut: false,
       optOutAt: null,
+      notes: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     });

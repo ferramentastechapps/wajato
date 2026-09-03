@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { handleChatbotIncoming } from '../chatbot-processor';
+import { handleChatbotIncoming, _resetRateLimits } from '../chatbot-processor';
 import { prisma } from '../prisma';
 import { evolutionApi } from '../evolution';
 import { isWithinBusinessHours } from '../warmup-schedule';
@@ -87,6 +87,7 @@ vi.mock('@google/generative-ai', () => {
 describe('Chatbot Processor Unit Tests', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    _resetRateLimits();
     vi.mocked(prisma.contact.findUnique).mockResolvedValue(null);
   });
 
@@ -134,6 +135,10 @@ describe('Chatbot Processor Unit Tests', () => {
         response: 'Como posso te ajudar?',
         imageUrl: null,
         isActive: true,
+        priority: 0,
+        category: null,
+        action: 'REPLY',
+        autoTags: [],
         createdAt: new Date(),
         updatedAt: new Date(),
       },
@@ -173,6 +178,10 @@ describe('Chatbot Processor Unit Tests', () => {
         response: 'Nossos planos começam em R$99.',
         imageUrl: null,
         isActive: true,
+        priority: 0,
+        category: null,
+        action: 'REPLY',
+        autoTags: [],
         createdAt: new Date(),
         updatedAt: new Date(),
       },
