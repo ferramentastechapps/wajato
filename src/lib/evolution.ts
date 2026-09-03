@@ -605,6 +605,19 @@ export const evolutionApi = {
   },
 
   /**
+   * Reinicia a instância no Evolution API para reconectar o socket
+   */
+  async restartInstance(instanceName: string): Promise<any> {
+    try {
+      const response = await evolutionClient.post(`/instance/restart/${instanceName}`);
+      return response.data;
+    } catch (error: any) {
+      console.warn(`Erro ao reiniciar instância ${instanceName}:`, error?.response?.data || error.message);
+      return null;
+    }
+  },
+
+  /**
    * Busca todos os grupos em que a instância está participando (sem participantes — listagem rápida)
    */
   async fetchGroups(instanceName: string): Promise<any[]> {
