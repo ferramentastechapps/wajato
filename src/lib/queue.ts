@@ -28,9 +28,16 @@ export interface MessageJobData {
  * Adiciona um disparo de mensagem à fila com um delay específico
  */
 export async function queueMessage(data: MessageJobData, delayMs: number) {
+  // Se o job já existia na fila com delay estático anterior, remove-o para o novo delay valer
+  const existingJob = await messageQueue.getJob(data.messageLogId);
+  if (existingJob) {
+    await existingJob.remove().catch(() => {});
+  }
+
   return messageQueue.add(`send-message-${data.messageLogId}`, data, {
     delay: delayMs, // Delay nativo do BullMQ
     jobId: data.messageLogId, // ID único do job coincide com o MessageLog ID
+    removeOnComplete: true,
   });
 }
 

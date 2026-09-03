@@ -766,8 +766,19 @@ export const evolutionApi = {
   async checkWhatsAppNumber(instanceName: string, phone: string): Promise<{ exists: boolean; jid: string | null; name: string | null }> {
     try {
       const formattedPhone = this.formatPhone(phone);
+      const numbersToCheck = [formattedPhone];
+
+      // Se for número brasileiro com 13 dígitos (55 + DDD + 9 dígitos), verifica também sem o 9 (12 dígitos)
+      if (formattedPhone.startsWith('55') && formattedPhone.length === 13) {
+        const withoutNine = formattedPhone.slice(0, 4) + formattedPhone.slice(5);
+        numbersToCheck.push(withoutNine);
+      } else if (formattedPhone.startsWith('55') && formattedPhone.length === 12) {
+        const withNine = formattedPhone.slice(0, 4) + '9' + formattedPhone.slice(4);
+        numbersToCheck.push(withNine);
+      }
+
       const response = await evolutionClient.post(`/chat/whatsappNumbers/${instanceName}`, {
-        numbers: [formattedPhone],
+        numbers: numbersToCheck,
       });
       const data = response.data;
       const results: any[] = Array.isArray(data) ? data : (data?.numbers || []);
@@ -781,8 +792,9 @@ export const evolutionApi = {
       }
       return { exists: false, jid: null, name: null };
     } catch (error: any) {
-      console.error(`Erro ao verificar WhatsApp para ${phone}:`, error?.response?.data || error.message);
-      return { exists: false, jid: null, name: null };
+      console.warn(`[Pre-flight] Falha técnica ao verificar WhatsApp para ${phone} via ${instanceName} (${error?.message || error}), prosseguindo com envio normal.`);
+      // NUNCA cancela o envio em caso de falha de conexão ou erro transitório do gateway!
+      return { exists: true, jid: null, name: null };
     }
   },
 
