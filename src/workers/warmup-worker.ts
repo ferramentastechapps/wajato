@@ -235,6 +235,22 @@ export const warmupWorker = new Worker(
             newCurrentDay = nextDay;
             newStatus = 'COMPLETED';
           }
+
+          // Auto-promove chips da campanha para disparo em massa ao completar o aquecimento
+          try {
+            await prisma.whatsAppInstance.updateMany({
+              where: { name: campaign.sourceInstance },
+              data: { allowCampaigns: true },
+            });
+            if (campaign.targetInstance) {
+              await prisma.whatsAppInstance.updateMany({
+                where: { name: campaign.targetInstance },
+                data: { allowCampaigns: true },
+              });
+            }
+          } catch (promoErr: any) {
+            console.warn('[Warmup Worker] Erro ao auto-promover chip:', promoErr?.message);
+          }
         }
         
         // Calcular heat score baseado em sucesso

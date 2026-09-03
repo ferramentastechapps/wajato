@@ -172,19 +172,6 @@ export async function GET() {
             isMatured = true;
             activeWarmupType = 'MATURED';
             warmupProgress = 100;
-
-            // Auto-ativa allowCampaigns ao detectar maturação (modo híbrido)
-            if (!dbInst.allowCampaigns) {
-              try {
-                await prisma.whatsAppInstance.update({
-                  where: { id: dbInst.id },
-                  data: { allowCampaigns: true },
-                });
-                console.log(`[Instances] ✅ Chip ${dbInst.name} atingiu maturação 100% — allowCampaigns ativado automaticamente.`);
-              } catch (autoErr: any) {
-                console.warn(`[Instances] Aviso ao auto-ativar allowCampaigns para ${dbInst.name}:`, autoErr?.message);
-              }
-            }
           } else if (userCampaigns.some(c => c.status === 'RUNNING' || c.status === 'PAUSED')) {
             activeWarmupType = 'SINGLE';
           } else if (userPools.some(p => p.status === 'RUNNING' || p.status === 'PAUSED')) {

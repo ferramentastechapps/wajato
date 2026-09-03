@@ -126,6 +126,16 @@ export const warmupPoolWorker = new Worker(
             newCurrentDay = nextDay;
             newStatus = 'COMPLETED';
           }
+
+          // Auto-promove chips do pool para disparo em massa ao completar o aquecimento
+          try {
+            await prisma.whatsAppInstance.updateMany({
+              where: { name: { in: pool.instanceNames } },
+              data: { allowCampaigns: true },
+            });
+          } catch (promoErr: any) {
+            console.warn('[Warmup Pool Worker] Erro ao auto-promover chips do pool:', promoErr?.message);
+          }
         }
         
         // Calcular heat score baseado em sucesso

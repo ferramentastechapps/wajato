@@ -368,14 +368,27 @@ export default function ConnectionsPage() {
       });
       if (!res.ok) {
         // Reverte em caso de erro
-        setAllowCampaignsState(prev => ({ ...prev, [name]: !value }));
+        setAllowCampaignsState(prev => {
+          const next = { ...prev };
+          delete next[name];
+          return next;
+        });
         const data = await res.json();
         alert(data.error || 'Erro ao atualizar permissão de disparo.');
       } else {
         await fetchInstances();
+        setAllowCampaignsState(prev => {
+          const next = { ...prev };
+          delete next[name];
+          return next;
+        });
       }
     } catch {
-      setAllowCampaignsState(prev => ({ ...prev, [name]: !value }));
+      setAllowCampaignsState(prev => {
+        const next = { ...prev };
+        delete next[name];
+        return next;
+      });
       alert('Erro de conexão ao atualizar permissão.');
     } finally {
       setSavingAllowCampaigns(prev => ({ ...prev, [name]: false }));

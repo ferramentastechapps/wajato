@@ -43,6 +43,7 @@ interface InstanceOption {
   warmupProgress?: number;
   activeWarmupType?: string;
   isMatured?: boolean;
+  allowCampaigns?: boolean;
 }
 interface Template { 
   id: string; 
@@ -576,7 +577,11 @@ export default function CampaignsPage() {
 
                                   <div style={{display:'flex',alignItems:'center',gap:'0.4rem'}}>
                                     {isConnected ? (
-                                      isMatured ? (
+                                      !inst.allowCampaigns ? (
+                                        <span style={{fontSize:'0.65rem',color:'#94a3b8',background:'rgba(255,255,255,0.06)',padding:'0.1rem 0.4rem',borderRadius:'4px'}} title="Desativado para disparos na tela de conexões">
+                                          🚫 Bloqueado para Disparo
+                                        </span>
+                                      ) : isMatured ? (
                                         <span style={{fontSize:'0.65rem',color:'#22c55e',background:'rgba(34,197,94,0.12)',padding:'0.1rem 0.4rem',borderRadius:'4px',fontWeight:700}}>
                                           🟢 100% Maturado (Pronto)
                                         </span>
