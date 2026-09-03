@@ -4,14 +4,11 @@ import { redisConnection } from './redis';
 const DEFAULT_INSTANCE = process.env.EVOLUTION_INSTANCE_NAME || 'wajato-session';
 const MAX_DAILY_MESSAGES_PER_CHIP = 200;
 
-let lastWarmingCache: { names: string[]; timestamp: number } | null = null;
-const WARMING_CACHE_TTL_MS = 30_000; // 30s cache para evitar sobrecarga no banco
-
 /**
  * Seleciona a melhor instância de WhatsApp conectada e saudável para envio.
  * @param excludeInstances Lista de nomes de instâncias a serem ignoradas nesta tentativa (ex: após falha em chip anterior)
- * @param allowedInstances Se especificado, restringe a seleção APENAS a essas instâncias (para campanhas com chips fixos)
- * @param onlyMature Se true (padrão em campanhas em massa), exclui automaticamente qualquer chip que ainda esteja em aquecimento ativo!
+ * @param allowedInstances Se especificado, restringe a seleção APENAS a essas instâncias (para campanhas com chips fixos - modo SPECIFIC)
+ * @param onlyMature Se true (padrão em campanhas em massa), exige que o chip tenha allowCampaigns=true para ser usado
  */
 export async function getNextWhatsAppInstance(
   excludeInstances: string[] = [],
@@ -19,72 +16,7 @@ export async function getNextWhatsAppInstance(
   onlyMature: boolean = true
 ): Promise<string> {
   try {
-    // Se onlyMature = true e não há restrição manual de instâncias, identifica e bloqueia chips em aquecimento ativo
-    let warmingInstancesToExclude: string[] = [];
-    if (onlyMature && (!allowedInstances || allowedInstances.length === 0)) {
-      const now = Date.now();
-      if (lastWarmingCache && now - lastWarmingCache.timestamp < WARMING_CACHE_TTL_MS) {
-        warmingInstancesToExclude = lastWarmingCache.names;
-      } else {
-        try {
-          const [runningWarmups, runningPools] = await Promise.all([
-            prisma.warmupCampaign.findMany({
-              where: { status: 'RUNNING' },
-              select: { sourceInstance: true, targetInstance: true, currentDay: true, totalDays: true, continuousMode: true },
-            }),
-            prisma.warmupPool.findMany({
-              where: { status: 'RUNNING' },
-              select: { instanceNames: true, currentDay: true, totalDays: true, continuousMode: true },
-            }),
-          ]);
-
-          // Instâncias que atingiram maturação em qualquer campanha
-          const matureSet = new Set<string>();
-          for (const w of runningWarmups) {
-            if (w.currentDay >= w.totalDays || w.continuousMode) {
-              matureSet.add(w.sourceInstance);
-              if (w.targetInstance) matureSet.add(w.targetInstance);
-            }
-          }
-          for (const p of runningPools) {
-            if (p.currentDay >= p.totalDays || p.continuousMode) {
-              p.instanceNames.forEach((n) => matureSet.add(n));
-            }
-          }
-
-          const fromWarmups: string[] = [];
-          for (const w of runningWarmups) {
-            if (w.currentDay < w.totalDays && !w.continuousMode) {
-              if (!matureSet.has(w.sourceInstance)) fromWarmups.push(w.sourceInstance);
-              if (w.targetInstance && !matureSet.has(w.targetInstance)) fromWarmups.push(w.targetInstance);
-            }
-          }
-
-          const fromPools = runningPools
-            .filter((p) => p.currentDay < p.totalDays && !p.continuousMode)
-            .flatMap((p) => p.instanceNames)
-            .filter((n) => !matureSet.has(n));
-
-          warmingInstancesToExclude = Array.from(new Set([...fromWarmups, ...fromPools]));
-          lastWarmingCache = { names: warmingInstancesToExclude, timestamp: now };
-        } catch (err: any) {
-          console.warn('[ChipRouter] Erro ao verificar campanhas de aquecimento:', err?.message);
-          if (lastWarmingCache) {
-            warmingInstancesToExclude = lastWarmingCache.names;
-          }
-        }
-      }
-
-      if (warmingInstancesToExclude.length > 0) {
-        console.log(
-          `🛡️ [ChipRouter] Proteção Anti-Ban: ${warmingInstancesToExclude.length} chips em aquecimento ativo foram preservados e excluídos da rotação de campanhas em massa: [${warmingInstancesToExclude.join(', ')}]`
-        );
-      }
-    }
-
-    const finalExcluded = Array.from(new Set([...excludeInstances, ...warmingInstancesToExclude]));
-
-    // 1. Buscar todas as instâncias conectadas que estão saudáveis e abaixo do limite diário
+    // 1. Monta o filtro base: conectado, saudável e abaixo do limite diário
     const whereClause: any = {
       status: 'CONNECTED',
       healthScore: { gt: 20 },
@@ -92,9 +24,17 @@ export async function getNextWhatsAppInstance(
     };
 
     if (allowedInstances && allowedInstances.length > 0) {
-      whereClause.name = { in: allowedInstances, ...(excludeInstances.length > 0 ? { notIn: excludeInstances } : {}) };
-    } else if (finalExcluded.length > 0) {
-      whereClause.name = { notIn: finalExcluded };
+      // Modo SPECIFIC: usa apenas os chips explicitamente escolhidos pelo usuário
+      const notIn = excludeInstances.length > 0 ? excludeInstances : undefined;
+      whereClause.name = { in: allowedInstances, ...(notIn ? { notIn } : {}) };
+    } else {
+      // Modo AUTO_MATURE: só usa chips com allowCampaigns = true (maturados e habilitados pelo usuário)
+      if (onlyMature) {
+        whereClause.allowCampaigns = true;
+      }
+      if (excludeInstances.length > 0) {
+        whereClause.name = { notIn: excludeInstances };
+      }
     }
 
     const healthyInstances = await prisma.whatsAppInstance.findMany({
@@ -102,19 +42,22 @@ export async function getNextWhatsAppInstance(
     });
 
     if (healthyInstances.length === 0) {
-      // Se filtramos com exclusões e não sobrou nada, tenta fallback seguro
       if (allowedInstances && allowedInstances.length > 0) {
-        console.warn(`[ChipRouter] Nenhuma instância disponível dentro das permitidas: [${allowedInstances.join(', ')}]. Usando primeira permitida.`);
+        // Modo SPECIFIC sem chips disponíveis — avisa mas usa o primeiro (pode estar temporariamente indisponível)
+        console.warn(`[ChipRouter] Nenhuma instância disponível dentro das permitidas: [${allowedInstances.join(', ')}]. Usando primeira da lista.`);
         return allowedInstances[0];
       }
-      if (finalExcluded.length > 0) {
-        console.warn(`[ChipRouter] Nenhum chip maturado disponível fora de [${finalExcluded.join(', ')}].`);
-        throw new Error(`Nenhum chip maturado disponível no momento. Todos os chips conectados estão em aquecimento ativo: [${finalExcluded.join(', ')}].`);
+      if (onlyMature) {
+        throw new Error(
+          `Nenhum chip habilitado para disparos em massa. ` +
+          `Ative "Pode Disparar" em pelo menos um chip maturado na tela de Conexões, ` +
+          `ou aguarde a maturação automática ao atingir 100% de aquecimento.`
+        );
       }
       throw new Error(`Nenhuma instância de WhatsApp conectada e saudável encontrada no banco.`);
     }
 
-    // Filtra chips que atingiram o limite de mensagens consecutivas sem resposta (outbound puro)
+    // 2. Filtra chips que atingiram o limite de mensagens consecutivas sem resposta (proteção anti-ban)
     const activeInstances = healthyInstances.filter((inst) => {
       if (inst.unrepliedBlockEnabled && inst.unrepliedMsgCount >= inst.maxUnrepliedLimit) {
         console.warn(
@@ -130,7 +73,7 @@ export async function getNextWhatsAppInstance(
       return DEFAULT_INSTANCE;
     }
 
-    // 2. Obter métricas de engajamento/leitura por hora no Redis para refinamento do ranking
+    // 3. Obter métricas de engajamento/leitura por hora no Redis para refinamento do ranking
     const currentHourBRT = (new Date().getUTCHours() - 3 + 24) % 24;
     const scoredInstances = await Promise.all(
       activeInstances.map(async (inst) => {
@@ -160,14 +103,17 @@ export async function getNextWhatsAppInstance(
 
     const selectedInstance = scoredInstances[0].instance;
     console.log(
-      `[ChipRouter] Instância selecionada para envio: ${selectedInstance.name} (Envios hoje: ${selectedInstance.dailyMsgCount}, Saúde: ${selectedInstance.healthScore}%, Hora BRT: ${currentHourBRT}h)`
+      `[ChipRouter] Instância selecionada: ${selectedInstance.name} ` +
+      `(allowCampaigns=${selectedInstance.allowCampaigns}, Envios hoje: ${selectedInstance.dailyMsgCount}, ` +
+      `Saúde: ${selectedInstance.healthScore}%, Hora BRT: ${currentHourBRT}h)`
     );
     return selectedInstance.name;
   } catch (error) {
     console.error('[ChipRouter] Erro ao selecionar instância:', error);
-    return DEFAULT_INSTANCE;
+    throw error; // Relança para que o worker trate corretamente e não use chip aleatório
   }
 }
+
 
 /**
  * Registra leitura de mensagem (READ) confirmada para o chip, acumulando score de engajamento por hora

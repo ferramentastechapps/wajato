@@ -150,7 +150,7 @@ export async function PATCH(req: Request, { params }: Params) {
 
     const { name } = await params;
     const body = await req.json();
-    const { proxy, profileName, profileStatus, profilePic } = body;
+    const { proxy, profileName, profileStatus, profilePic, allowCampaigns } = body;
 
     const dbInst = await prisma.whatsAppInstance.findUnique({
       where: { name },
@@ -205,6 +205,7 @@ export async function PATCH(req: Request, { params }: Params) {
     if (profilePic !== undefined && profilePic.startsWith('http')) {
       dataToUpdate.profilePicUrl = profilePic;
     }
+    if (allowCampaigns !== undefined) dataToUpdate.allowCampaigns = Boolean(allowCampaigns);
 
     const updatedInst = await prisma.whatsAppInstance.update({
       where: { name },

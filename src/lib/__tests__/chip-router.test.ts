@@ -42,6 +42,7 @@ const makeInstance = (overrides: Partial<any> = {}) => ({
   unrepliedMsgCount: 0,
   maxUnrepliedLimit: 20,
   unrepliedBlockEnabled: true,
+  allowCampaigns: true, // campo adicionado para controle de disparo
   updatedAt: new Date(),
   ...overrides,
 });
@@ -52,12 +53,12 @@ describe('Chip Router Unit Tests', () => {
   });
 
   describe('getNextWhatsAppInstance', () => {
-    it('deve retornar o fallback padrão se não houver instâncias saudáveis no banco', async () => {
+    it('deve lançar erro se não houver chips habilitados para disparo', async () => {
       vi.mocked(prisma.whatsAppInstance.findMany).mockResolvedValueOnce([]);
 
-      const result = await getNextWhatsAppInstance();
-      expect(result).toBe('wajato-session');
+      await expect(getNextWhatsAppInstance()).rejects.toThrow();
       expect(prisma.whatsAppInstance.findMany).toHaveBeenCalledTimes(1);
+    });
     });
 
     it('deve priorizar a instância com menor dailyMsgCount e maior healthScore', async () => {

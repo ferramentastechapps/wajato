@@ -65,6 +65,9 @@ interface Instance {
   unrepliedMsgCount: number;
   maxUnrepliedLimit: number;
   unrepliedBlockEnabled: boolean;
+  // Controle de disparo em massa
+  allowCampaigns: boolean;
+  isMatured?: boolean;
 }
 
 const MAX_DAILY = 200;
@@ -346,6 +349,36 @@ export default function ConnectionsPage() {
       alert('Erro de conexão ao salvar.');
     } finally {
       setSavingProtection(prev => ({ ...prev, [name]: false }));
+    }
+  };
+
+  // Estados para controle de "Pode Disparar" por chip
+  const [allowCampaignsState, setAllowCampaignsState] = useState<Record<string, boolean>>({});
+  const [savingAllowCampaigns, setSavingAllowCampaigns] = useState<Record<string, boolean>>({});
+
+  const handleToggleAllowCampaigns = async (name: string, value: boolean) => {
+    // Atualiza imediatamente na UI para resposta visual instantânea
+    setAllowCampaignsState(prev => ({ ...prev, [name]: value }));
+    setSavingAllowCampaigns(prev => ({ ...prev, [name]: true }));
+    try {
+      const res = await fetch(`/api/whatsapp/instances/${name}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ allowCampaigns: value }),
+      });
+      if (!res.ok) {
+        // Reverte em caso de erro
+        setAllowCampaignsState(prev => ({ ...prev, [name]: !value }));
+        const data = await res.json();
+        alert(data.error || 'Erro ao atualizar permissão de disparo.');
+      } else {
+        await fetchInstances();
+      }
+    } catch {
+      setAllowCampaignsState(prev => ({ ...prev, [name]: !value }));
+      alert('Erro de conexão ao atualizar permissão.');
+    } finally {
+      setSavingAllowCampaigns(prev => ({ ...prev, [name]: false }));
     }
   };
 
@@ -1210,6 +1243,92 @@ export default function ConnectionsPage() {
                           </div>
                         )}
                       </div>
+
+                      {/* ── Toggle: Pode Disparar em Massa ── */}
+                      {(() => {
+                        const canDispatch = allowCampaignsState[inst.name] !== undefined
+                          ? allowCampaignsState[inst.name]
+                          : (inst.allowCampaigns ?? false);
+                        const isSaving = savingAllowCampaigns[inst.name];
+                        const isWarm = inst.isMatured || (inst.warmupProgress ?? 0) >= 100;
+                        return (
+                          <div style={{
+                            padding: '0.6rem 0.8rem',
+                            background: canDispatch
+                              ? 'rgba(37,211,102,0.06)'
+                              : 'rgba(100,116,139,0.06)',
+                            border: `1px solid ${canDispatch ? 'rgba(37,211,102,0.2)' : 'rgba(100,116,139,0.12)'}`,
+                            borderRadius: '8px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: '0.5rem',
+                            transition: 'all 0.3s ease',
+                          }}>
+                            <div style={{ flex: 1 }}>
+                              <div style={{
+                                fontSize: '0.72rem',
+                                fontWeight: 700,
+                                color: canDispatch ? '#25d366' : 'rgba(255,255,255,0.55)',
+                                display: 'flex', alignItems: 'center', gap: '5px',
+                                marginBottom: '2px',
+                              }}>
+                                <span style={{ fontSize: '0.85rem' }}>{canDispatch ? '✅' : '🚫'}</span>
+                                {canDispatch ? 'Permitido em Disparos' : 'Bloqueado para Disparos'}
+                                {isSaving && <span style={{ fontSize: '0.6rem', color: '#94a3b8' }}>Salvando...</span>}
+                              </div>
+                              {!isWarm && !canDispatch && (
+                                <div style={{ fontSize: '0.62rem', color: '#f59e0b' }}>
+                                  ⚠️ Chip não maturado — risco de ban se ativar
+                                </div>
+                              )}
+                              {canDispatch && !isWarm && (
+                                <div style={{ fontSize: '0.62rem', color: '#ef4444' }}>
+                                  🔴 Atenção: chip ativo em disparo sem maturação completa!
+                                </div>
+                              )}
+                              {canDispatch && isWarm && (
+                                <div style={{ fontSize: '0.62rem', color: '#25d366' }}>
+                                  ✓ Chip maturado — pronto para campanhas
+                                </div>
+                              )}
+                            </div>
+                            {/* Toggle Switch animado */}
+                            <button
+                              type="button"
+                              onClick={() => handleToggleAllowCampaigns(inst.name, !canDispatch)}
+                              disabled={isSaving}
+                              title={canDispatch ? 'Clique para bloquear este chip em disparos' : 'Clique para permitir este chip em disparos'}
+                              style={{
+                                position: 'relative',
+                                width: '40px',
+                                height: '22px',
+                                borderRadius: '11px',
+                                border: 'none',
+                                cursor: isSaving ? 'not-allowed' : 'pointer',
+                                background: canDispatch ? '#25d366' : 'rgba(255,255,255,0.15)',
+                                transition: 'background 0.3s ease',
+                                padding: 0,
+                                flexShrink: 0,
+                                opacity: isSaving ? 0.6 : 1,
+                              }}
+                            >
+                              <span style={{
+                                position: 'absolute',
+                                top: '3px',
+                                left: canDispatch ? '21px' : '3px',
+                                width: '16px',
+                                height: '16px',
+                                borderRadius: '50%',
+                                background: 'white',
+                                transition: 'left 0.3s ease',
+                                boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                                display: 'block',
+                              }} />
+                            </button>
+                          </div>
+                        );
+                      })()}
 
                       {/* Alertas do chip */}
                       {chipAlerts.length > 0 && (

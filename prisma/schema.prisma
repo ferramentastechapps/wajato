@@ -169,6 +169,7 @@ model WhatsAppInstance {
   unrepliedMsgCount     Int      @default(0)
   maxUnrepliedLimit     Int      @default(20)
   unrepliedBlockEnabled Boolean  @default(true)
+  allowCampaigns        Boolean  @default(false) // Permite uso em disparos em massa. Ativado automaticamente ao maturar (100%), pode ser desativado manualmente.
   updatedAt             DateTime @updatedAt
 }
 
