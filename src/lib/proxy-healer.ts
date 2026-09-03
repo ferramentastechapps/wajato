@@ -1,7 +1,7 @@
 import http from 'http';
 import net from 'net';
 import { prisma } from './prisma';
-import { evolutionApi, parseProxyUrl } from './evolution';
+import { evolutionApi } from './evolution';
 import { isWebshareConfigured, getWebshareProxies } from './webshare';
 import { logger } from './logger';
 

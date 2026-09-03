@@ -887,19 +887,17 @@ export function parseProxyUrl(proxyUrl: string) {
     const url = new URL(proxyUrl);
     const protocol = url.protocol.replace(':', '');
     const host = url.hostname;
-    const port = parseInt(url.port);
+    const port = String(url.port || '80');
     const username = url.username ? decodeURIComponent(url.username) : undefined;
     const password = url.password ? decodeURIComponent(url.password) : undefined;
     
     return {
       enabled: true,
-      proxy: {
-        host,
-        port,
-        protocol,
-        username,
-        password
-      }
+      host,
+      port,
+      protocol,
+      username,
+      password,
     };
   } catch (error) {
     console.error('Erro ao fazer parse da URL do proxy:', proxyUrl, error);
