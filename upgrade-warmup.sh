@@ -32,6 +32,8 @@ else
   psql "$DATABASE_URL" -f prisma/migrations/warmup_status_config.sql 2>/dev/null || true
   # v3.2 — estágios de aquecimento, jitter diário 190-210 e capacidade configurável
   psql "$DATABASE_URL" -f prisma/migrations/warmup_stages_and_dynamic_limit.sql 2>/dev/null || true
+  # CRM — campo value no Contact para valor de oportunidade
+  psql "$DATABASE_URL" -f prisma/migrations/add_contact_value_crm.sql 2>/dev/null || true
   echo "  ✅ SQLs manuais aplicados."
 fi
 

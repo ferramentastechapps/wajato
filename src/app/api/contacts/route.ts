@@ -53,7 +53,10 @@ export async function GET(request: Request) {
         where,
         orderBy: { updatedAt: 'desc' },
         ...(exportCsv ? {} : { skip, take }),
-        include: { group: { select: { id: true, name: true } } },
+        include: { 
+          group: { select: { id: true, name: true } },
+          stage: { select: { id: true, name: true, color: true } },
+        },
       }),
       prisma.contact.count({ where }),
       prisma.contactGroup.findMany({
@@ -204,7 +207,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { name, phone, tags, groupId, optOut } = result.data;
+    const { name, phone, tags, groupId, stageId, value, notes, companyId, optOut } = result.data;
 
     const cleanPhone = evolutionApi.formatPhone(phone);
 
@@ -214,6 +217,10 @@ export async function POST(request: Request) {
         name: name || null,
         tags: tags || [],
         groupId: groupId || null,
+        ...(stageId !== undefined ? { stageId: stageId || null } : {}),
+        ...(value !== undefined ? { value: value || 0 } : {}),
+        ...(notes !== undefined ? { notes: notes || null } : {}),
+        ...(companyId !== undefined ? { companyId: companyId || null } : {}),
         ...(typeof optOut === 'boolean' ? { optOut, optOutAt: optOut ? new Date() : null } : {}),
       },
       create: {
@@ -221,8 +228,16 @@ export async function POST(request: Request) {
         phone: cleanPhone,
         tags: tags || [],
         groupId: groupId || null,
+        stageId: stageId || null,
+        value: value || 0,
+        notes: notes || null,
+        companyId: companyId || null,
         optOut: optOut ?? false,
         optOutAt: optOut ? new Date() : null,
+      },
+      include: {
+        stage: { select: { id: true, name: true, color: true } },
+        group: { select: { id: true, name: true } },
       },
     });
 

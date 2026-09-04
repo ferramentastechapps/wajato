@@ -1,12 +1,14 @@
 'use client';
 
 import React, { useEffect, useState, useRef, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import AppLayout from '@/components/layout/AppLayout';
 import {
   MessageSquare, Send, User, Users, Loader2, AlertCircle, Search,
   Paperclip, Smile, MoreVertical, Phone, Video as VideoIcon,
   CheckCheck, Check, Clock, FileText, Play, Pause, Download, Volume2, X,
   ChevronDown, Reply, Copy, Star, Forward, Info, CircleDot, Plus, UserPlus,
+  Columns, DollarSign, Tag, StickyNote, Zap, ExternalLink, Bot,
 } from 'lucide-react';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -184,10 +186,19 @@ function AudioPlayer({ src }: { src: string }) {
   const [playing, setPlaying] = useState(false);
   const [cur, setCur] = useState(0);
   const [dur, setDur] = useState(0);
+  const [rate, setRate] = useState<number>(1);
 
   const toggle = () => {
     if (!ref.current) return;
     playing ? ref.current.pause() : ref.current.play().catch(console.error);
+  };
+
+  const toggleRate = () => {
+    const next = rate === 1 ? 1.5 : rate === 1.5 ? 2 : 1;
+    setRate(next);
+    if (ref.current) {
+      ref.current.playbackRate = next;
+    }
   };
 
   useEffect(() => {
@@ -208,7 +219,7 @@ function AudioPlayer({ src }: { src: string }) {
   const fmt = (v: number) => isNaN(v) ? '0:00' : `${Math.floor(v / 60)}:${String(Math.floor(v % 60)).padStart(2, '0')}`;
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '0.7rem', padding: '0.3rem 0.5rem', background: 'rgba(255,255,255,0.06)', borderRadius: 12, minWidth: 230 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.35rem 0.6rem', background: 'rgba(255,255,255,0.06)', borderRadius: 12, minWidth: 260 }}>
       <audio ref={ref} src={src} preload="metadata" />
       <button type="button" onClick={toggle} style={{ width: 34, height: 34, borderRadius: '50%', border: 'none', background: '#25d366', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#0f172a', flexShrink: 0 }}>
         {playing ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" style={{ marginLeft: 2 }} />}
@@ -226,6 +237,23 @@ function AudioPlayer({ src }: { src: string }) {
           <span>{fmt(cur)}</span><span>{fmt(dur)}</span>
         </div>
       </div>
+      <button
+        type="button"
+        onClick={toggleRate}
+        style={{
+          background: rate > 1 ? 'rgba(37,211,102,0.15)' : 'rgba(255,255,255,0.08)',
+          border: '1px solid ' + (rate > 1 ? 'rgba(37,211,102,0.3)' : 'rgba(255,255,255,0.12)'),
+          borderRadius: 6,
+          padding: '2px 6px',
+          color: rate > 1 ? '#25d366' : 'rgba(255,255,255,0.6)',
+          fontSize: '0.68rem',
+          fontWeight: 700,
+          cursor: 'pointer'
+        }}
+        title="Alterar velocidade de reprodução"
+      >
+        {rate}x
+      </button>
       <Volume2 size={13} color="rgba(255,255,255,0.38)" />
     </div>
   );
@@ -310,6 +338,30 @@ export default function ChatPage() {
   const [editingContact, setEditingContact] = useState({ phone: '', name: '', tags: '', groupId: '' });
   const [contactGroups, setContactGroups] = useState<any[]>([]);
   const [savingContact, setSavingContact] = useState(false);
+
+  // ── CRM Intelligence & Pipeline Integration ──
+  const router = useRouter();
+  const [crmStages, setCrmStages] = useState<Array<{ id: string; name: string; color: string }>>([]);
+  const [crmData, setCrmData] = useState<{
+    id?: string;
+    stageId?: string | null;
+    value?: number;
+    notes?: string;
+    tags?: string[];
+    optOut?: boolean;
+    chatbotPausedUntil?: string | null;
+  } | null>(null);
+  const [loadingCrm, setLoadingCrm] = useState(false);
+  const [savingCrm, setSavingCrm] = useState(false);
+  const [crmToast, setCrmToast] = useState('');
+  const [newTagInput, setNewTagInput] = useState('');
+  const [notesDraft, setNotesDraft] = useState('');
+  const [valueDraft, setValueDraft] = useState<number | ''>('');
+
+  // ── Quick Replies states ──
+  const [showQuickReplies, setShowQuickReplies] = useState(false);
+  const [templates, setTemplates] = useState<Array<{ id: string; name: string; body: string }>>([]);
+  const [quickSearch, setQuickSearch] = useState('');
 
   // ── Group Members states ──
   const [groupMembers, setGroupMembers] = useState<any[]>([]);
@@ -519,6 +571,59 @@ export default function ChatPage() {
       finally { setLoadingInstances(false); }
     })();
   }, []);
+
+  // ── CRM & Templates Initial Load ──
+  useEffect(() => {
+    async function loadCrmAndTemplates() {
+      try {
+        const [stRes, tplRes] = await Promise.all([
+          fetch('/api/crm/stages'),
+          fetch('/api/templates'),
+        ]);
+        if (stRes.ok) {
+          const stData = await stRes.json();
+          setCrmStages(stData.stages || []);
+        }
+        if (tplRes.ok) {
+          const tplData = await tplRes.json();
+          setTemplates(tplData.templates || []);
+        }
+      } catch (err) {
+        console.error('Erro ao buscar estágios/templates:', err);
+      }
+    }
+    loadCrmAndTemplates();
+  }, []);
+
+  // ── Deep Linking via URL (?phone=...) ──
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const targetPhone = params.get('phone');
+    if (!targetPhone) return;
+
+    const cleanTarget = targetPhone.replace(/\D/g, '');
+    if (!cleanTarget) return;
+
+    const found = chats.find(c => {
+      const p = (c.phoneNumber || c.id || '').replace(/\D/g, '');
+      return p === cleanTarget || p.endsWith(cleanTarget) || cleanTarget.endsWith(p);
+    });
+
+    if (found) {
+      if (!selChat || selChat.id !== found.id) {
+        openChat(found);
+      }
+    } else if (!selChat) {
+      const virtualChat: Chat = {
+        id: `${cleanTarget}@s.whatsapp.net`,
+        phoneNumber: cleanTarget,
+        name: `+${cleanTarget}`,
+        unreadCount: 0,
+      };
+      openChat(virtualChat);
+    }
+  }, [chats]);
 
   // ── Chats ──
   useEffect(() => {
@@ -858,8 +963,290 @@ export default function ChatPage() {
     return <div style={{ color: 'rgba(255,255,255,0.28)', fontStyle: 'italic', fontSize: '0.78rem' }}>[Tipo não suportado]</div>;
   };
 
+  const loadChatCrmData = async (chat: Chat) => {
+    const raw = chat.phoneNumber || (chat.id && !chat.id.endsWith('@g.us') ? chat.id.split('@')[0] : '');
+    const clean = raw.replace(/\D/g, '');
+    if (!clean || chat.id.endsWith('@g.us')) {
+      setCrmData(null);
+      return;
+    }
+    setLoadingCrm(true);
+    try {
+      const res = await fetch(`/api/contacts?search=${clean}`);
+      if (res.ok) {
+        const data = await res.json();
+        const found = data.contacts?.find((c: any) => {
+          const cp = c.phone.replace(/\D/g, '');
+          return cp === clean || cp.endsWith(clean) || clean.endsWith(cp);
+        });
+        if (found) {
+          setCrmData({
+            id: found.id,
+            stageId: found.stageId || null,
+            value: found.value || 0,
+            notes: found.notes || '',
+            tags: found.tags || [],
+            optOut: found.optOut || false,
+            chatbotPausedUntil: found.chatbotPausedUntil || null,
+          });
+          setNotesDraft(found.notes || '');
+          setValueDraft(found.value ?? '');
+        } else {
+          setCrmData({
+            stageId: null,
+            value: 0,
+            notes: '',
+            tags: [],
+            optOut: false,
+          });
+          setNotesDraft('');
+          setValueDraft('');
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao buscar dados do CRM:', err);
+    } finally {
+      setLoadingCrm(false);
+    }
+  };
+
+  const showToast = (msg: string) => {
+    setCrmToast(msg);
+    setTimeout(() => setCrmToast(''), 3000);
+  };
+
+  const handleUpdateCrmStage = async (newStageId: string | null) => {
+    if (!selChat) return;
+    const raw = selChat.phoneNumber || selChat.id.split('@')[0];
+    const clean = raw.replace(/\D/g, '');
+    setSavingCrm(true);
+
+    try {
+      const res = await fetch('/api/crm/stages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: crmData?.id ? 'UPDATE_CONTACT' : 'QUICK_ADD_LEAD',
+          contactId: crmData?.id,
+          phone: clean,
+          name: selChat.name && !selChat.name.includes('@') ? selChat.name : null,
+          stageId: newStageId,
+          value: valueDraft === '' ? 0 : Number(valueDraft),
+          tags: crmData?.tags || [],
+          notes: notesDraft || null,
+        }),
+      });
+
+      if (res.ok) {
+        const d = await res.json();
+        setCrmData(prev => ({
+          ...(prev || {}),
+          id: d.contact?.id || prev?.id,
+          stageId: newStageId,
+        }));
+        showToast('Estágio atualizado no CRM!');
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSavingCrm(false);
+    }
+  };
+
+  const handleSaveCrmValue = async () => {
+    if (!selChat) return;
+    const raw = selChat.phoneNumber || selChat.id.split('@')[0];
+    const clean = raw.replace(/\D/g, '');
+    setSavingCrm(true);
+
+    try {
+      const res = await fetch('/api/crm/stages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: crmData?.id ? 'UPDATE_CONTACT' : 'QUICK_ADD_LEAD',
+          contactId: crmData?.id,
+          phone: clean,
+          name: selChat.name && !selChat.name.includes('@') ? selChat.name : null,
+          stageId: crmData?.stageId || null,
+          value: valueDraft === '' ? 0 : Number(valueDraft),
+          tags: crmData?.tags || [],
+          notes: notesDraft || null,
+        }),
+      });
+
+      if (res.ok) {
+        const d = await res.json();
+        setCrmData(prev => ({
+          ...(prev || {}),
+          id: d.contact?.id || prev?.id,
+          value: valueDraft === '' ? 0 : Number(valueDraft),
+        }));
+        showToast('Valor de oportunidade salvo!');
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSavingCrm(false);
+    }
+  };
+
+  const handleSaveCrmNotes = async () => {
+    if (!selChat) return;
+    const raw = selChat.phoneNumber || selChat.id.split('@')[0];
+    const clean = raw.replace(/\D/g, '');
+    setSavingCrm(true);
+
+    try {
+      const res = await fetch('/api/crm/stages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: crmData?.id ? 'UPDATE_CONTACT' : 'QUICK_ADD_LEAD',
+          contactId: crmData?.id,
+          phone: clean,
+          name: selChat.name && !selChat.name.includes('@') ? selChat.name : null,
+          stageId: crmData?.stageId || null,
+          value: valueDraft === '' ? 0 : Number(valueDraft),
+          tags: crmData?.tags || [],
+          notes: notesDraft,
+        }),
+      });
+
+      if (res.ok) {
+        const d = await res.json();
+        setCrmData(prev => ({
+          ...(prev || {}),
+          id: d.contact?.id || prev?.id,
+          notes: notesDraft,
+        }));
+        showToast('Anotação interna salva!');
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSavingCrm(false);
+    }
+  };
+
+  const handleAddCrmTag = async () => {
+    if (!newTagInput.trim() || !selChat) return;
+    const t = newTagInput.trim();
+    const curTags = crmData?.tags || [];
+    if (curTags.includes(t)) {
+      setNewTagInput('');
+      return;
+    }
+    const nextTags = [...curTags, t];
+    setNewTagInput('');
+    setSavingCrm(true);
+
+    const raw = selChat.phoneNumber || selChat.id.split('@')[0];
+    const clean = raw.replace(/\D/g, '');
+
+    try {
+      const res = await fetch('/api/crm/stages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: crmData?.id ? 'UPDATE_CONTACT' : 'QUICK_ADD_LEAD',
+          contactId: crmData?.id,
+          phone: clean,
+          name: selChat.name && !selChat.name.includes('@') ? selChat.name : null,
+          stageId: crmData?.stageId || null,
+          value: valueDraft === '' ? 0 : Number(valueDraft),
+          tags: nextTags,
+          notes: notesDraft || null,
+        }),
+      });
+
+      if (res.ok) {
+        const d = await res.json();
+        setCrmData(prev => ({
+          ...(prev || {}),
+          id: d.contact?.id || prev?.id,
+          tags: nextTags,
+        }));
+        showToast('Tag adicionada!');
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSavingCrm(false);
+    }
+  };
+
+  const handleRemoveCrmTag = async (tagToRemove: string) => {
+    if (!selChat) return;
+    const curTags = crmData?.tags || [];
+    const nextTags = curTags.filter(t => t !== tagToRemove);
+    setSavingCrm(true);
+
+    const raw = selChat.phoneNumber || selChat.id.split('@')[0];
+    const clean = raw.replace(/\D/g, '');
+
+    try {
+      const res = await fetch('/api/crm/stages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: crmData?.id ? 'UPDATE_CONTACT' : 'QUICK_ADD_LEAD',
+          contactId: crmData?.id,
+          phone: clean,
+          name: selChat.name && !selChat.name.includes('@') ? selChat.name : null,
+          stageId: crmData?.stageId || null,
+          value: valueDraft === '' ? 0 : Number(valueDraft),
+          tags: nextTags,
+          notes: notesDraft || null,
+        }),
+      });
+
+      if (res.ok) {
+        const d = await res.json();
+        setCrmData(prev => ({
+          ...(prev || {}),
+          id: d.contact?.id || prev?.id,
+          tags: nextTags,
+        }));
+        showToast('Tag removida!');
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSavingCrm(false);
+    }
+  };
+
+  const handleToggleOptOut = async () => {
+    if (!selChat) return;
+    const nextVal = !crmData?.optOut;
+    const raw = selChat.phoneNumber || selChat.id.split('@')[0];
+    const clean = raw.replace(/\D/g, '');
+
+    try {
+      await fetch('/api/contacts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: clean,
+          name: selChat.name && !selChat.name.includes('@') ? selChat.name : null,
+          optOut: nextVal,
+        }),
+      });
+      setCrmData(prev => prev ? { ...prev, optOut: nextVal } : null);
+      showToast(nextVal ? 'Lead marcado com Opt-Out' : 'Opt-out desativado');
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const openChat = (chat: Chat) => {
-    setSelChat(chat); setShowInfo(false); setReplyTo(null); setShowEmoji(false);
+    setSelChat(chat);
+    setShowInfo(false);
+    setReplyTo(null);
+    setShowEmoji(false);
+    setShowQuickReplies(false);
+    loadChatCrmData(chat);
   };
 
   const copy = (text: string) => navigator.clipboard.writeText(text).catch(console.error);
@@ -1192,14 +1579,102 @@ export default function ChatPage() {
                     </div>
                   )}
 
+                  {/* Quick replies popover */}
+                  {showQuickReplies && (
+                    <div data-quick-replies style={{
+                      position: 'absolute', bottom: '100%', left: '0.75rem',
+                      background: '#222e35', border: '1px solid rgba(255,255,255,0.1)',
+                      borderRadius: 14, padding: '0.85rem', width: 340, maxHeight: 320,
+                      overflowY: 'auto', boxShadow: '0 12px 32px rgba(0,0,0,0.6)',
+                      zIndex: 35, animation: 'wa-fadeUp 0.15s ease'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.65rem' }}>
+                        <span style={{ fontSize: '0.82rem', fontWeight: 700, color: C.green, display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <Zap size={14} color="#fbbf24" /> Respostas Rápidas
+                        </span>
+                        <X size={15} style={{ cursor: 'pointer', color: '#9ca3af' }} onClick={() => setShowQuickReplies(false)} />
+                      </div>
+
+                      <input
+                        type="text"
+                        placeholder="Pesquisar resposta rápida..."
+                        value={quickSearch}
+                        onChange={e => setQuickSearch(e.target.value)}
+                        style={{
+                          width: '100%', padding: '0.45rem 0.75rem', borderRadius: 8,
+                          background: '#2a3942', border: '1px solid rgba(255,255,255,0.08)',
+                          color: 'white', fontSize: '0.78rem', marginBottom: '0.65rem', outline: 'none'
+                        }}
+                      />
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                        {templates
+                          .filter(t => !quickSearch.trim() || t.name.toLowerCase().includes(quickSearch.toLowerCase()) || t.body.toLowerCase().includes(quickSearch.toLowerCase()))
+                          .map((tpl) => (
+                            <div
+                              key={tpl.id}
+                              onClick={() => {
+                                const recipientName = selChat?.name && !selChat.name.includes('@') ? selChat.name : '';
+                                const processedText = tpl.body.replace(/{nome}/gi, recipientName || 'amigo(a)');
+                                setNewMsg(processedText);
+                                setShowQuickReplies(false);
+                                inputRef.current?.focus();
+                              }}
+                              style={{
+                                padding: '0.55rem 0.75rem', borderRadius: 8, background: 'rgba(255,255,255,0.03)',
+                                border: '1px solid rgba(255,255,255,0.06)', cursor: 'pointer',
+                                transition: 'background 0.15s'
+                              }}
+                              onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
+                              onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
+                            >
+                              <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'white', marginBottom: 2 }}>
+                                {tpl.name}
+                              </div>
+                              <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.5)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {tpl.body}
+                              </div>
+                            </div>
+                          ))}
+                        {templates.length === 0 && (
+                          <div style={{ fontSize: '0.74rem', color: '#9ca3af', textAlign: 'center', padding: '1rem' }}>
+                            Nenhum template cadastrado.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   <form onSubmit={handleSend} style={{ padding: '0.5rem 1rem', display: 'flex', alignItems: 'flex-end', gap: '0.7rem' }}>
-                    <div style={{ display: 'flex', gap: '0.7rem', color: 'rgba(255,255,255,0.48)', paddingBottom: '0.3rem' }}>
+                    <div style={{ display: 'flex', gap: '0.65rem', color: 'rgba(255,255,255,0.48)', paddingBottom: '0.3rem', alignItems: 'center' }}>
                       <button type="button" data-emoji-btn onClick={() => setShowEmoji(v => !v)}
                         style={{ background: 'none', border: 'none', cursor: 'pointer', color: showEmoji ? C.green : 'rgba(255,255,255,0.5)', display: 'flex', alignItems: 'center', padding: 2 }}>
                         <Smile size={20} />
                       </button>
                       <button type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.5)', display: 'flex', alignItems: 'center', padding: 2 }}>
                         <Paperclip size={20} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowQuickReplies(v => !v)}
+                        title="Respostas Rápidas / Templates"
+                        style={{
+                          background: showQuickReplies ? 'rgba(37,211,102,0.15)' : 'rgba(255,255,255,0.05)',
+                          border: showQuickReplies ? '1px solid rgba(37,211,102,0.3)' : '1px solid rgba(255,255,255,0.1)',
+                          borderRadius: 8,
+                          cursor: 'pointer',
+                          color: showQuickReplies ? C.green : 'rgba(255,255,255,0.7)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          padding: '3px 8px',
+                          fontSize: '0.74rem',
+                          fontWeight: 600,
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        <Zap size={13} color={showQuickReplies ? C.green : '#fbbf24'} />
+                        <span>Rápidas</span>
                       </button>
                     </div>
                     <textarea ref={inputRef} value={newMsg} onChange={e => setNewMsg(e.target.value)} onKeyDown={handleKey}
@@ -1237,60 +1712,225 @@ export default function ChatPage() {
             )}
           </div>
 
-          {/* Contact info panel (slide-in) */}
+          {/* Contact info panel (slide-in) — LIVE CRM INTELLIGENCE HUB */}
           {showInfo && selChat && (
-            <div style={{ width: 310, background: '#0d1b22', borderLeft: '1px solid rgba(255,255,255,0.06)', display: 'flex', flexDirection: 'column', animation: 'wa-slideRight 0.22s ease', overflow: 'hidden', flexShrink: 0 }}>
-              <div style={{ padding: '0.9rem 1rem', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: '0.87rem', fontWeight: 600, color: 'white' }}>Informações do Contato</span>
+            <div style={{ width: 340, background: '#0d1b22', borderLeft: '1px solid rgba(255,255,255,0.06)', display: 'flex', flexDirection: 'column', animation: 'wa-slideRight 0.22s ease', overflow: 'hidden', flexShrink: 0 }}>
+              <div style={{ padding: '0.9rem 1.1rem', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '0.88rem', fontWeight: 600, color: 'white', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Columns size={16} color={C.green} />
+                  Informações & CRM
+                </span>
                 <button type="button" onClick={() => setShowInfo(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.45)', display: 'flex', alignItems: 'center' }}>
                   <X size={16} />
                 </button>
               </div>
-              <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem 1rem' }}>
+
+              <div className="custom-scrollbar" style={{ flex: 1, overflowY: 'auto', padding: '1.25rem 1.1rem' }}>
+                {/* Toast Feedback */}
+                {crmToast && (
+                  <div style={{ padding: '0.45rem 0.8rem', background: 'rgba(37,211,102,0.15)', border: '1px solid rgba(37,211,102,0.3)', borderRadius: 8, color: '#25d366', fontSize: '0.78rem', fontWeight: 600, textAlign: 'center', marginBottom: '1rem', animation: 'wa-fadeUp 0.2s ease' }}>
+                    {crmToast}
+                  </div>
+                )}
+
                 {/* Avatar big */}
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
                   <Avatar 
                     name={selChat.name && !selChat.name.includes('@') ? selChat.name : (selChat.phoneNumber ? `+${selChat.phoneNumber}` : selChat.id.split('@')[0])} 
                     src={selChat.profilePicUrl}
-                    size={82} 
+                    size={76} 
                   />
                   <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontWeight: 700, fontSize: '1rem', color: 'white', marginBottom: 4 }}>
+                    <div style={{ fontWeight: 700, fontSize: '1rem', color: 'white', marginBottom: 3 }}>
                       {selChat.name && !selChat.name.includes('@') ? selChat.name : (selChat.phoneNumber ? `+${selChat.phoneNumber}` : selChat.id.split('@')[0])}
                     </div>
-                    <div style={{ fontSize: '0.76rem', color: 'rgba(255,255,255,0.38)' }}>
-                      {isGroup ? '👥 Grupo do WhatsApp' : `📱 ${selChat.phoneNumber ? `+${selChat.phoneNumber}` : selChat.id.split('@')[0]}`}
+                    <div style={{ fontSize: '0.76rem', color: 'rgba(255,255,255,0.42)', fontFamily: 'monospace' }}>
+                      {isGroup ? '👥 Grupo do WhatsApp' : `+${selChat.phoneNumber || selChat.id.split('@')[0]}`}
                     </div>
-                  </div>
-                  {/* Actions */}
-                  <div style={{ display: 'flex', gap: '1.5rem' }}>
-                    {[{ icon: <Phone size={16} />, label: 'Ligar' }, { icon: <VideoIcon size={16} />, label: 'Vídeo' }].map((btn, i) => (
-                      <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
-                        <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(37,211,102,0.09)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.green, border: '1px solid rgba(37,211,102,0.15)' }}>
-                          {btn.icon}
-                        </div>
-                        <span style={{ fontSize: '0.66rem', color: 'rgba(255,255,255,0.38)' }}>{btn.label}</span>
-                      </div>
-                    ))}
                   </div>
                 </div>
 
-                {/* Info list */}
-                <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 12, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.05)' }}>
+                {/* ── SEÇÃO CRM (INDIVIDUAL) ── */}
+                {!isGroup && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.25rem' }}>
+                    {/* Estágio no Funil Kanban */}
+                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.85rem', borderRadius: 10, border: '1px solid rgba(255,255,255,0.06)' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '0.7rem', color: '#60a5fa', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>
+                        <Columns size={13} />
+                        Estágio no Funil Comercial
+                      </label>
+                      <select
+                        disabled={savingCrm}
+                        value={crmData?.stageId || ''}
+                        onChange={(e) => handleUpdateCrmStage(e.target.value || null)}
+                        style={{
+                          width: '100%', padding: '0.5rem', borderRadius: 8,
+                          background: '#2a3942', border: '1px solid rgba(255,255,255,0.1)',
+                          color: 'white', fontSize: '0.82rem', outline: 'none', cursor: 'pointer'
+                        }}
+                      >
+                        <option value="">📥 Sem Estágio (Inbox)</option>
+                        {crmStages.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            ● {s.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Valor da Oportunidade */}
+                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.85rem', borderRadius: 10, border: '1px solid rgba(255,255,255,0.06)' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '0.7rem', color: '#25d366', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>
+                        <DollarSign size={13} />
+                        Valor da Negociação (R$)
+                      </label>
+                      <div style={{ display: 'flex', gap: '0.4rem' }}>
+                        <div style={{ position: 'relative', flex: 1 }}>
+                          <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#25d366', fontWeight: 700, fontSize: '0.8rem' }}>
+                            R$
+                          </span>
+                          <input
+                            type="number"
+                            step="any"
+                            placeholder="0,00"
+                            value={valueDraft}
+                            onChange={(e) => setValueDraft(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                            style={{
+                              width: '100%', padding: '0.45rem 0.5rem 0.45rem 2rem', borderRadius: 8,
+                              background: '#2a3942', border: '1px solid rgba(255,255,255,0.1)',
+                              color: 'white', fontSize: '0.82rem', outline: 'none'
+                            }}
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          disabled={savingCrm}
+                          onClick={handleSaveCrmValue}
+                          style={{
+                            padding: '0.45rem 0.75rem', borderRadius: 8, background: '#25d366',
+                            color: '#0f172a', fontWeight: 700, fontSize: '0.76rem', border: 'none', cursor: 'pointer'
+                          }}
+                        >
+                          Salvar
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Tags do Lead */}
+                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.85rem', borderRadius: 10, border: '1px solid rgba(255,255,255,0.06)' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '0.7rem', color: '#9ca3af', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>
+                        <Tag size={13} />
+                        Tags do Contato
+                      </label>
+                      <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+                        {(crmData?.tags || []).map((t) => (
+                          <span key={t} style={{ fontSize: '0.7rem', padding: '0.15rem 0.45rem', backgroundColor: 'rgba(59,130,246,0.15)', border: '1px solid rgba(59,130,246,0.25)', borderRadius: 5, color: '#93c5fd', display: 'flex', alignItems: 'center', gap: 3 }}>
+                            {t}
+                            <X size={11} style={{ cursor: 'pointer' }} onClick={() => handleRemoveCrmTag(t)} />
+                          </span>
+                        ))}
+                        {(crmData?.tags || []).length === 0 && (
+                          <span style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.3)', fontStyle: 'italic' }}>
+                            Nenhuma tag.
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.35rem' }}>
+                        <input
+                          type="text"
+                          placeholder="Nova tag..."
+                          value={newTagInput}
+                          onChange={e => setNewTagInput(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddCrmTag(); } }}
+                          style={{ flex: 1, padding: '0.4rem 0.6rem', borderRadius: 6, background: '#2a3942', border: '1px solid rgba(255,255,255,0.08)', color: 'white', fontSize: '0.78rem', outline: 'none' }}
+                        />
+                        <button
+                          type="button"
+                          onClick={handleAddCrmTag}
+                          style={{ padding: '0.4rem 0.65rem', borderRadius: 6, background: 'rgba(255,255,255,0.08)', color: 'white', fontSize: '0.74rem', border: 'none', cursor: 'pointer' }}
+                        >
+                          + Tag
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Anotações Internas da Equipe */}
+                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.85rem', borderRadius: 10, border: '1px solid rgba(255,255,255,0.06)' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '0.7rem', color: '#f59e0b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>
+                        <StickyNote size={13} />
+                        Anotações Internas
+                      </label>
+                      <textarea
+                        placeholder="Observações do atendimento, preferências, combinados..."
+                        value={notesDraft}
+                        onChange={e => setNotesDraft(e.target.value)}
+                        style={{ width: '100%', minHeight: '80px', padding: '0.5rem', borderRadius: 8, background: '#2a3942', border: '1px solid rgba(255,255,255,0.08)', color: 'white', fontSize: '0.78rem', outline: 'none', lineHeight: 1.4, resize: 'vertical' }}
+                      />
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.45rem' }}>
+                        <button
+                          type="button"
+                          disabled={savingCrm}
+                          onClick={handleSaveCrmNotes}
+                          style={{ padding: '0.35rem 0.75rem', borderRadius: 6, background: 'rgba(245,158,11,0.2)', border: '1px solid rgba(245,158,11,0.4)', color: '#fbbf24', fontSize: '0.74rem', fontWeight: 600, cursor: 'pointer' }}
+                        >
+                          Salvar Anotação
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Ações Rápidas de Navegação & Controle */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const num = selChat.phoneNumber || selChat.id.split('@')[0];
+                          router.push(`/crm?search=${num.replace(/\D/g, '')}`);
+                        }}
+                        style={{
+                          width: '100%', padding: '0.55rem', borderRadius: 8,
+                          background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.25)',
+                          color: '#60a5fa', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6
+                        }}
+                      >
+                        <Columns size={14} />
+                        Visualizar no Funil Kanban
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleToggleOptOut}
+                        style={{
+                          width: '100%', padding: '0.55rem', borderRadius: 8,
+                          background: crmData?.optOut ? 'rgba(239,68,68,0.15)' : 'rgba(255,255,255,0.04)',
+                          border: crmData?.optOut ? '1px solid rgba(239,68,68,0.3)' : '1px solid rgba(255,255,255,0.06)',
+                          color: crmData?.optOut ? '#f87171' : 'rgba(255,255,255,0.5)',
+                          fontSize: '0.76rem', fontWeight: 500, cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6
+                        }}
+                      >
+                        {crmData?.optOut ? '🚫 Contato em Opt-Out (Ativado)' : 'Marcar como Opt-Out'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Info list técnica */}
+                <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 10, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.04)', marginBottom: '1rem' }}>
                   {[
-                    { label: 'ID / Número', value: selChat.phoneNumber ? `+${selChat.phoneNumber}` : selChat.id.split('@')[0] },
-                    { label: 'Tipo', value: isGroup ? 'Grupo' : 'Contato Individual' },
+                    { label: 'Número / ID', value: selChat.phoneNumber ? `+${selChat.phoneNumber}` : selChat.id.split('@')[0] },
+                    { label: 'Tipo', value: isGroup ? 'Grupo' : 'Individual' },
                     { label: 'Não lidas', value: String(selChat.unreadCount || 0) },
-                    { label: 'Total de mensagens', value: String(messages.length) },
+                    { label: 'Total mensagens', value: String(messages.length) },
                   ].map((row, i, arr) => (
-                    <div key={i} style={{ padding: '0.7rem 1rem', borderBottom: i < arr.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
-                      <div style={{ fontSize: '0.65rem', color: C.green, marginBottom: 3, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{row.label}</div>
-                      <div style={{ fontSize: '0.83rem', color: 'rgba(255,255,255,0.65)' }}>{row.value}</div>
+                    <div key={i} style={{ padding: '0.55rem 0.85rem', borderBottom: i < arr.length - 1 ? '1px solid rgba(255,255,255,0.03)' : 'none' }}>
+                      <div style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.35)', marginBottom: 2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{row.label}</div>
+                      <div style={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.65)' }}>{row.value}</div>
                     </div>
                   ))}
                 </div>
 
-                {/* Editar / Salvar Contato no CRM */}
+                {/* Editar Dados Cadastrais */}
                 {!isGroup && (
                   <button
                     type="button"
@@ -1300,15 +1940,15 @@ export default function ChatPage() {
                       openEditContactModal(numberOnly, initialName);
                     }}
                     style={{
-                      width: '100%', marginTop: '1.25rem', padding: '0.65rem',
-                      borderRadius: 8, background: 'rgba(37,211,102,0.1)',
-                      border: '1px solid rgba(37,211,102,0.2)', color: C.green,
-                      fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer',
+                      width: '100%', padding: '0.55rem',
+                      borderRadius: 8, background: 'rgba(255,255,255,0.04)',
+                      border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.6)',
+                      fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer',
                       display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6
                     }}
                   >
                     <UserPlus size={14} />
-                    Editar / Salvar no CRM
+                    Editar Dados Cadastrais
                   </button>
                 )}
 

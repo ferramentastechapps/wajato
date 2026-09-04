@@ -60,6 +60,7 @@ model Contact {
   optOut             Boolean       @default(false)  // Contato optou por não receber mensagens
   optOutAt           DateTime?                      // Quando foi registrado o opt-out
   notes              String?                        // Notas/anotações internas sobre o contato
+  value              Float?        @default(0)      // Valor da oportunidade / negociação no CRM (R$)
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
 }

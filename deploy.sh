@@ -23,6 +23,7 @@ echo "[2/6] Aplicando sincronização do banco de dados (Prisma db push)..."
 npx prisma db push --skip-generate || true
 DATABASE_URL=$(grep DATABASE_URL .env | cut -d '=' -f2- | tr -d '"' | cut -d '?' -f1)
 psql "$DATABASE_URL" -f prisma/migrations/warmup_stages_and_dynamic_limit.sql 2>/dev/null || true
+psql "$DATABASE_URL" -f prisma/migrations/add_contact_value_crm.sql 2>/dev/null || true
 
 echo ""
 echo "[3/6] Regenerando cliente Prisma..."

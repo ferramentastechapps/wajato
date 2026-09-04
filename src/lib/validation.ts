@@ -12,6 +12,10 @@ export const contactSchema = z.object({
   phone: z.string().trim().min(8, 'O telefone deve ter no mínimo 8 dígitos'),
   tags: z.array(z.string().trim()).default([]),
   groupId: z.preprocess((val) => val === '' ? null : val, z.string().uuid('ID do grupo inválido').nullable().optional()),
+  stageId: z.preprocess((val) => val === '' ? null : val, z.string().uuid('ID do estágio inválido').nullable().optional()),
+  value: z.coerce.number().min(0).nullable().optional(),
+  notes: z.string().nullable().optional(),
+  companyId: z.preprocess((val) => val === '' ? null : val, z.string().uuid('ID da empresa inválido').nullable().optional()),
   optOut: z.boolean().optional(),
 });
 
