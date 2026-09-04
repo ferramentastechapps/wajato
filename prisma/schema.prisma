@@ -170,6 +170,9 @@ model WhatsAppInstance {
   maxUnrepliedLimit     Int      @default(20)
   unrepliedBlockEnabled Boolean  @default(true)
   allowCampaigns        Boolean  @default(false) // Permite uso em disparos em massa. Ativado automaticamente ao maturar (100%), pode ser desativado manualmente.
+  maxDailyLimit         Int      @default(200)   // Capacidade máxima base diária (ajustável pelo usuário)
+  dailyLimitToday       Int      @default(200)   // Limite dinâmico sorteado para hoje (ex: 190 a 210 para base 200)
+  warmupStage           String   @default("FOUNDATION") // FOUNDATION (Fase 1), EXPANSION (Fase 2), MATURED (Fase 3)
   updatedAt             DateTime @updatedAt
 }
 
@@ -189,6 +192,8 @@ model WarmupCampaign {
   targetPhones     String?      // Lista de telefones separados por vírgula para rotação
   customContext    String?      // Contexto ou Persona customizada de IA
   isGroup          Boolean      @default(false) // Se o aquecimento é para um grupo
+  isPrimaryContact Boolean      @default(true)  // Contato base/fundador (true) ou contato de expansão (false)
+  stage            String       @default("FOUNDATION") // FOUNDATION, EXPANSION, MAINTENANCE
   status           WarmupStatus @default(RUNNING)
   continuousMode   Boolean      @default(true)  // Modo contínuo / manutenção perpétua pós-maturação
   currentDay       Int          @default(1)

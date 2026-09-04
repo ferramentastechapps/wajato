@@ -167,14 +167,21 @@ export async function POST(req: Request) {
     const perContactInitial = randomDistribute(initialMsgsPerDay, phonesList.length);
     const perContactMax = randomDistribute(maxMsgsPerDay, phonesList.length);
 
+    const existingCampaignsCount = await prisma.warmupCampaign.count({
+      where: { sourceInstance },
+    });
+
     // Cria uma campanha independente para cada número para paralelizar e isolar o histórico.
     for (let idx = 0; idx < phonesList.length; idx++) {
       const phone = phonesList[idx];
       const campaignIsGroup = phone.endsWith('@g.us');
       const cleanPhoneLabel = phone.endsWith('@g.us') ? phone.split('@')[0] : phone;
+      const isPrimary = existingCampaignsCount === 0 && idx === 0;
+      const stage = isPrimary ? 'FOUNDATION' : 'EXPANSION';
+
       const campaignName = phonesList.length > 1
         ? `${name || `Aquecimento ${sourceInstance}`} (${cleanPhoneLabel})`
-        : (name || `Aquecimento ${sourceInstance}`);
+        : (name || (isPrimary ? `Base: ${sourceInstance}` : `Expansão: ${cleanPhoneLabel}`));
 
       const resolvedStartDay = Math.min(Math.max(1, startDay), totalDays);
       const firstDayTarget = getRampUpTarget(resolvedStartDay, perContactInitial[idx], perContactMax[idx]);
@@ -189,6 +196,8 @@ export async function POST(req: Request) {
           targetPhones: phone, // Apenas este telefone para esta campanha
           customContext: customContext || null,
           isGroup: campaignIsGroup,
+          isPrimaryContact: isPrimary,
+          stage,
           continuousMode: Boolean(continuousMode),
           totalDays,
           currentDay: resolvedStartDay,

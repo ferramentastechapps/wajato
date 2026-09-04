@@ -1,8 +1,18 @@
 import { prisma } from './prisma';
 import { redisConnection } from './redis';
 
-const DEFAULT_INSTANCE = process.env.EVOLUTION_INSTANCE_NAME || 'wajato-session';
-const MAX_DAILY_MESSAGES_PER_CHIP = 200;
+export const DEFAULT_INSTANCE = process.env.EVOLUTION_INSTANCE_NAME || 'wajato-session';
+export const MAX_DAILY_MESSAGES_PER_CHIP = 200;
+
+/**
+ * Gera um limite diário com variação natural (jitter) de ±10 mensagens (ex: 190 a 210 para base 200).
+ * Impede que o WhatsApp detecte automação por limites fixos idênticos todo dia.
+ */
+export function generateDailyLimitWithJitter(baseLimit: number = 200): number {
+  const safeBase = baseLimit > 0 ? baseLimit : 200;
+  const jitter = Math.floor(Math.random() * 21) - 10; // -10 a +10
+  return Math.max(10, safeBase + jitter);
+}
 
 /**
  * Seleciona a melhor instância de WhatsApp conectada e saudável para envio.
@@ -16,11 +26,10 @@ export async function getNextWhatsAppInstance(
   onlyMature: boolean = true
 ): Promise<string> {
   try {
-    // 1. Monta o filtro base: conectado, saudável e abaixo do limite diário
+    // 1. Monta o filtro base: conectado e saudável
     const whereClause: any = {
       status: 'CONNECTED',
       healthScore: { gt: 20 },
-      dailyMsgCount: { lt: MAX_DAILY_MESSAGES_PER_CHIP },
     };
 
     if (allowedInstances && allowedInstances.length > 0) {
@@ -37,8 +46,14 @@ export async function getNextWhatsAppInstance(
       }
     }
 
-    const healthyInstances = await prisma.whatsAppInstance.findMany({
+    const instancesFound = await prisma.whatsAppInstance.findMany({
       where: whereClause,
+    });
+
+    // Filtra chips que ainda não atingiram o limite diário dinâmico do dia
+    const healthyInstances = instancesFound.filter((inst) => {
+      const capToday = inst.dailyLimitToday || inst.maxDailyLimit || MAX_DAILY_MESSAGES_PER_CHIP;
+      return inst.dailyMsgCount < capToday;
     });
 
     if (healthyInstances.length === 0) {
@@ -88,7 +103,8 @@ export async function getNextWhatsAppInstance(
         }
 
         // Score ponderado: Menos msgs enviadas hoje dá pontuação alta + saúde + bônus de engajamento do horário
-        const volumeScore = Math.max(0, MAX_DAILY_MESSAGES_PER_CHIP - inst.dailyMsgCount);
+        const maxCap = inst.dailyLimitToday || inst.maxDailyLimit || MAX_DAILY_MESSAGES_PER_CHIP;
+        const volumeScore = Math.max(0, maxCap - inst.dailyMsgCount);
         const compositeScore = inst.healthScore * 1.5 + volumeScore * 1.0 + hourBonus;
 
         return {
@@ -204,10 +220,20 @@ export async function reportChipFailure(instanceName: string, errorMsg: string):
  */
 export async function resetDailyMsgCounters(): Promise<void> {
   try {
-    await prisma.whatsAppInstance.updateMany({
-      data: { dailyMsgCount: 0 },
+    const instances = await prisma.whatsAppInstance.findMany({
+      select: { id: true, maxDailyLimit: true },
     });
-    console.log('[ChipRouter] Contadores diários de todos os chips foram resetados.');
+    for (const inst of instances) {
+      const newLimitToday = generateDailyLimitWithJitter(inst.maxDailyLimit || 200);
+      await prisma.whatsAppInstance.update({
+        where: { id: inst.id },
+        data: {
+          dailyMsgCount: 0,
+          dailyLimitToday: newLimitToday,
+        },
+      });
+    }
+    console.log(`[ChipRouter] Contadores diários resetados com limites aleatórios (jitter) para ${instances.length} chips.`);
   } catch (error) {
     console.error('[ChipRouter] Erro ao resetar contadores diários:', error);
   }

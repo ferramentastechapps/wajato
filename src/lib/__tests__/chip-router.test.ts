@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { getNextWhatsAppInstance, reportChipSuccess, reportChipFailure } from '../chip-router';
+import { getNextWhatsAppInstance, reportChipSuccess, reportChipFailure, generateDailyLimitWithJitter } from '../chip-router';
 import { prisma } from '../prisma';
 
 vi.mock('../redis', () => {
@@ -93,6 +93,45 @@ describe('Chip Router Unit Tests', () => {
       const result = await getNextWhatsAppInstance();
       // Deve pular o chip-1 e selecionar o chip-2
       expect(result).toBe('chip-2');
+    });
+
+    it('deve respeitar o limite dinâmico (dailyLimitToday) de cada chip com jitter', async () => {
+      const mockInstances = [
+        // Chip-1 atingiu o teto sorteado de hoje (194 msgs)
+        makeInstance({ name: 'chip-1', dailyMsgCount: 195, dailyLimitToday: 194, healthScore: 95 }),
+        // Chip-2 ainda tem margem (180 de 198 msgs)
+        makeInstance({ name: 'chip-2', dailyMsgCount: 180, dailyLimitToday: 198, healthScore: 85 }),
+      ];
+
+      vi.mocked(prisma.whatsAppInstance.findMany).mockResolvedValueOnce([
+        mockInstances[0],
+        mockInstances[1],
+      ]);
+
+      const result = await getNextWhatsAppInstance();
+      expect(result).toBe('chip-2');
+    });
+  });
+
+  describe('generateDailyLimitWithJitter', () => {
+    it('deve gerar limites com jitter na faixa de 190 a 210 para base 200', () => {
+      for (let i = 0; i < 50; i++) {
+        const val = generateDailyLimitWithJitter(200);
+        expect(val).toBeGreaterThanOrEqual(190);
+        expect(val).toBeLessThanOrEqual(210);
+      }
+    });
+
+    it('deve permitir aumentar a capacidade base para 250 (faixa 240 a 260) ou 300 (faixa 290 a 310)', () => {
+      for (let i = 0; i < 20; i++) {
+        const val250 = generateDailyLimitWithJitter(250);
+        expect(val250).toBeGreaterThanOrEqual(240);
+        expect(val250).toBeLessThanOrEqual(260);
+
+        const val300 = generateDailyLimitWithJitter(300);
+        expect(val300).toBeGreaterThanOrEqual(290);
+        expect(val300).toBeLessThanOrEqual(310);
+      }
     });
   });
 

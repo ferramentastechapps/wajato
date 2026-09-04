@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSessionUser } from '@/lib/auth';
 import { evolutionApi } from '@/lib/evolution';
 import { prisma } from '@/lib/prisma';
+import { generateDailyLimitWithJitter } from '@/lib/chip-router';
 
 type Params = { params: Promise<{ name: string }> };
 
@@ -150,7 +151,7 @@ export async function PATCH(req: Request, { params }: Params) {
 
     const { name } = await params;
     const body = await req.json();
-    const { proxy, profileName, profileStatus, profilePic, allowCampaigns } = body;
+    const { proxy, profileName, profileStatus, profilePic, allowCampaigns, maxDailyLimit, warmupStage } = body;
 
     const dbInst = await prisma.whatsAppInstance.findUnique({
       where: { name },
@@ -206,6 +207,15 @@ export async function PATCH(req: Request, { params }: Params) {
       dataToUpdate.profilePicUrl = profilePic;
     }
     if (allowCampaigns !== undefined) dataToUpdate.allowCampaigns = Boolean(allowCampaigns);
+    if (maxDailyLimit !== undefined) {
+      const parsedLimit = Math.max(10, parseInt(maxDailyLimit, 10) || 200);
+      dataToUpdate.maxDailyLimit = parsedLimit;
+      // Recalcula o limite do dia com jitter baseado na nova capacidade configurada
+      dataToUpdate.dailyLimitToday = generateDailyLimitWithJitter(parsedLimit);
+    }
+    if (warmupStage !== undefined) {
+      dataToUpdate.warmupStage = warmupStage;
+    }
 
     const updatedInst = await prisma.whatsAppInstance.update({
       where: { name },

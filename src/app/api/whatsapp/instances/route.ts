@@ -280,6 +280,10 @@ export async function GET() {
           unrepliedBlockEnabled: dbInst.unrepliedBlockEnabled,
           // Controle de disparo em massa
           allowCampaigns: dbInst.allowCampaigns,
+          // Capacidade diária com jitter e estágio de aquecimento
+          maxDailyLimit: dbInst.maxDailyLimit ?? 200,
+          dailyLimitToday: dbInst.dailyLimitToday ?? 200,
+          warmupStage: dbInst.warmupStage ?? 'FOUNDATION',
         };
 
       })

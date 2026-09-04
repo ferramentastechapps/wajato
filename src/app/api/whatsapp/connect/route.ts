@@ -10,7 +10,15 @@ export async function GET() {
   try {
     const instances = await prisma.whatsAppInstance.findMany({
       orderBy: { updatedAt: 'desc' },
-      select: { name: true, status: true, phone: true },
+      select: {
+        name: true,
+        status: true,
+        phone: true,
+        dailyMsgCount: true,
+        maxDailyLimit: true,
+        dailyLimitToday: true,
+        warmupStage: true,
+      },
     });
     return NextResponse.json(instances);
   } catch (error: any) {

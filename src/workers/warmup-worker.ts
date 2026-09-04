@@ -59,6 +59,7 @@ import {
 import {
   reportChipSuccess,
   reportChipFailure,
+  generateDailyLimitWithJitter,
 } from '../lib/chip-router';
 
 const WARMUP_QUEUE_NAME = 'warmup-queue';
@@ -236,12 +237,30 @@ export const warmupWorker = new Worker(
             newStatus = 'COMPLETED';
           }
 
-          // Auto-promove chips da campanha para disparo em massa ao completar o aquecimento
+          // Atualiza estágio de maturação do chip baseado na diversidade de contatos
           try {
-            await prisma.whatsAppInstance.updateMany({
-              where: { name: campaign.sourceInstance },
-              data: { allowCampaigns: true },
+            const allChipCampaigns = await prisma.warmupCampaign.findMany({
+              where: { sourceInstance: campaign.sourceInstance },
+              select: { targetPhone: true },
             });
+            const distinctContacts = new Set(allChipCampaigns.map(c => c.targetPhone)).size;
+
+            if (distinctContacts >= 2) {
+              // Já possui múltiplos contatos na esteira -> Transita para MATURADO e auto-promove para disparos
+              await prisma.whatsAppInstance.updateMany({
+                where: { name: campaign.sourceInstance },
+                data: { warmupStage: 'MATURED', allowCampaigns: true },
+              });
+              console.log(`[Warmup Worker] Chip ${campaign.sourceInstance} MATURADO com ${distinctContacts} contatos aquecidos. Disparos liberados!`);
+            } else {
+              // Completou a fundação com 1 contato -> Avança para EXPANSÃO para começar a introduzir novos contatos
+              await prisma.whatsAppInstance.updateMany({
+                where: { name: campaign.sourceInstance },
+                data: { warmupStage: 'EXPANSION' },
+              });
+              console.log(`[Warmup Worker] Chip ${campaign.sourceInstance} concluiu Fase 1 (Fundação). Avançou para Fase 2 (Expansão de Rede).`);
+            }
+
             if (campaign.targetInstance) {
               await prisma.whatsAppInstance.updateMany({
                 where: { name: campaign.targetInstance },
@@ -249,8 +268,23 @@ export const warmupWorker = new Worker(
               });
             }
           } catch (promoErr: any) {
-            console.warn('[Warmup Worker] Erro ao auto-promover chip:', promoErr?.message);
+            console.warn('[Warmup Worker] Erro ao atualizar estágio do chip:', promoErr?.message);
           }
+        }
+
+        // Garante que o limite diário da instância foi recalculado com jitter para o novo dia
+        try {
+          const instObj = await prisma.whatsAppInstance.findUnique({
+            where: { name: campaign.sourceInstance },
+            select: { maxDailyLimit: true },
+          });
+          const newDailyLimitToday = generateDailyLimitWithJitter(instObj?.maxDailyLimit || 200);
+          await prisma.whatsAppInstance.updateMany({
+            where: { name: campaign.sourceInstance },
+            data: { dailyLimitToday: newDailyLimitToday },
+          });
+        } catch (jErr: any) {
+          console.warn('[Warmup Worker] Erro ao atualizar dailyLimitToday com jitter:', jErr?.message);
         }
         
         // Calcular heat score baseado em sucesso
@@ -318,6 +352,23 @@ export const warmupWorker = new Worker(
         { campaignId, sourceInstance, targetPhone, isFirstMessageOfDay: true },
         delayMs,
         60 * 1000 // Jitter já calculado em getMsUntilTomorrowStart
+      );
+      return;
+    }
+
+    // ── 4.1 Verificar cota diária global do chip (teto com jitter 190-210) ────
+    const chipInstance = await prisma.whatsAppInstance.findUnique({
+      where: { name: sourceInstance },
+      select: { dailyMsgCount: true, dailyLimitToday: true, maxDailyLimit: true },
+    });
+    const chipDailyCap = chipInstance?.dailyLimitToday || chipInstance?.maxDailyLimit || 200;
+    if (chipInstance && chipInstance.dailyMsgCount >= chipDailyCap) {
+      console.log(`[Warmup Worker] Chip ${sourceInstance} atingiu a cota diária global com jitter (${chipInstance.dailyMsgCount}/${chipDailyCap}). Parando por hoje.`);
+      const delayMs = getMsUntilTomorrowStart(campaign.startHour);
+      await queueWarmupMessage(
+        { campaignId, sourceInstance, targetPhone, isFirstMessageOfDay: true },
+        delayMs,
+        60 * 1000
       );
       return;
     }
