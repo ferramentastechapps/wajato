@@ -15,7 +15,8 @@ echo ""
 echo "[1/6] Sincronizando com o repositório Git (GitHub)..."
 # Descarta alterações locais no VPS para evitar conflitos de merge
 git reset --hard
-git clean -fd
+git clean -fd -e public/uploads
+mkdir -p public/uploads
 git pull origin master
 
 echo ""

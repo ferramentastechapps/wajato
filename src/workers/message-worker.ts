@@ -319,13 +319,23 @@ const worker = new Worker(
     try {
       if (log.campaign.template.imageUrl) {
         // Envia mensagem de mídia (Imagem) com legenda
-        await evolutionApi.sendMediaMessage(
-          activeInstanceName,
-          phone,
-          log.campaign.template.imageUrl,
-          'image',
-          messageText
-        );
+        try {
+          await evolutionApi.sendMediaMessage(
+            activeInstanceName,
+            phone,
+            log.campaign.template.imageUrl,
+            'image',
+            messageText
+          );
+        } catch (mediaErr: any) {
+          logger.warn(`[Worker] Falha ao enviar mídia (${mediaErr?.message}). Enviando mensagem como texto simples de segurança para não interromper a campanha.`, {
+            phone,
+            instance: activeInstanceName,
+            imageUrl: log.campaign.template.imageUrl,
+          });
+          // Fallback para envio em texto simples com o mesmo chip
+          await evolutionApi.sendTextMessage(activeInstanceName, phone, messageText);
+        }
       } else {
         // Envia texto simples
         await evolutionApi.sendTextMessage(activeInstanceName, phone, messageText);
@@ -350,13 +360,18 @@ const worker = new Worker(
       if (fallbackInstance && fallbackInstance !== activeInstanceName) {
         try {
           if (log.campaign.template.imageUrl) {
-            await evolutionApi.sendMediaMessage(
-              fallbackInstance,
-              phone,
-              log.campaign.template.imageUrl,
-              'image',
-              messageText
-            );
+            try {
+              await evolutionApi.sendMediaMessage(
+                fallbackInstance,
+                phone,
+                log.campaign.template.imageUrl,
+                'image',
+                messageText
+              );
+            } catch (mediaFbErr: any) {
+              logger.warn(`[Worker Fallback] Falha na mídia no chip reserva (${mediaFbErr?.message}). Enviando texto simples.`);
+              await evolutionApi.sendTextMessage(fallbackInstance, phone, messageText);
+            }
           } else {
             await evolutionApi.sendTextMessage(fallbackInstance, phone, messageText);
           }
@@ -446,35 +461,44 @@ const worker = new Worker(
 );
 
 /**
- * Circuit Breaker: Pausa a campanha automaticamente se a taxa de falha de envio real for excessiva (>15%)
+ * Circuit Breaker: Pausa a campanha automaticamente se a taxa de falha técnica de envio real for excessiva
  */
 async function checkCampaignDegradation(campaignId: string) {
   try {
+    // Erros legítimos de negócio ou de estado que NÃO são falhas de chip/servidor
+    const nonTechnicalErrors = [
+      'Número de telefone não possui conta ativa no WhatsApp',
+      'Contato em opt-out (não deseja receber mensagens)',
+      'Mensagem já enviada anteriormente nesta campanha',
+      'Campanha não está ativa',
+    ];
+
     const totalProcessed = await prisma.messageLog.count({
       where: {
         campaignId,
         status: { in: ['SENT', 'FAILED', 'DELIVERED', 'READ'] },
-        // Ignora números que apenas não têm WhatsApp para não travar lista de clientes
-        error: { not: 'Número de telefone não possui conta ativa no WhatsApp' },
+        error: { notIn: nonTechnicalErrors },
       },
     });
 
-    if (totalProcessed >= 8) {
+    // Exige pelo menos 10 mensagens técnicas processadas e no mínimo 4 falhas reais antes de avaliar
+    if (totalProcessed >= 10) {
       const totalFailed = await prisma.messageLog.count({
         where: {
           campaignId,
           status: 'FAILED',
-          error: { not: 'Número de telefone não possui conta ativa no WhatsApp' },
+          error: { notIn: nonTechnicalErrors },
         },
       });
 
       const failureRate = totalFailed / totalProcessed;
-      if (failureRate > 0.15) {
+      // Pausa apenas se a taxa de falha técnica real for > 35% com pelo menos 4 falhas
+      if (failureRate > 0.35 && totalFailed >= 4) {
         await prisma.campaign.update({
           where: { id: campaignId },
           data: { status: 'PAUSED' },
         });
-        logger.warn('⚠️ Circuit Breaker: Campanha pausada automaticamente devido à taxa de falha de envio excessiva (>15%)', {
+        logger.warn('⚠️ Circuit Breaker: Campanha pausada automaticamente devido à taxa de falha técnica excessiva (>35%)', {
           campaignId,
           totalFailed,
           totalProcessed,
