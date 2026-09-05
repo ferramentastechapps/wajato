@@ -12,6 +12,8 @@ import {
   splitMessageIntoNaturalParts,
 } from './chatbot-memory';
 
+import { redisConnection } from './redis';
+
 // ── Tipos internos ─────────────────────────────────────────────────────────────
 
 interface ProcessorOptions {
@@ -19,20 +21,79 @@ interface ProcessorOptions {
   companyId?: string | null;
 }
 
-// ── Rate limiting simples (in-memory) ─────────────────────────────────────────
+// ── Rate limiting e Cooldown pós-campanha ─────────────────────────────────────
 // Evita que o chatbot responda múltiplas vezes em sequência rápida ao mesmo contato
+// ou interfira com mensagens subsequentes quando o cliente responde ao gancho de uma campanha.
 
 const lastResponseMap = new Map<string, number>();
+const inFlightPhones = new Set<string>();
 const RATE_LIMIT_MS = 30_000; // 30 segundos de cooldown entre respostas automáticas
+const HOOK_COOLDOWN_SECONDS = 90; // 90 segundos de resguardo após resposta ao gancho de campanha
+const REDIS_COOLDOWN_PREFIX = 'wajato:hook_cooldown:';
+
+/**
+ * Ativa o cooldown do chatbot para um telefone (usado após envio de template pós-gancho)
+ */
+export async function setChatbotCooldown(phone: string, durationSeconds: number = HOOK_COOLDOWN_SECONDS): Promise<void> {
+  const normPhone = phone.replace(/\D/g, '');
+  lastResponseMap.set(normPhone, Date.now() + (durationSeconds * 1000) - RATE_LIMIT_MS);
+  try {
+    await redisConnection.set(`${REDIS_COOLDOWN_PREFIX}${normPhone}`, '1', 'EX', durationSeconds);
+  } catch (err: any) {
+    logger.warn?.('[Chatbot] Erro ao registrar cooldown no Redis', { phone: normPhone, error: err?.message });
+  }
+}
+
+/**
+ * Verifica se um telefone está no período de resguardo pós-gancho/disparo de campanha
+ */
+export async function isPhoneInCampaignCooldown(phone: string): Promise<boolean> {
+  const normPhone = phone.replace(/\D/g, '');
+
+  // 1. Memória local
+  const last = lastResponseMap.get(normPhone);
+  if (last && Date.now() - last < RATE_LIMIT_MS) {
+    return true;
+  }
+
+  // 2. Redis
+  try {
+    const exists = await redisConnection.exists(`${REDIS_COOLDOWN_PREFIX}${normPhone}`);
+    if (exists === 1) return true;
+  } catch {}
+
+  // 3. Banco de dados (se o contato respondeu ao gancho de campanha recentemente)
+  try {
+    const cutoff = new Date(Date.now() - HOOK_COOLDOWN_SECONDS * 1000);
+    const recentRepliedLog = await prisma.messageLog.findFirst({
+      where: {
+        contact: { phone: normPhone },
+        hookStatus: 'REPLIED',
+        hookRepliedAt: { gte: cutoff },
+      },
+      select: { id: true },
+    });
+    if (recentRepliedLog) {
+      try {
+        await redisConnection.set(`${REDIS_COOLDOWN_PREFIX}${normPhone}`, '1', 'EX', 30);
+      } catch {}
+      return true;
+    }
+  } catch {}
+
+  return false;
+}
 
 function isRateLimited(phone: string): boolean {
-  const last = lastResponseMap.get(phone);
+  const normPhone = phone.replace(/\D/g, '');
+  const last = lastResponseMap.get(normPhone);
   if (!last) return false;
   return Date.now() - last < RATE_LIMIT_MS;
 }
 
 function markResponded(phone: string): void {
-  lastResponseMap.set(phone, Date.now());
+  const normPhone = phone.replace(/\D/g, '');
+  lastResponseMap.set(normPhone, Date.now());
   // Limpeza periódica para não acumular memória indefinidamente
   if (lastResponseMap.size > 5000) {
     const cutoff = Date.now() - RATE_LIMIT_MS * 10;
@@ -44,6 +105,7 @@ function markResponded(phone: string): void {
 
 export function _resetRateLimits(): void {
   lastResponseMap.clear();
+  inFlightPhones.clear();
 }
 
 // ── Helpers de matching de regras ─────────────────────────────────────────────
@@ -171,10 +233,25 @@ export async function handleChatbotIncoming(
   instanceName: string,
   opts: ProcessorOptions = {}
 ): Promise<void> {
-  try {
-    const cleanText = text.trim().toLowerCase();
-    if (!cleanText) return;
+  const normPhone = phone.replace(/\D/g, '');
+  const cleanText = text.trim().toLowerCase();
+  if (!cleanText) return;
 
+  // ── Prevenir requisições simultâneas para o mesmo telefone ────────────────
+  if (inFlightPhones.has(normPhone)) {
+    logger.info('[Chatbot] Mensagem ignorada — processamento já em andamento para este telefone', { phone: normPhone });
+    return;
+  }
+
+  // ── Verificar se o contato está na janela de cooldown pós-gancho/disparo ──
+  if (await isPhoneInCampaignCooldown(normPhone)) {
+    logger.info('[Chatbot] Mensagem ignorada — contato em janela de cooldown pós-disparo de gancho', { phone: normPhone, text });
+    return;
+  }
+
+  inFlightPhones.add(normPhone);
+
+  try {
     // ── Verificar pausa por interação manual ──────────────────────────────────
     let contactName: string | null = null;
     let contactRecord: any = null;
@@ -523,5 +600,7 @@ Gere uma resposta curta, educada, prestativa e muito natural para o WhatsApp do 
     }
   } catch (error: any) {
     logger.error('Erro ao processar chatbot incoming', error);
+  } finally {
+    inFlightPhones.delete(normPhone);
   }
 }

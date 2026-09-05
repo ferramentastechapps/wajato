@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { handleChatbotIncoming } from '@/lib/chatbot-processor';
+import { handleChatbotIncoming, isPhoneInCampaignCooldown, setChatbotCooldown } from '@/lib/chatbot-processor';
 import { queueWarmupMessage, cancelCampaignWarmupJobs } from '@/lib/warmup-queue';
 import { lidResolver } from '@/lib/lid-resolver';
 import { sentMessagesCache } from '@/lib/sent-messages-cache';
 import { recordChipReadEngagement } from '@/lib/chip-router';
 import { formatMessageText } from '@/lib/spintax';
+import { redisConnection } from '@/lib/redis';
 
 /**
  * Normaliza um número de telefone removendo DDI duplicado, + e espaços.
@@ -324,73 +325,103 @@ export async function POST(request: Request) {
               } else {
                 // ── Detecção de Resposta a Mensagem Prévia (Hook Anti-Bloqueio) ──────
                 let hookHandled = false;
-                try {
-                  const pendingHookLog = await prisma.messageLog.findFirst({
-                    where: {
-                      contact: { phone },
-                      hookStatus: 'SENT',
-                      status: 'PENDING',
-                    },
-                    include: {
-                      contact: true,
-                      campaign: {
-                        include: {
-                          template: true,
-                          group: true,
+
+                // 1. Checa se o contato já está na janela de resguardo pós-gancho (ex: mandou 2 msgs seguidas como "Oi" e "Quem é")
+                const isCooldownActive = await isPhoneInCampaignCooldown(phone);
+                if (isCooldownActive) {
+                  hookHandled = true;
+                  console.log(`[Webhook] 🔇 Contato ${phone} enviou mensagem durante a janela pós-gancho ("${messageText}"). Chatbot suprimido para evitar mensagens duplicadas.`);
+                } else {
+                  try {
+                    const pendingHookLog = await prisma.messageLog.findFirst({
+                      where: {
+                        contact: { phone },
+                        hookStatus: 'SENT',
+                        status: 'PENDING',
+                      },
+                      include: {
+                        contact: true,
+                        campaign: {
+                          include: {
+                            template: true,
+                            group: true,
+                          },
                         },
                       },
-                    },
-                    orderBy: { hookSentAt: 'desc' },
-                  });
-
-                  if (pendingHookLog && pendingHookLog.campaign.status === 'SENDING') {
-                    console.log(`[Webhook] 🎯 Contato ${phone} respondeu à mensagem prévia! Disparando template principal...`);
-                    hookHandled = true;
-
-                    // Marca hookStatus como REPLIED
-                    await prisma.messageLog.update({
-                      where: { id: pendingHookLog.id },
-                      data: {
-                        hookStatus: 'REPLIED',
-                        hookRepliedAt: new Date(),
-                      },
+                      orderBy: { hookSentAt: 'desc' },
                     });
 
-                    // Monta o texto do template principal
-                    const template = pendingHookLog.campaign.template;
-                    const contactName = pendingHookLog.contact.name || pushName || 'Cliente';
-                    const groupLink = pendingHookLog.campaign.group?.description || '';
+                    if (pendingHookLog && pendingHookLog.campaign.status === 'SENDING') {
+                      // Lock atômico distribuído no Redis para prevenir disparo duplicado caso 2 requisições cheguem em paralelo
+                      const lockKey = `wajato:lock:hook:${phone}`;
+                      let lockAcquired = false;
+                      try {
+                        const lockRes = await redisConnection.set(lockKey, '1', 'EX', 15, 'NX');
+                        lockAcquired = lockRes === 'OK';
+                      } catch {
+                        lockAcquired = true;
+                      }
 
-                    const allVariants = [template.body, ...(pendingHookLog.campaign.messageVariants || [])];
-                    const chosenVariant = allVariants[Math.floor(Math.random() * allVariants.length)];
-                    const mainMessageText = formatMessageText(chosenVariant, { name: contactName, link: groupLink });
+                      if (!lockAcquired) {
+                        console.log(`[Webhook] ⏳ Resposta ao gancho de ${phone} já está sendo processada por outra requisição simultânea.`);
+                        hookHandled = true;
+                      } else {
+                        console.log(`[Webhook] 🎯 Contato ${phone} respondeu à mensagem prévia! Disparando template principal...`);
+                        hookHandled = true;
 
-                    const { evolutionApi } = await import('@/lib/evolution');
-                    if (template.imageUrl) {
-                      await evolutionApi.sendMediaMessage(
-                        instanceName,
-                        phone,
-                        template.imageUrl,
-                        'image',
-                        mainMessageText
-                      );
-                    } else {
-                      await evolutionApi.sendTextMessage(instanceName, phone, mainMessageText);
+                        // Ativa imediatamente o cooldown de resguardo para este contato
+                        await setChatbotCooldown(phone, 90);
+
+                        // Marca hookStatus como REPLIED
+                        await prisma.messageLog.update({
+                          where: { id: pendingHookLog.id },
+                          data: {
+                            hookStatus: 'REPLIED',
+                            hookRepliedAt: new Date(),
+                          },
+                        });
+
+                        // Monta o texto do template principal
+                        const template = pendingHookLog.campaign.template;
+                        const contactName = pendingHookLog.contact.name || pushName || 'Cliente';
+                        const groupLink = pendingHookLog.campaign.group?.description || '';
+
+                        const allVariants = [template.body, ...(pendingHookLog.campaign.messageVariants || [])];
+                        const chosenVariant = allVariants[Math.floor(Math.random() * allVariants.length)];
+                        const mainMessageText = formatMessageText(chosenVariant, { name: contactName, link: groupLink });
+
+                        const { evolutionApi } = await import('@/lib/evolution');
+                        if (template.imageUrl) {
+                          await evolutionApi.sendMediaMessage(
+                            instanceName,
+                            phone,
+                            template.imageUrl,
+                            'image',
+                            mainMessageText
+                          );
+                        } else {
+                          await evolutionApi.sendTextMessage(instanceName, phone, mainMessageText);
+                        }
+
+                        await prisma.messageLog.update({
+                          where: { id: pendingHookLog.id },
+                          data: {
+                            status: 'SENT',
+                            sentAt: new Date(),
+                            error: null,
+                          },
+                        });
+
+                        console.log(`[Webhook] ✅ Template principal entregue com sucesso para ${phone} pós-resposta.`);
+
+                        try {
+                          await redisConnection.del(lockKey);
+                        } catch {}
+                      }
                     }
-
-                    await prisma.messageLog.update({
-                      where: { id: pendingHookLog.id },
-                      data: {
-                        status: 'SENT',
-                        sentAt: new Date(),
-                        error: null,
-                      },
-                    });
-
-                    console.log(`[Webhook] ✅ Template principal entregue com sucesso para ${phone} pós-resposta.`);
+                  } catch (hookDeliverErr: any) {
+                    console.error(`[Webhook] Erro ao entregar template principal pós-resposta para ${phone}:`, hookDeliverErr?.message);
                   }
-                } catch (hookDeliverErr: any) {
-                  console.error(`[Webhook] Erro ao entregar template principal pós-resposta para ${phone}:`, hookDeliverErr?.message);
                 }
 
                 // Chatbot normal apenas se não foi entrega de hook

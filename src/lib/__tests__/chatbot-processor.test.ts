@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { handleChatbotIncoming, _resetRateLimits } from '../chatbot-processor';
+import { handleChatbotIncoming, _resetRateLimits, setChatbotCooldown, isPhoneInCampaignCooldown } from '../chatbot-processor';
 import { prisma } from '../prisma';
 import { evolutionApi } from '../evolution';
 import { isWithinBusinessHours } from '../warmup-schedule';
@@ -11,6 +11,8 @@ vi.mock('../redis', () => {
     redisConnection: {
       get: vi.fn().mockResolvedValue(null),
       set: vi.fn().mockResolvedValue('OK'),
+      exists: vi.fn().mockResolvedValue(0),
+      del: vi.fn().mockResolvedValue(1),
       incr: vi.fn().mockResolvedValue(1),
       expire: vi.fn().mockResolvedValue(1),
     },
@@ -249,5 +251,27 @@ describe('Chatbot Processor Unit Tests', () => {
     // Verifica se instanciou o GoogleGenerativeAI com a chave individual do banco
     expect(GoogleGenerativeAI).toHaveBeenCalledWith('individual-client-key');
     expect(evolutionApi.sendTextMessage).toHaveBeenCalledWith('instancia-teste', '5511999999999', 'Olá, sou a IA!', 1500);
+  });
+
+  it('deve suprimir o chatbot quando o contato estiver no período de cooldown pós-gancho', async () => {
+    // Ativa o cooldown para o número
+    await setChatbotCooldown('5511988887777', 90);
+
+    // Envia mensagem durante o período de cooldown
+    await handleChatbotIncoming('5511988887777', 'Quem é você?', 'instancia-teste');
+
+    // Chatbot não deve enviar nada nem consultar regras/IA
+    expect(evolutionApi.sendTextMessage).not.toHaveBeenCalled();
+    expect(prisma.chatbotLog.create).not.toHaveBeenCalled();
+  });
+
+  it('deve identificar cooldown ativo via MessageLog no banco de dados', async () => {
+    // Simula log de gancho respondido há 10 segundos
+    vi.mocked(prisma.messageLog.findFirst).mockResolvedValueOnce({
+      id: 'log-123',
+    } as any);
+
+    const inCooldown = await isPhoneInCampaignCooldown('5511977776666');
+    expect(inCooldown).toBe(true);
   });
 });
