@@ -89,6 +89,7 @@ export async function GET(req: Request) {
         pushName: chat.pushName || null,
         profilePicUrl: chat.profilePicUrl || null,
         remoteJid: chat.remoteJid || chat.id,
+        instanceName: chat.instanceName || undefined,
       };
     });
 
@@ -108,6 +109,11 @@ export async function GET(req: Request) {
         const currentIsLid = chat.id.endsWith('@lid');
         if (existingIsLid && !currentIsLid) {
           existing.id = chat.id;
+        }
+
+        // Mantém instanceName válido
+        if (!existing.instanceName && chat.instanceName) {
+          existing.instanceName = chat.instanceName;
         }
 
         // Mantém a última mensagem com maior timestamp
@@ -138,23 +144,26 @@ export async function GET(req: Request) {
       select: {
         phone: true,
         name: true,
+        tags: true,
+        value: true,
+        optOut: true,
+        chatbotPausedUntil: true,
+        stage: { select: { id: true, name: true, color: true } },
       },
     });
 
-    const contactMap = new Map<string, string>();
+    const contactMap = new Map<string, any>();
     for (const c of dbContacts) {
-      if (c.name) {
-        contactMap.set(c.phone, c.name);
-      }
+      contactMap.set(c.phone, c);
     }
 
     // Salvar contatos não cadastrados ou sem nome usando o pushName do WhatsApp
     const contactsToUpsert = [];
     for (const c of uniqueMappedChats) {
       if (c.phoneNumber && c.pushName && !c.pushName.includes('@') && !c.remoteJid?.endsWith('@g.us')) {
-        const dbName = contactMap.get(c.phoneNumber) || 
+        const dbInfo = contactMap.get(c.phoneNumber) || 
                        contactMap.get(c.phoneNumber.startsWith('55') ? c.phoneNumber.slice(2) : `55${c.phoneNumber}`);
-        if (!dbName) {
+        if (!dbInfo?.name) {
           contactsToUpsert.push({
             phone: c.phoneNumber,
             name: c.pushName,
@@ -175,19 +184,30 @@ export async function GET(req: Request) {
       );
 
       for (const item of contactsToUpsert) {
-        contactMap.set(item.phone, item.name);
+        const existing = contactMap.get(item.phone) || {};
+        contactMap.set(item.phone, { ...existing, phone: item.phone, name: item.name });
       }
     }
 
     const finalChats = uniqueMappedChats.map((c: any) => {
       let finalName = c.name;
+      let crmData: any = null;
+
       if (c.phoneNumber) {
-        const dbName = contactMap.get(c.phoneNumber) || 
+        const dbInfo = contactMap.get(c.phoneNumber) || 
                        contactMap.get(c.phoneNumber.startsWith('55') ? c.phoneNumber.slice(2) : `55${c.phoneNumber}`);
-        if (dbName) {
-          finalName = dbName;
+        if (dbInfo) {
+          if (dbInfo.name) finalName = dbInfo.name;
+          crmData = {
+            stage: dbInfo.stage || null,
+            tags: dbInfo.tags || [],
+            value: dbInfo.value || 0,
+            optOut: dbInfo.optOut || false,
+            chatbotPausedUntil: dbInfo.chatbotPausedUntil || null,
+          };
         }
       }
+
       return {
         id: c.id,
         name: finalName,
@@ -196,6 +216,8 @@ export async function GET(req: Request) {
         lastMessage: c.lastMessage,
         phoneNumber: c.phoneNumber,
         profilePicUrl: c.profilePicUrl,
+        instanceName: c.instanceName || (instanceName !== 'all' ? instanceName : undefined),
+        crm: crmData,
       };
     });
 

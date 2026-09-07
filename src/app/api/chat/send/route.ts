@@ -1,15 +1,36 @@
 import { NextResponse } from 'next/server';
 import { evolutionApi } from '@/lib/evolution';
+import { prisma } from '@/lib/prisma';
 
 export async function POST(req: Request) {
   try {
-    const { instanceName, remoteJid, message, quotedMessageId, quotedMessage } = await req.json();
+    const { instanceName, remoteJid, message, mediaUrl, mediaType, quotedMessageId, quotedMessage } = await req.json();
 
-    if (!instanceName || !remoteJid || !message) {
+    if (!remoteJid || (!message && !mediaUrl)) {
       return NextResponse.json(
-        { error: 'Parâmetros instanceName, remoteJid e message são obrigatórios' },
+        { error: 'Parâmetros remoteJid e (message ou mediaUrl) são obrigatórios' },
         { status: 400 }
       );
+    }
+
+    let activeInstance = instanceName;
+    if (!activeInstance || activeInstance === 'all') {
+      const dbInst = await prisma.whatsAppInstance.findFirst({
+        where: { status: 'CONNECTED' },
+        orderBy: { healthScore: 'desc' },
+      });
+      activeInstance = dbInst?.name || process.env.EVOLUTION_INSTANCE_NAME || 'wajato-session';
+    }
+
+    if (mediaUrl) {
+      const sentMedia = await evolutionApi.sendMediaMessage(
+        activeInstance,
+        remoteJid,
+        mediaUrl,
+        mediaType || 'image',
+        message || ''
+      );
+      return NextResponse.json(sentMedia);
     }
 
     const formattedPhone = evolutionApi.formatPhone(remoteJid);
@@ -39,7 +60,7 @@ export async function POST(req: Request) {
     const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://localhost:8080';
     const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || '';
 
-    const res = await fetch(`${EVOLUTION_API_URL}/message/sendText/${instanceName}`, {
+    const res = await fetch(`${EVOLUTION_API_URL}/message/sendText/${activeInstance}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

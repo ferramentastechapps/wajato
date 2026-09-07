@@ -17,6 +17,7 @@ export const contactSchema = z.object({
   notes: z.string().nullable().optional(),
   companyId: z.preprocess((val) => val === '' ? null : val, z.string().uuid('ID da empresa inválido').nullable().optional()),
   optOut: z.boolean().optional(),
+  chatbotPausedUntil: z.string().datetime({ offset: true }).nullable().optional().or(z.date().nullable().optional()),
 });
 
 

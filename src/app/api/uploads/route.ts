@@ -21,25 +21,30 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: 'Nenhum arquivo enviado' }, { status: 400 });
     }
 
-    // Valida tipo MIME (apenas imagens e mídias seguras)
-    const allowedTypes = ['image/webp', 'image/jpeg', 'image/png', 'image/gif', 'image/svg+xml'];
-    if (!allowedTypes.includes(file.type) && !file.name.match(/\.(webp|jpg|jpeg|png|gif)$/i)) {
+    // Valida tipo MIME (imagens, áudio, vídeos e documentos)
+    const allowedTypes = [
+      'image/webp', 'image/jpeg', 'image/png', 'image/gif', 'image/svg+xml',
+      'audio/mpeg', 'audio/mp3', 'audio/ogg', 'audio/wav', 'audio/mp4', 'audio/aac',
+      'video/mp4', 'video/quicktime', 'video/webm', 'video/3gpp',
+      'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    ];
+    const hasAllowedExt = !!file.name.match(/\.(webp|jpg|jpeg|png|gif|mp3|ogg|wav|m4a|aac|mp4|mov|webm|pdf|doc|docx|txt|xls|xlsx)$/i);
+    if (!allowedTypes.includes(file.type) && !hasAllowedExt) {
       return NextResponse.json(
-        { message: 'Formato de arquivo não suportado. Envie imagens WebP, JPG ou PNG.' },
+        { message: 'Formato de arquivo não suportado.' },
         { status: 400 }
       );
     }
 
     // Determina a extensão do arquivo
-    let extension = '.webp';
-    if (file.type === 'image/jpeg' || file.name.endsWith('.jpg') || file.name.endsWith('.jpeg')) {
-      extension = '.jpg';
-    } else if (file.type === 'image/png' || file.name.endsWith('.png')) {
-      extension = '.png';
-    } else if (file.type === 'image/gif' || file.name.endsWith('.gif')) {
-      extension = '.gif';
-    } else if (file.type === 'image/webp' || file.name.endsWith('.webp')) {
-      extension = '.webp';
+    let extension = path.extname(file.name) || '.bin';
+    if (!extension || extension === '.') {
+      if (file.type.startsWith('image/')) extension = '.jpg';
+      else if (file.type.startsWith('audio/')) extension = '.mp3';
+      else if (file.type.startsWith('video/')) extension = '.mp4';
+      else if (file.type === 'application/pdf') extension = '.pdf';
+      else extension = '.bin';
     }
 
     // Gera um nome único e seguro para o arquivo

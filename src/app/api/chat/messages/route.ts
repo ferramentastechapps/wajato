@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { evolutionApi } from '@/lib/evolution';
 import { lidResolver } from '@/lib/lid-resolver';
+import { prisma } from '@/lib/prisma';
 
 async function fetchUnifiedMessages(instanceName: string, remoteJid: string, limit = 100) {
   const messages = await evolutionApi.findMessages(instanceName, remoteJid, limit);
@@ -54,8 +55,41 @@ export async function GET(req: Request) {
     const instanceName = searchParams.get('instanceName');
     const remoteJid = searchParams.get('remoteJid');
 
-    if (!instanceName || !remoteJid) {
-      return NextResponse.json({ error: 'Parâmetros instanceName e remoteJid são obrigatórios' }, { status: 400 });
+    if (!remoteJid) {
+      return NextResponse.json({ error: 'Parâmetro remoteJid é obrigatório' }, { status: 400 });
+    }
+
+    if (!instanceName || instanceName === 'all') {
+      const connectedInsts = await prisma.whatsAppInstance.findMany({
+        where: { status: 'CONNECTED' },
+        select: { name: true },
+      });
+
+      if (connectedInsts.length === 0) {
+        return NextResponse.json([]);
+      }
+
+      // Busca mensagens em paralelo nas instâncias conectadas
+      const results = await Promise.all(
+        connectedInsts.map(inst => fetchUnifiedMessages(inst.name, remoteJid, 50).catch(() => []))
+      );
+
+      const allMessages = results.flat();
+      const unique = new Map<string, any>();
+      for (const msg of allMessages) {
+        const id = msg.key?.id;
+        if (id && !unique.has(id)) {
+          unique.set(id, msg);
+        }
+      }
+
+      const sorted = Array.from(unique.values()).sort((a, b) => {
+        const tsA = Number(a.messageTimestamp || 0);
+        const tsB = Number(b.messageTimestamp || 0);
+        return tsB - tsA;
+      });
+
+      return NextResponse.json(sorted.slice(0, 100));
     }
 
     const messages = await fetchUnifiedMessages(instanceName, remoteJid, 100);

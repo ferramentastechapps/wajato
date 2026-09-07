@@ -207,7 +207,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { name, phone, tags, groupId, stageId, value, notes, companyId, optOut } = result.data;
+    const { name, phone, tags, groupId, stageId, value, notes, companyId, optOut, chatbotPausedUntil } = result.data;
 
     const cleanPhone = evolutionApi.formatPhone(phone);
 
@@ -222,6 +222,7 @@ export async function POST(request: Request) {
         ...(notes !== undefined ? { notes: notes || null } : {}),
         ...(companyId !== undefined ? { companyId: companyId || null } : {}),
         ...(typeof optOut === 'boolean' ? { optOut, optOutAt: optOut ? new Date() : null } : {}),
+        ...(chatbotPausedUntil !== undefined ? { chatbotPausedUntil: chatbotPausedUntil ? new Date(chatbotPausedUntil) : null } : {}),
       },
       create: {
         name: name || null,
@@ -234,6 +235,7 @@ export async function POST(request: Request) {
         companyId: companyId || null,
         optOut: optOut ?? false,
         optOutAt: optOut ? new Date() : null,
+        chatbotPausedUntil: chatbotPausedUntil ? new Date(chatbotPausedUntil) : null,
       },
       include: {
         stage: { select: { id: true, name: true, color: true } },
