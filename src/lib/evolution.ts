@@ -68,6 +68,33 @@ async function registerSentMessage(data: any) {
   }
 }
 
+/**
+ * Extrai a mensagem de erro real retornada pela Evolution API (mesmo aninhada em response.message)
+ */
+export function extractEvolutionError(error: any, defaultMsg: string): string {
+  const data = error?.response?.data;
+  if (!data) return error?.message || defaultMsg;
+
+  // Evolution API v2: { response: { message: ['Error: Connection Closed'] } } ou { message: '...' }
+  const respMsg = data?.response?.message;
+  if (Array.isArray(respMsg) && respMsg.length > 0) {
+    return respMsg.filter(Boolean).join(', ');
+  }
+  if (typeof respMsg === 'string' && respMsg.trim()) {
+    return respMsg.trim();
+  }
+  if (Array.isArray(data?.message) && data.message.length > 0) {
+    return data.message.filter(Boolean).join(', ');
+  }
+  if (typeof data?.message === 'string' && data.message.trim()) {
+    return data.message.trim();
+  }
+  if (typeof data?.error === 'string' && data.error.trim()) {
+    return data.error.trim();
+  }
+  return error?.message || defaultMsg;
+}
+
 export const evolutionApi = {
   /**
    * Cria uma nova instância de conexão no Evolution API.
@@ -219,7 +246,8 @@ export const evolutionApi = {
       return response.data;
     } catch (error: any) {
       console.error(`Erro ao enviar mensagem de texto para ${phone}:`, error?.response?.data || error.message);
-      throw new Error(error?.response?.data?.message || 'Falha ao enviar mensagem de texto');
+      const errMsg = extractEvolutionError(error, 'Falha ao enviar mensagem de texto');
+      throw new Error(errMsg);
     }
   },
 
@@ -266,7 +294,8 @@ export const evolutionApi = {
       return response.data;
     } catch (error: any) {
       console.error(`Erro ao enviar mensagem de mídia para ${phone}:`, error?.response?.data || error.message);
-      throw new Error(error?.response?.data?.message || 'Falha ao enviar mídia');
+      const errMsg = extractEvolutionError(error, 'Falha ao enviar mídia');
+      throw new Error(errMsg);
     }
   },
 
@@ -383,7 +412,8 @@ export const evolutionApi = {
         return response.data;
       } catch (fallbackError: any) {
         console.error(`Erro ao enviar áudio PTT para ${phone}:`, fallbackError?.response?.data || fallbackError.message);
-        throw new Error(fallbackError?.response?.data?.message || 'Falha ao enviar áudio PTT');
+        const errMsg = extractEvolutionError(fallbackError, 'Falha ao enviar áudio PTT');
+        throw new Error(errMsg);
       }
     }
   },

@@ -205,9 +205,16 @@ export async function reportChipFailure(instanceName: string, errorMsg: string):
         errorMsg.toLowerCase().includes('unauthorized') ||
         errorMsg.toLowerCase().includes('401');
 
-      // Falhas pontuais/socket ('connection closed', timeout) penalizam levemente (-3)
+      // Falhas pontuais/socket ('connection closed', timeout) penalizam levemente (-1)
       // Apenas deslogamento explícito aplica penalidade severa (-20)
-      const penalty = isExplicitLogout ? 20 : 3;
+      const isTransient = 
+        errorMsg.toLowerCase().includes('connection closed') ||
+        errorMsg.toLowerCase().includes('socket hang up') ||
+        errorMsg.toLowerCase().includes('econnreset') ||
+        errorMsg.toLowerCase().includes('428') ||
+        errorMsg.toLowerCase().includes('stream errored');
+
+      const penalty = isExplicitLogout ? 20 : (isTransient ? 1 : 3);
       const newScore = Math.max(0, instance.healthScore - penalty);
       
       await prisma.whatsAppInstance.update({

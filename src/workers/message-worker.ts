@@ -12,6 +12,24 @@ import './scheduler-worker'; // Importa o worker de agendamento de campanhas
 
 logger.info('Iniciando o Worker de Mensagens do WaJato...');
 
+/**
+ * Detecta se o erro é uma oscilação temporária de socket / conexão do Baileys
+ */
+export function isTransientSocketError(errorMsg?: string): boolean {
+  if (!errorMsg) return false;
+  const lower = errorMsg.toLowerCase();
+  return (
+    lower.includes('connection closed') ||
+    lower.includes('socket hang up') ||
+    lower.includes('econnreset') ||
+    lower.includes('etimedout') ||
+    lower.includes('statusreason 428') ||
+    lower.includes('stream errored') ||
+    lower.includes('restart required') ||
+    lower.includes('connecting')
+  );
+}
+
 const worker = new Worker(
   'message-queue',
   async (job: Job<MessageJobData>) => {
@@ -328,12 +346,20 @@ const worker = new Worker(
             messageText
           );
         } catch (mediaErr: any) {
-          logger.warn(`[Worker] Falha ao enviar mídia (${mediaErr?.message}). Enviando mensagem como texto simples de segurança para não interromper a campanha.`, {
+          const isTransient = isTransientSocketError(mediaErr?.message);
+          logger.warn(`[Worker] Falha ao enviar mídia (${mediaErr?.message}).`, {
             phone,
             instance: activeInstanceName,
             imageUrl: log.campaign.template.imageUrl,
+            isTransient,
           });
-          // Fallback para envio em texto simples com o mesmo chip
+
+          // Se for oscilação de socket, não tenta texto no mesmo socket imediatamente (vai para catch de fallback)
+          if (isTransient) {
+            throw mediaErr;
+          }
+
+          // Se for erro de mídia (ex: formato/url), tenta texto simples de segurança no mesmo chip
           await evolutionApi.sendTextMessage(activeInstanceName, phone, messageText);
         }
       } else {
@@ -346,14 +372,22 @@ const worker = new Worker(
       await reportChipSuccess(activeInstanceName);
     } catch (primaryError: any) {
       lastErrorMsg = primaryError?.message || 'Falha no envio primário';
+      const isPrimaryTransient = isTransientSocketError(lastErrorMsg);
+
       logger.warn('Falha no envio com chip primário, tentando chip alternativo...', {
         instance: activeInstanceName,
         error: lastErrorMsg,
+        isTransient: isPrimaryTransient,
         messageLogId,
       });
 
       // Reporta falha no chip primário
       await reportChipFailure(activeInstanceName, lastErrorMsg);
+
+      // Se for oscilação de socket, aguarda 2s antes do fallback para estabilização
+      if (isPrimaryTransient) {
+        await new Promise((r) => setTimeout(r, 2000));
+      }
 
       // Tenta obter um chip secundário diferente do que falhou
       const fallbackInstance = await getNextWhatsAppInstance([activeInstanceName], campaignAllowedInstances, isOnlyMature);
@@ -369,6 +403,9 @@ const worker = new Worker(
                 messageText
               );
             } catch (mediaFbErr: any) {
+              if (isTransientSocketError(mediaFbErr?.message)) {
+                throw mediaFbErr;
+              }
               logger.warn(`[Worker Fallback] Falha na mídia no chip reserva (${mediaFbErr?.message}). Enviando texto simples.`);
               await evolutionApi.sendTextMessage(fallbackInstance, phone, messageText);
             }
@@ -436,6 +473,28 @@ const worker = new Worker(
         instance: activeInstanceName,
       });
 
+      const isTransient = isTransientSocketError(lastErrorMsg);
+
+      // Se foi oscilação temporária de socket em todos os chips tentados (ex: Baileys 428 que reconecta em 5s):
+      // Re-agenda o contato para daqui a 15s sem marcar FAILED definitivo e sem pausar a campanha!
+      if (isTransient) {
+        logger.warn(`[Worker] Oscilação transitória de conexão em todos os chips (${lastErrorMsg}). Aguardando 15s para reconexão automática do Baileys e retentando contato...`, {
+          messageLogId,
+          phone,
+        });
+
+        await prisma.messageLog.update({
+          where: { id: messageLogId },
+          data: {
+            status: 'PENDING',
+            error: `Oscilação temporária de conexão (${lastErrorMsg}) - retentando`,
+          },
+        });
+
+        await queueMessage({ messageLogId, campaignId, contactId, phone }, 15000);
+        return;
+      }
+
       await prisma.messageLog.update({
         where: { id: messageLogId },
         data: {
@@ -473,24 +532,22 @@ async function checkCampaignDegradation(campaignId: string) {
       'Campanha não está ativa',
     ];
 
-    const totalProcessed = await prisma.messageLog.count({
+    const allProcessed = await prisma.messageLog.findMany({
       where: {
         campaignId,
         status: { in: ['SENT', 'FAILED', 'DELIVERED', 'READ'] },
         error: { notIn: nonTechnicalErrors },
       },
+      select: { status: true, error: true },
     });
+
+    // Ignora oscilações transitórias de socket no cálculo do Circuit Breaker
+    const technicalLogs = allProcessed.filter((l) => !isTransientSocketError(l.error || ''));
+    const totalProcessed = technicalLogs.length;
 
     // Exige pelo menos 10 mensagens técnicas processadas e no mínimo 4 falhas reais antes de avaliar
     if (totalProcessed >= 10) {
-      const totalFailed = await prisma.messageLog.count({
-        where: {
-          campaignId,
-          status: 'FAILED',
-          error: { notIn: nonTechnicalErrors },
-        },
-      });
-
+      const totalFailed = technicalLogs.filter((l) => l.status === 'FAILED').length;
       const failureRate = totalFailed / totalProcessed;
       // Pausa apenas se a taxa de falha técnica real for > 35% com pelo menos 4 falhas
       if (failureRate > 0.35 && totalFailed >= 4) {
