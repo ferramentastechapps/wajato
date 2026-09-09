@@ -5,7 +5,7 @@
  * e as dispara automaticamente via a action de start.
  */
 import { prisma } from '../lib/prisma';
-import { messageQueue } from '../lib/queue';
+import { messageQueue, queueMessage } from '../lib/queue';
 import { resolveContactsForSegment } from '../lib/segment-resolver';
 import { logger } from '../lib/logger';
 import { runProxySelfHealer } from '../lib/proxy-healer';
@@ -93,18 +93,14 @@ async function dispatchScheduledCampaigns() {
         });
 
         if (firstPending) {
-          await messageQueue.add(
-            `send-message-${firstPending.id}`,
+          await queueMessage(
             {
               messageLogId: firstPending.id,
               campaignId: campaign.id,
               contactId: firstPending.contactId,
               phone: firstPending.contact.phone,
             },
-            {
-              delay: 0,
-              jobId: firstPending.id,
-            }
+            0
           );
         } else {
           await prisma.campaign.update({
@@ -139,6 +135,18 @@ async function runCampaignAutoHealer() {
     });
 
     for (const camp of runningCampaigns) {
+      // 1. Verifica se está dentro da janela de horários permitida antes de tentar reativar
+      const nowBRT = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+      const currentHour = nowBRT.getHours();
+      const currentDay = nowBRT.getDay();
+      const isDayAllowed = (camp.allowedDays || [1, 2, 3, 4, 5, 6]).includes(currentDay);
+      const isHourAllowed = currentHour >= (camp.startHour ?? 8) && currentHour < (camp.endHour ?? 20);
+
+      if (!isDayAllowed || !isHourAllowed) {
+        // Fora da janela permitida: o worker já reagendou o job para amanhã, não interferir
+        continue;
+      }
+
       const nextPending = await prisma.messageLog.findFirst({
         where: { campaignId: camp.id, status: 'PENDING' },
         orderBy: { updatedAt: 'asc' },
@@ -146,22 +154,18 @@ async function runCampaignAutoHealer() {
       });
 
       if (nextPending) {
-        const jobs = await messageQueue.getJobs(['active', 'delayed', 'waiting']);
+        const jobs = await messageQueue.getJobs(['active', 'delayed', 'waiting'], 0, 500);
         const hasJob = jobs.some(j => j.data?.campaignId === camp.id);
         if (!hasJob) {
-          logger.info(`[Auto-Healer] Campanha ${camp.name} estava ativa com contatos pendentes mas sem job na fila. Reativando...`);
-          await messageQueue.add(
-            `send-message-${nextPending.id}`,
+          logger.info(`[Auto-Healer] Campanha ${camp.name} estava ativa com contatos pendentes mas sem job na fila. Reativando envio do contato ${nextPending.id}...`);
+          await queueMessage(
             {
               messageLogId: nextPending.id,
               campaignId: camp.id,
               contactId: nextPending.contactId,
               phone: nextPending.contact.phone,
             },
-            {
-              delay: 0,
-              jobId: nextPending.id,
-            }
+            0
           );
         }
       } else {
@@ -339,6 +343,65 @@ setInterval(() => {
   );
 }, 180_000);
 
+// ─── Cron de Auto-Healing de Instâncias (Verificação a cada 60s) ─────────────
+/**
+ * Auto-Healer de Instâncias de WhatsApp:
+ * Consulta a Evolution API periodicamente para manter o status do banco
+ * perfeitamente sincronizado com a conexão real do WhatsApp.
+ * - Chips 'open' são garantidos como CONNECTED e recuperam saúde.
+ * - Chips 'close' são marcados como DISCONNECTED e não recebem disparos.
+ */
+async function syncWhatsAppInstancesWithEvolution() {
+  try {
+    const { evolutionApi } = await import('../lib/evolution');
+    const apiInstances = await evolutionApi.fetchInstances();
+    if (!Array.isArray(apiInstances)) return;
+
+    for (const apiInst of apiInstances) {
+      if (!apiInst.name) continue;
+      const isOpen = apiInst.connectionStatus === 'open';
+
+      const dbInst = await prisma.whatsAppInstance.findUnique({
+        where: { name: apiInst.name },
+      });
+
+      if (!dbInst) continue;
+
+      if (isOpen) {
+        const needsUpdate = dbInst.status !== 'CONNECTED' || dbInst.healthScore < 50;
+        if (needsUpdate) {
+          logger.info(`[InstanceHealer] Restaurando instância ${dbInst.name} para CONNECTED (saúde: 90).`);
+          await prisma.whatsAppInstance.update({
+            where: { name: dbInst.name },
+            data: {
+              status: 'CONNECTED',
+              healthScore: Math.max(dbInst.healthScore, 90),
+            },
+          });
+        }
+      } else {
+        if (dbInst.status !== 'DISCONNECTED' || dbInst.allowCampaigns) {
+          logger.warn(`[InstanceHealer] Instância ${dbInst.name} fechada na Evolution API. Marcando DISCONNECTED.`);
+          await prisma.whatsAppInstance.update({
+            where: { name: dbInst.name },
+            data: {
+              status: 'DISCONNECTED',
+              allowCampaigns: false,
+            },
+          });
+        }
+      }
+    }
+  } catch (err: any) {
+    logger.error('[InstanceHealer] Erro ao sincronizar status de instâncias:', err?.message);
+  }
+}
+
+syncWhatsAppInstancesWithEvolution().catch(err =>
+  logger.error('[Scheduler] Erro na sincronização inicial de instâncias:', err)
+);
+setInterval(syncWhatsAppInstancesWithEvolution, 60_000);
+
 // ─── Cron de Auto-Healing de Proxies (Verificação a cada 5 minutos) ──────────
 const PROXY_CHECK_INTERVAL_MS = 300_000;
 runProxySelfHealer().catch(err =>
@@ -349,3 +412,5 @@ setInterval(() => {
     logger.error('[Scheduler] Erro na execução periódica do Proxy Healer:', err)
   );
 }, PROXY_CHECK_INTERVAL_MS);
+
+

@@ -45,3 +45,6 @@ next-env.d.ts
 # uploads
 /public/uploads/*
 !/public/uploads/.gitkeep
+
+lid-mappings.json
+

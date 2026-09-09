@@ -527,6 +527,8 @@ Dia ${campaign.currentDay} de conversa. Assunto: ${topic}`;
       let status = 'SENT';
       // ID real da mensagem retornado pela Evolution API (para reações futuras)
       let sentMessageId: string | null = null;
+      // Mensagem de erro real capturada para detectar tipo de falha
+      let lastError: string = '';
 
       if (action === 'EMOJI') {
         // Resposta rápida com emoji contextual (gerado pela IA com base na última mensagem)
@@ -545,6 +547,7 @@ Dia ${campaign.currentDay} de conversa. Assunto: ${topic}`;
         } catch (err) {
           console.error('[Warmup Worker] Erro ao enviar emoji:', err);
           status = 'FAILED';
+          lastError = (err as any)?.message || JSON.stringify(err) || String(err);
         }
 
       } else if (action === 'REACTION' && logs.length > 0) {
@@ -575,6 +578,7 @@ Dia ${campaign.currentDay} de conversa. Assunto: ${topic}`;
             sentMessageId = res?.key?.id || res?.id || null;
           } catch (err) {
             status = 'FAILED';
+            lastError = (err as any)?.message || JSON.stringify(err) || String(err);
           }
         }
 
@@ -599,6 +603,7 @@ Dia ${campaign.currentDay} de conversa. Assunto: ${topic}`;
             sentMessageId = res?.key?.id || res?.id || null;
           } catch (err) {
             status = 'FAILED';
+            lastError = (err as any)?.message || JSON.stringify(err) || String(err);
           }
         } else {
           sentMessageId = stickerResult?.key?.id || stickerResult?.id || null;
@@ -636,6 +641,7 @@ Dia ${campaign.currentDay} de conversa. Assunto: ${topic}`;
           } catch (fallbackErr) {
             console.error('[Warmup Worker] Erro no fallback de texto do áudio:', fallbackErr);
             status = 'FAILED';
+            lastError = (fallbackErr as any)?.message || JSON.stringify(fallbackErr) || String(fallbackErr);
           }
         }
 
@@ -661,6 +667,7 @@ Dia ${campaign.currentDay} de conversa. Assunto: ${topic}`;
         } catch (err) {
           console.error('[Warmup Worker] Erro ao enviar imagem:', err);
           status = 'FAILED';
+          lastError = (err as any)?.message || JSON.stringify(err) || String(err);
         }
 
       } else if (action === 'LOCATION') {
@@ -683,6 +690,7 @@ Dia ${campaign.currentDay} de conversa. Assunto: ${topic}`;
         } catch (err) {
           console.error('[Warmup Worker] Erro ao enviar localização:', err);
           status = 'FAILED';
+          lastError = (err as any)?.message || JSON.stringify(err) || String(err);
         }
 
       } else if (action === 'POLL') {
@@ -700,6 +708,7 @@ Dia ${campaign.currentDay} de conversa. Assunto: ${topic}`;
         } catch (err) {
           console.error('[Warmup Worker] Erro ao enviar enquete:', err);
           status = 'FAILED';
+          lastError = (err as any)?.message || JSON.stringify(err) || String(err);
         }
 
       } else if (action === 'CONTACT') {
@@ -722,6 +731,7 @@ Dia ${campaign.currentDay} de conversa. Assunto: ${topic}`;
         } catch (err) {
           console.error('[Warmup Worker] Erro ao enviar contato:', err);
           status = 'FAILED';
+          lastError = (err as any)?.message || JSON.stringify(err) || String(err);
         }
 
       } else if (action === 'STATUS') {
@@ -742,6 +752,7 @@ Dia ${campaign.currentDay} de conversa. Assunto: ${topic}`;
           } catch (err) {
             console.error('[Warmup Worker] Erro ao enviar texto fallback do status:', err);
             status = 'FAILED';
+            lastError = (err as any)?.message || JSON.stringify(err) || String(err);
           }
         } else {
           // Postagem no Status/Stories
@@ -767,6 +778,7 @@ Dia ${campaign.currentDay} de conversa. Assunto: ${topic}`;
           } catch (err) {
             console.error('[Warmup Worker] Erro ao postar status:', err);
             status = 'FAILED';
+            lastError = (err as any)?.message || JSON.stringify(err) || String(err);
           }
         }
 
@@ -794,6 +806,7 @@ Dia ${campaign.currentDay} de conversa. Assunto: ${topic}`;
         } catch (err) {
           console.error('[Warmup Worker] Erro ao enviar texto:', err);
           status = 'FAILED';
+          lastError = (err as any)?.message || JSON.stringify(err) || '';
         }
       }
 
@@ -956,19 +969,43 @@ Dia ${campaign.currentDay} de conversa. Assunto: ${topic}`;
         const recentLogs = await prisma.warmupLog.findMany({
           where: { campaignId },
           orderBy: { createdAt: 'desc' },
-          take: 3,
+          take: 5,
         });
 
         const consecutiveFailures = recentLogs.filter(l => l.status === 'FAILED').length;
-        if (consecutiveFailures >= 3) {
+
+        // Detecta se a falha é de chip desconectado (Connection Closed, close, etc.)
+        // vs. falha pontual de API (rate limit, timeout transitório)
+        const isChipDisconnection = [
+          'connection closed', 'connection_closed', 'state":"close',
+          'error: connection', 'session closed', 'disconnected'
+        ].some(s => lastError.toLowerCase().includes(s));
+
+        if (isChipDisconnection) {
+          // Chip está desconectado — pausa a campanha E marca o chip no DB para evitar
+          // que outras campanhas também falhem com essa instância.
+          console.warn(`[Warmup Worker] Chip ${sourceInstance} com sinal de desconexão. Pausando campanha e marcando instância.`);
+          await prisma.warmupCampaign.update({
+            where: { id: campaignId },
+            data: { status: 'PAUSED', restPeriodUntil: null },
+          });
+          // Sincroniza status do chip no DB com a realidade da Evolution API
+          await prisma.whatsAppInstance.updateMany({
+            where: { name: sourceInstance },
+            data: { status: 'DISCONNECTED' },
+          });
+        } else if (consecutiveFailures >= 5) {
+          // 5+ falhas consecutivas não relacionadas a desconexão — pausa para não gerar spam
           console.log(`[Warmup Worker] Campanha ${campaignId} atingiu ${consecutiveFailures} falhas consecutivas. Pausando automaticamente para evitar loops de envio.`);
           await prisma.warmupCampaign.update({
             where: { id: campaignId },
             data: { status: 'PAUSED', restPeriodUntil: null },
           });
         } else {
-          // Em caso de falha pontual, reagenda com delay maior (5 min ± 1 min)
-          await queueWarmupMessage({ campaignId, sourceInstance, targetPhone }, 300000, 60000);
+          // Falha pontual — reagenda com delay maior (10 min ± 2 min)
+          const retryDelay = 10 * 60 * 1000;
+          console.log(`[Warmup Worker] Falha pontual (${consecutiveFailures}/5). Reagendando em 10 min...`);
+          await queueWarmupMessage({ campaignId, sourceInstance, targetPhone }, retryDelay, 2 * 60 * 1000);
         }
       }
 
@@ -994,5 +1031,12 @@ warmupWorker.on('failed', (job, err) => {
 });
 
 warmupWorker.on('error', (err) => {
+  const errMsg = (err as any)?.message || String(err);
   console.error('[Warmup Worker] ⚠️ Erro fatal no Worker:', err);
+
+  // Erro READONLY indica que o Redis temporariamente ficou em modo replica.
+  // O BullMQ vai tentar reconectar automaticamente, mas logamos de forma clara.
+  if (errMsg.includes('READONLY')) {
+    console.error('[Warmup Worker] ⚠️ Redis em modo READONLY (replica). O worker vai aguardar reconexão automática.');
+  }
 });

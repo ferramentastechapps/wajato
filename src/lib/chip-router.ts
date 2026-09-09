@@ -46,9 +46,20 @@ export async function getNextWhatsAppInstance(
       }
     }
 
-    const instancesFound = await prisma.whatsAppInstance.findMany({
+    let instancesFound = await prisma.whatsAppInstance.findMany({
       where: whereClause,
     });
+
+    // Se nenhum chip foi encontrado com healthScore > 20, busca com healthScore > 0 para evitar travamento total
+    if (instancesFound.length === 0) {
+      const fallbackClause = { ...whereClause, healthScore: { gt: 0 } };
+      instancesFound = await prisma.whatsAppInstance.findMany({
+        where: fallbackClause,
+      });
+      if (instancesFound.length > 0) {
+        console.warn(`[ChipRouter] Nenhum chip com saúde > 20%. Usando chips conectados com saúde reduzida (>0) para permitir recuperação.`);
+      }
+    }
 
     // Filtra chips que ainda não atingiram o limite diário dinâmico do dia
     const healthyInstances = instancesFound.filter((inst) => {
@@ -186,25 +197,25 @@ export async function reportChipFailure(instanceName: string, errorMsg: string):
     });
 
     if (instance) {
-      // Diferencia falha de rede/API temporária de desconexão real do chip
-      const isRealDisconnection = 
-        errorMsg.toLowerCase().includes('disconnected') || 
-        errorMsg.toLowerCase().includes('401') || 
-        errorMsg.toLowerCase().includes('unauthorized') || 
-        errorMsg.toLowerCase().includes('session closed') || 
-        errorMsg.toLowerCase().includes('connection closed') || 
-        errorMsg.toLowerCase().includes('precondition required') || 
-        errorMsg.toLowerCase().includes('logout');
+      // Diferencia falha de rede/API temporária de desconexão/logout real do chip
+      const isExplicitLogout = 
+        errorMsg.toLowerCase().includes('logout') || 
+        errorMsg.toLowerCase().includes('logged out') || 
+        errorMsg.toLowerCase().includes('session expired') ||
+        errorMsg.toLowerCase().includes('unauthorized') ||
+        errorMsg.toLowerCase().includes('401');
 
-      const penalty = isRealDisconnection ? 20 : 4; // desconexão real desconecta o chip imediatamente
+      // Falhas pontuais/socket ('connection closed', timeout) penalizam levemente (-3)
+      // Apenas deslogamento explícito aplica penalidade severa (-20)
+      const penalty = isExplicitLogout ? 20 : 3;
       const newScore = Math.max(0, instance.healthScore - penalty);
       
       await prisma.whatsAppInstance.update({
         where: { name: instanceName },
         data: {
           healthScore: newScore,
-          // Somente desconecta se a saúde zerar totalmente ou for erro de sessão explícito
-          status: (newScore <= 0 || isRealDisconnection)
+          // Somente desconecta se a saúde zerar totalmente ou for logout/expiração explícita
+          status: (newScore <= 0 || isExplicitLogout)
             ? 'DISCONNECTED'
             : instance.status,
         },
