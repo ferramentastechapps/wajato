@@ -9,7 +9,7 @@ const INSTANCE_NAME = process.env.EVOLUTION_INSTANCE_NAME || 'wajato-session';
 export async function GET() {
   try {
     const instances = await prisma.whatsAppInstance.findMany({
-      orderBy: { updatedAt: 'desc' },
+      orderBy: { name: 'asc' },
       select: {
         name: true,
         status: true,
@@ -41,18 +41,22 @@ export async function POST() {
       try {
         // Tenta obter QR Code. Se a instância não existir, dará erro e nós a criamos.
         const connectData = await evolutionApi.getQRCode(INSTANCE_NAME);
-        qrCodeBase64 = connectData?.base64 || null;
+        qrCodeBase64 = connectData?.base64 || (connectData as any)?.qrcode?.base64 || null;
       } catch (error) {
         console.log('Instância não encontrada ou offline. Criando nova instância...');
         // Instância não existe ou deu erro. Vamos criar.
         const createData = await evolutionApi.createInstance(INSTANCE_NAME);
-        qrCodeBase64 = createData?.qrcode?.base64 || null;
+        qrCodeBase64 = createData?.qrcode?.base64 || (createData as any)?.base64 || null;
         connectionState = 'INITIALIZING';
       }
     }
 
+    if (qrCodeBase64 && !qrCodeBase64.startsWith('data:')) {
+      qrCodeBase64 = `data:image/png;base64,${qrCodeBase64}`;
+    }
+
     // 2. Atualiza ou cria o registro no nosso banco de dados local
-    const dbStatus = connectionState === 'CONNECTED' ? 'CONNECTED' : (qrCodeBase64 ? 'DISCONNECTED' : 'INITIALIZING');
+    const dbStatus = connectionState === 'CONNECTED' ? 'CONNECTED' : (connectionState === 'INITIALIZING' ? 'INITIALIZING' : 'DISCONNECTED');
     
     await prisma.whatsAppInstance.upsert({
       where: { name: INSTANCE_NAME },

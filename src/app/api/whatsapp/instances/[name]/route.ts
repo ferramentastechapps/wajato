@@ -31,7 +31,7 @@ export async function GET(_req: Request, { params }: Params) {
     if (connectionState === 'DISCONNECTED' || connectionState === 'INITIALIZING') {
       try {
         const connectData = await evolutionApi.getQRCode(name);
-        qrCodeBase64 = connectData?.base64 || null;
+        qrCodeBase64 = connectData?.base64 || (connectData as any)?.qrcode?.base64 || null;
         if (!qrCodeBase64) {
           throw new Error('QR Code indisponível ou limite de tentativas atingido');
         }
@@ -45,7 +45,7 @@ export async function GET(_req: Request, { params }: Params) {
             // Ignora se não existir ou falhar ao deletar
           }
           const createData = await evolutionApi.createInstance(name);
-          qrCodeBase64 = createData?.qrcode?.base64 || null;
+          qrCodeBase64 = createData?.qrcode?.base64 || (createData as any)?.base64 || null;
           
           const appUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
           await evolutionApi.setWebhook(name, `${appUrl}/api/webhook`);
@@ -64,7 +64,11 @@ export async function GET(_req: Request, { params }: Params) {
       }
     }
 
-    const status = connectionState === 'CONNECTED' ? 'CONNECTED' : (qrCodeBase64 ? 'DISCONNECTED' : 'INITIALIZING');
+    if (qrCodeBase64 && !qrCodeBase64.startsWith('data:')) {
+      qrCodeBase64 = `data:image/png;base64,${qrCodeBase64}`;
+    }
+
+    const status = connectionState === 'CONNECTED' ? 'CONNECTED' : (connectionState === 'INITIALIZING' ? 'INITIALIZING' : 'DISCONNECTED');
 
     // 2. Atualiza no banco local
     const updatedInst = await prisma.whatsAppInstance.update({

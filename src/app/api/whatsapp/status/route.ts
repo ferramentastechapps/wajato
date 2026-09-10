@@ -31,7 +31,7 @@ export async function GET() {
       where: { name: INSTANCE_NAME },
     });
 
-    let status = connectionState === 'CONNECTED' ? 'CONNECTED' : (qrCodeBase64 ? 'DISCONNECTED' : 'INITIALIZING');
+    let status: 'CONNECTED' | 'INITIALIZING' | 'DISCONNECTED' = connectionState === 'CONNECTED' ? 'CONNECTED' : (connectionState === 'INITIALIZING' ? 'INITIALIZING' : 'DISCONNECTED');
     let updatedAt = new Date();
 
     if (existingInstance) {
@@ -43,21 +43,21 @@ export async function GET() {
           updatedAt,
         },
       });
-    } else {
-      // Se a instância principal padrão foi excluída pelo usuário,
-      // verificamos se há algum outro chip cadastrado conectado ou inicializando no banco local
-      const activeConnected = await prisma.whatsAppInstance.findFirst({
-        where: { status: 'CONNECTED' },
-      });
+    }
 
-      if (activeConnected) {
-        status = 'CONNECTED';
-      } else {
-        const activeInitializing = await prisma.whatsAppInstance.findFirst({
-          where: { status: 'INITIALIZING' },
-        });
-        status = activeInitializing ? 'INITIALIZING' : 'DISCONNECTED';
-      }
+    // Verifica o estado global de todas as instâncias cadastradas:
+    // Se houver qualquer instância conectada, o cabeçalho mostra CONECTADO.
+    const activeConnected = await prisma.whatsAppInstance.findFirst({
+      where: { status: 'CONNECTED' },
+    });
+
+    if (activeConnected) {
+      status = 'CONNECTED';
+    } else {
+      const activeInitializing = await prisma.whatsAppInstance.findFirst({
+        where: { status: 'INITIALIZING' },
+      });
+      status = activeInitializing ? 'INITIALIZING' : 'DISCONNECTED';
     }
 
     return NextResponse.json({

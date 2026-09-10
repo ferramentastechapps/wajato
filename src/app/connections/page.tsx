@@ -30,7 +30,8 @@ import {
   Snowflake,
   BookOpen,
   Info,
-  Edit3
+  Edit3,
+  QrCode
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -398,7 +399,22 @@ export default function ConnectionsPage() {
   const fetchInstances = async () => {
     try {
       const res = await fetch('/api/whatsapp/instances');
-      if (res.ok) setInstances(await res.json());
+      if (res.ok) {
+        const data: Instance[] = await res.json();
+        // Mantém a ordem visual dos cards estável para nunca pularem de lugar na tela
+        setInstances(prev => {
+          if (prev.length === 0) {
+            return [...data].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+          }
+          const orderMap = new Map(prev.map((inst, index) => [inst.name, index]));
+          return [...data].sort((a, b) => {
+            const indexA = orderMap.has(a.name) ? orderMap.get(a.name)! : 9999;
+            const indexB = orderMap.has(b.name) ? orderMap.get(b.name)! : 9999;
+            if (indexA !== indexB) return indexA - indexB;
+            return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+          });
+        });
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -939,15 +955,15 @@ export default function ConnectionsPage() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
                         <span style={{
                           width: 6, height: 6,
-                          background: isConnected ? '#10b981' : isInitializing ? '#f59e0b' : '#ef4444',
+                          background: isConnected ? '#10b981' : inst.qrCode ? '#3b82f6' : isInitializing ? '#f59e0b' : '#ef4444',
                           borderRadius: '50%',
                           animation: isInitializing ? 'pulse 1.2s infinite' : 'none',
                         }} />
                         <span style={{
                           fontSize: '0.68rem', fontWeight: 700,
-                          color: isConnected ? '#10b981' : isInitializing ? '#f59e0b' : '#ef4444',
+                          color: isConnected ? '#10b981' : inst.qrCode ? '#3b82f6' : isInitializing ? '#f59e0b' : '#ef4444',
                         }}>
-                          {isConnected ? 'ONLINE' : isInitializing ? 'GERANDO...' : 'DESCONECTADO'}
+                          {isConnected ? 'ONLINE' : inst.qrCode ? 'AGUARDANDO LEITURA' : isInitializing ? 'CONECTANDO...' : 'DESCONECTADO'}
                         </span>
                       </div>
 
@@ -1436,11 +1452,37 @@ export default function ConnectionsPage() {
                                 QR Code Ativo! Escaneie no WhatsApp.
                               </div>
                             </div>
+                          ) : isActLoading ? (
+                            <div style={{ textAlign: 'center', padding: '1rem 0' }}>
+                              <div style={{ width: '28px', height: '28px', border: '3px solid rgba(255,255,255,0.1)', borderTopColor: '#10b981', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 0.6rem' }} />
+                              <div style={{ fontSize: '0.75rem', color: '#10b981', fontWeight: 600 }}>
+                                Gerando QR Code...
+                              </div>
+                              <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.4)', marginTop: '2px' }}>
+                                Aguarde um instante
+                              </div>
+                            </div>
                           ) : (
                             <div style={{ textAlign: 'center', padding: '1rem 0' }}>
-                              <div style={{ width: '24px', height: '24px', border: '3px solid rgba(255,255,255,0.1)', borderTopColor: '#10b981', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 0.5rem' }} />
-                              <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.4)' }}>
-                                Clique em &quot;Gerar QR Code&quot; abaixo.
+                              <div style={{
+                                width: '48px',
+                                height: '48px',
+                                borderRadius: '12px',
+                                background: 'rgba(255,255,255,0.03)',
+                                border: '1px dashed rgba(255,255,255,0.15)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                margin: '0 auto 0.6rem',
+                                color: 'rgba(255,255,255,0.35)'
+                              }}>
+                                <QrCode size={24} />
+                              </div>
+                              <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.6)', fontWeight: 600 }}>
+                                QR Code não gerado
+                              </div>
+                              <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.4)', marginTop: '2px' }}>
+                                Clique em &quot;Gerar QR Code&quot; abaixo para conectar
                               </div>
                             </div>
                           )}
@@ -1605,7 +1647,7 @@ export default function ConnectionsPage() {
                       disabled={isActLoading || isPairLoading}
                     >
                       <RefreshCw size={13} className={(isActLoading || isPairLoading) ? 'spin' : ''} />
-                      {(isActLoading || isPairLoading) ? 'Gerando...' : (currentTab === 'qr' ? 'Gerar QR Code' : 'Gerar Código')}
+                      {(isActLoading || isPairLoading) ? 'Gerando...' : (currentTab === 'qr' ? (inst.qrCode ? 'Atualizar QR Code' : 'Gerar QR Code') : 'Gerar Código')}
                     </button>
                   )}
 

@@ -42,9 +42,9 @@ export async function GET() {
       }
     }
 
-    // 2. Busca instâncias no banco de dados local
+    // 2. Busca instâncias no banco de dados local com ordenação estável por nome
     const dbInstances = await prisma.whatsAppInstance.findMany({
-      orderBy: { updatedAt: 'desc' },
+      orderBy: { name: 'asc' },
     });
 
     // 3. Atualiza / Sincroniza em segundo plano cada instância que está no banco local
@@ -65,9 +65,10 @@ export async function GET() {
           // independente do motivo de desconexão anterior.
           if (apiInst.connectionStatus === 'open') {
             status = 'CONNECTED';
+          } else if (apiInst.connectionStatus === 'connecting') {
+            status = 'INITIALIZING';
           } else {
-            // Só usa o código de desconexão para classificar estados não-'open'
-            status = qrCode ? 'DISCONNECTED' : 'INITIALIZING';
+            status = 'DISCONNECTED';
           }
           
           if (apiInst.ownerJid) {
