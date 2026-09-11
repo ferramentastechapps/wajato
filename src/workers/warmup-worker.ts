@@ -454,29 +454,32 @@ export const warmupWorker = new Worker(
       const recentTopics = logs.slice(-3).map(l => l.message.substring(0, 30));
       const topic = currentTopic || selectConversationTopic(recentTopics);
 
-      // Se a última mensagem foi nossa e não é a primeira mensagem do dia, não enviamos nada
-      if (lastLog && lastLog.fromInstance === sourceInstance && !isFirstMessageOfDay) {
-        console.log(`[Warmup Worker] A última mensagem foi nossa (${sourceInstance}). Aguardando resposta do destinatário ${targetPhone}. Reagendando.`);
-        
-        let meanDelay = 1.5 * 60 * 60 * 1000; // 1.5 horas
-        let stdDevDelay = 20 * 60 * 1000;     // 20 minutos
-        if (campaign.isGroup) {
-          meanDelay = 35 * 60 * 1000;         // 35 minutos para grupo
-          stdDevDelay = 10 * 60 * 1000;
-        }
+      // ── 8.1 Verificação em diálogo bidirecional ─────────────────────────────
+      // Considera apenas logs de mensagens enviadas com sucesso
+      const lastSentLog = logs.find(l => l.status === 'SENT');
 
-        await queueWarmupMessage(
-          {
-            campaignId,
-            sourceInstance,
-            targetPhone,
-            isFirstMessageOfDay: false,
-            currentTopic: topic,
-          },
-          meanDelay,
-          stdDevDelay
-        );
-        return;
+      if (campaign.targetInstance && lastSentLog && lastSentLog.fromInstance === sourceInstance && !isFirstMessageOfDay) {
+        // Em diálogo bidirecional, se a última mensagem enviada com sucesso foi nossa,
+        // a resposta deve vir da instância parceira.
+        const partnerInstance = sourceInstance === campaign.sourceInstance ? campaign.targetInstance : campaign.sourceInstance;
+        const partnerDb = await prisma.whatsAppInstance.findUnique({ where: { name: partnerInstance } });
+        const myDb = await prisma.whatsAppInstance.findUnique({ where: { name: sourceInstance } });
+
+        if (partnerDb && partnerDb.phone && myDb && myDb.phone) {
+          console.log(`[Warmup Worker] Bidirecional: Última mensagem foi de ${sourceInstance}. Agendando resposta da parceira ${partnerInstance}.`);
+          await queueWarmupMessage(
+            {
+              campaignId,
+              sourceInstance: partnerInstance,
+              targetPhone: myDb.phone,
+              isFirstMessageOfDay: false,
+              currentTopic: topic,
+            },
+            60000,
+            20000
+          );
+          return;
+        }
       }
 
       const history: ChatMessage[] = [...logs].reverse().map(log => ({
@@ -792,10 +795,15 @@ Dia ${campaign.currentDay} de conversa. Assunto: ${topic}`;
           await new Promise(r => setTimeout(r, 300 + Math.random() * 700));
         }
         
-        messageText = await generateNextWarmupMessage(personaContext, history, topic);
+        try {
+          messageText = await generateNextWarmupMessage(personaContext, history, topic);
+        } catch (genErr: any) {
+          console.warn('[Warmup Worker] Falha ao gerar texto com IA, usando fallback:', genErr?.message);
+          messageText = isNamoro ? 'Oi vida, tudo bem com vc? ❤️' : 'Opa, tudo bem? Como tão as coisas?';
+        }
         typingDelay = calculateTypingDelay(messageText);
 
-        console.log(`[Warmup Worker] Texto gerado: "${messageText.substring(0, 50)}..." | Typing: ${Math.round(typingDelay / 1000)}s`);
+        console.log(`[Warmup Worker] Texto pronto para envio: "${messageText.substring(0, 50)}..." | Typing: ${Math.round(typingDelay / 1000)}s`);
 
         // Simular digitação ANTES de enviar
         await new Promise(r => setTimeout(r, typingDelay));

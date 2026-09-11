@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { queueWarmupMessage } from '@/lib/warmup-queue';
 import { getRampUpTarget, calculateHeatScore, allocateDailyQuota } from '@/lib/warmup-schedule';
+import { evolutionApi } from '@/lib/evolution';
 
 export async function GET() {
   try {
@@ -127,13 +128,32 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Nenhum telefone de destino válido fornecido' }, { status: 400 });
     }
 
-    // Validações
+    // Validações de horário e metas
     if (startHour < 0 || startHour > 23 || endHour < 1 || endHour > 23 || startHour >= endHour) {
       return NextResponse.json({ error: 'Horários inválidos' }, { status: 400 });
     }
 
     if (initialMsgsPerDay < 1 || initialMsgsPerDay > 50) {
       return NextResponse.json({ error: 'initialMsgsPerDay deve ser entre 1 e 50' }, { status: 400 });
+    }
+
+    // Valida se as instâncias participantes estão realmente conectadas no WhatsApp
+    const sourceState = await evolutionApi.getConnectionState(sourceInstance);
+    if (sourceState !== 'CONNECTED') {
+      return NextResponse.json(
+        { error: `A instância de origem "${sourceInstance}" não está conectada ao WhatsApp (status: ${sourceState}). Por favor, reconecte-a na aba Conexões.` },
+        { status: 400 }
+      );
+    }
+
+    if (targetInstance) {
+      const targetState = await evolutionApi.getConnectionState(targetInstance);
+      if (targetState !== 'CONNECTED') {
+        return NextResponse.json(
+          { error: `A instância parceira "${targetInstance}" não está conectada ao WhatsApp (status: ${targetState}). Por favor, reconecte-a na aba Conexões.` },
+          { status: 400 }
+        );
+      }
     }
 
     const firstDayTarget = getRampUpTarget(1, initialMsgsPerDay, maxMsgsPerDay);

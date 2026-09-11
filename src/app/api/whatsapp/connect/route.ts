@@ -5,7 +5,7 @@ import { prisma } from '@/lib/prisma';
 
 const INSTANCE_NAME = process.env.EVOLUTION_INSTANCE_NAME || 'wajato-session';
 
-// GET — Lista todas as instâncias cadastradas (para o dropdown no CreateWarmupModal)
+// GET — Lista e sincroniza todas as instâncias cadastradas (para o dropdown no CreateWarmupModal)
 export async function GET() {
   try {
     const instances = await prisma.whatsAppInstance.findMany({
@@ -20,7 +20,25 @@ export async function GET() {
         warmupStage: true,
       },
     });
-    return NextResponse.json(instances);
+
+    // Sincroniza em paralelo com a Evolution API para refletir o status real do socket
+    const synced = await Promise.all(
+      instances.map(async (inst) => {
+        try {
+          const liveState = await evolutionApi.getConnectionState(inst.name);
+          if (liveState !== inst.status) {
+            await prisma.whatsAppInstance.updateMany({
+              where: { name: inst.name },
+              data: { status: liveState },
+            });
+            return { ...inst, status: liveState };
+          }
+        } catch {}
+        return inst;
+      })
+    );
+
+    return NextResponse.json(synced);
   } catch (error: any) {
     return NextResponse.json({ instances: [] }, { status: 200 });
   }

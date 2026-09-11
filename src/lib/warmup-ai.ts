@@ -52,8 +52,7 @@ export const WARMUP_AUDIO_URLS = [
   // Mzstatic/CDN público
   'https://cdn.freesound.org/previews/28/28693_236757-lq.ogg',
   'https://cdn.freesound.org/previews/66/66717_931655-lq.ogg',
-  // OpenGameArt — OGG nativos
-  'https://opengameart.org/sites/default/files/audio_preview/level-up-47pass.ogg',
+  // OpenGameArt removido devido a instabilidade e erro 500 no stream
   // Vorbis.com — samples oficiais do codec
   'https://www.vorbis.com/music/Hydrate-Kenny_Beltrey.ogg',
 ];
@@ -430,10 +429,16 @@ RETORNE APENAS A MENSAGEM. Sem aspas, sem prefixo, sem explicação, sem HTML.`;
             : `Responda à última mensagem de forma casual e curta. Máximo 2 frases.`);
 
       const url = isGroq ? 'https://api.groq.com/openai/v1/chat/completions' : 'https://openrouter.ai/api/v1/chat/completions';
-      // Aquecimento: modelo primário gratuito + fallback gratuito
-      const WARMUP_PRIMARY_MODEL = 'cohere/north-mini-code:free';
-      const WARMUP_FALLBACK_MODEL = 'poolside/laguna-xs-2.1:free';
-      const modelName = isGroq ? 'llama-3.1-8b-instant' : WARMUP_PRIMARY_MODEL;
+      
+      const candidateModels = isGroq
+        ? ['llama-3.1-8b-instant', 'llama-3.3-70b-versatile']
+        : [
+            'google/gemini-2.0-flash-exp:free',
+            'meta-llama/llama-3.3-70b-instruct:free',
+            'meta-llama/llama-3.1-8b-instruct:free',
+            'mistralai/mistral-small-24b-instruct-2501:free',
+            'qwen/qwen-2.5-72b-instruct:free',
+          ];
 
       const headers: Record<string, string> = {
         'Authorization': `Bearer ${apiKey}`,
@@ -456,25 +461,43 @@ RETORNE APENAS A MENSAGEM. Sem aspas, sem prefixo, sem explicação, sem HTML.`;
           { role: 'user', content: prompt }
         ],
         temperature: 0.9,
-        max_tokens: 80, // Fixado em 80 para evitar respostas longas com HTML/markdown
+        max_tokens: 120,
       });
 
-      let response = await fetch(url, { method: 'POST', headers, body: requestBody(modelName) });
+      let content: string | null = null;
+      let lastApiError: string = '';
 
-      // Fallback automático para modelo secundário gratuito se o primário falhar
-      if (!response.ok && isOpenRouter) {
-        console.warn(`[Warmup AI] Modelo primário ${modelName} falhou (${response.status}), tentando fallback: ${WARMUP_FALLBACK_MODEL}`);
-        response = await fetch(url, { method: 'POST', headers, body: requestBody(WARMUP_FALLBACK_MODEL) });
+      for (const modelName of candidateModels) {
+        try {
+          const response = await fetch(url, { method: 'POST', headers, body: requestBody(modelName) });
+          const data = await response.json();
+          if (!response.ok) {
+            console.warn(`[Warmup AI] Modelo ${modelName} retornou status ${response.status}:`, data?.error?.message || data);
+            lastApiError = data?.error?.message || `Status ${response.status}`;
+            continue;
+          }
+
+          const rawContent = data.choices?.[0]?.message?.content;
+          if (rawContent && typeof rawContent === 'string' && rawContent.trim()) {
+            content = rawContent;
+            break;
+          }
+
+          // Se o modelo usou reasoning/pensamento e deixou content nulo
+          const reasoning = data.choices?.[0]?.message?.reasoning;
+          if (reasoning && typeof reasoning === 'string') {
+            console.warn(`[Warmup AI] Modelo ${modelName} retornou reasoning mas content vazio. Tentando próximo modelo.`);
+          }
+        } catch (mErr: any) {
+          console.warn(`[Warmup AI] Erro ao chamar modelo ${modelName}:`, mErr?.message);
+          lastApiError = mErr?.message || String(mErr);
+        }
       }
 
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error?.message || `Erro na chamada da API (${response.status})`);
-      }
-      const content = data.choices?.[0]?.message?.content;
       if (!content) {
-        throw new Error(JSON.stringify(data.error || data) || 'Resposta vazia do OpenRouter/Groq.');
+        throw new Error(lastApiError || 'Nenhum dos modelos candidatos retornou texto válido.');
       }
+
       const cleanedContent = sanitizeAIMessage(String(content), historyHasFeriado);
       if (!cleanedContent) {
         throw new Error('Mensagem vazia após sanitização.');
