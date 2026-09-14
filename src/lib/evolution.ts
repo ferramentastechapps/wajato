@@ -2,8 +2,8 @@ import axios from 'axios';
 import { prisma } from './prisma';
 import { sentMessagesCache } from './sent-messages-cache';
 
-const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://localhost:8080';
-const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || '';
+const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://localhost:8082';
+const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || 'wajato_global_api_key_5544';
 
 const evolutionClient = axios.create({
   baseURL: EVOLUTION_API_URL,
@@ -97,35 +97,82 @@ export function extractEvolutionError(error: any, defaultMsg: string): string {
 
 export const evolutionApi = {
   /**
-   * Cria uma nova instância de conexão no Evolution API.
+   * Gera um token determinístico para a instância no Evolution Go
+   */
+  getInstanceToken(instanceName: string): string {
+    const safeName = String(instanceName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    return `wajato_token_${safeName}`;
+  },
+
+  /**
+   * Cria uma nova instância de conexão no Evolution API (compatível com Go e Node).
    * @param instanceName Nome da instância
    * @param qrcode Se true (padrão), gera QR code. Se false, usa modo pairing code.
    * @param number Número do telefone opcional (útil quando qrcode = false)
    */
   async createInstance(instanceName: string, qrcode: boolean = true, number?: string): Promise<CreateInstanceResponse> {
+    const token = this.getInstanceToken(instanceName);
     try {
       const payload: any = {
+        name: instanceName,
         instanceName,
+        token,
         qrcode,
         integration: 'WHATSAPP-BAILEYS',
       };
       if (number) {
         payload.number = this.formatPhone(number);
+        payload.phone = this.formatPhone(number);
       }
-      const response = await evolutionClient.post<CreateInstanceResponse>('/instance/create', payload);
-      return response.data;
+      const response = await evolutionClient.post<any>('/instance/create', payload);
+      const data = response.data;
+      return {
+        instance: {
+          instanceName: data?.data?.name || data?.instance?.instanceName || instanceName,
+          status: data?.data?.connected ? 'connected' : 'created',
+        },
+        hash: {
+          apikey: token,
+        },
+        qrcode: data?.data?.qrcode ? {
+          base64: data?.data?.qrcode,
+        } : data?.qrcode,
+      };
     } catch (error: any) {
       console.error(`Erro ao criar instância ${instanceName}:`, error?.response?.data || error.message);
-      throw new Error(error?.response?.data?.message || 'Falha ao criar instância no Evolution API');
+      throw new Error(error?.response?.data?.message || error?.response?.data?.error || 'Falha ao criar instância no Evolution API');
     }
   },
 
 
   /**
-   * Busca a lista de todas as instâncias no Evolution API
+   * Busca a lista de todas as instâncias no Evolution API (suporta Go /instance/all e Node /instance/fetchInstances)
    */
   async fetchInstances(): Promise<any[]> {
     try {
+      // 1. Tenta rota do Evolution Go (/instance/all)
+      try {
+        const goRes = await evolutionClient.get('/instance/all');
+        const list = goRes.data?.data;
+        if (Array.isArray(list)) {
+          return list.map((inst: any) => ({
+            id: inst.id || inst.name,
+            name: inst.name,
+            connectionStatus: inst.connected ? 'open' : (inst.qrcode ? 'connecting' : 'close'),
+            ownerJid: inst.jid || null,
+            profileName: inst.name,
+            profilePicUrl: inst.profilePicUrl || null,
+            qrcode: inst.qrcode ? { base64: inst.qrcode } : undefined,
+            token: inst.token || this.getInstanceToken(inst.name),
+            _count: { Message: 0, Contact: 0, Chat: 0 },
+            raw: inst,
+          }));
+        }
+      } catch (goErr: any) {
+        // Se der 404, cai no fallback de Evolution Node
+      }
+
+      // 2. Fallback para Evolution API v2 tradicional (Node.js)
       const response = await evolutionClient.get('/instance/fetchInstances');
       return Array.isArray(response.data) ? response.data : [];
     } catch (error: any) {
@@ -138,7 +185,22 @@ export const evolutionApi = {
    * Obtém o QR Code atual para conexão
    */
   async getQRCode(instanceName: string): Promise<{ base64?: string; code?: string; count?: number }> {
+    const token = this.getInstanceToken(instanceName);
     try {
+      // 1. Tenta rota do Evolution Go (/instance/qr)
+      try {
+        const goRes = await evolutionClient.get('/instance/qr', {
+          headers: { apikey: token },
+        });
+        const data = goRes.data?.data;
+        if (data?.qrcode) {
+          return { base64: data.qrcode, code: data.code };
+        }
+      } catch (goErr: any) {
+        // Fallback
+      }
+
+      // 2. Fallback Evolution Node (/instance/connect/:instanceName)
       const response = await evolutionClient.get(`/instance/connect/${instanceName}`);
       return response.data;
     } catch (error: any) {
@@ -151,15 +213,30 @@ export const evolutionApi = {
    * Obtém o código de pareamento (Pairing Code) para a instância e telefone
    */
   async getPairingCode(instanceName: string, phone: string): Promise<{ code: string }> {
+    const formattedPhone = this.formatPhone(phone);
+    const token = this.getInstanceToken(instanceName);
+
+    // 1. Tenta Evolution Go: POST /instance/pair com apikey: token
     try {
-      const formattedPhone = this.formatPhone(phone);
-      // Na Evolution API v2, o endpoint de conexão com a query ?number retorna o pairingCode no JSON
+      const goRes = await evolutionClient.post(
+        '/instance/pair',
+        { phone: formattedPhone },
+        { headers: { apikey: token } }
+      );
+      const pairCode = goRes.data?.data?.PairingCode || goRes.data?.PairingCode;
+      if (pairCode && typeof pairCode === 'string') {
+        return { code: pairCode.trim() };
+      }
+    } catch (goErr: any) {
+      // Fallback
+    }
+
+    // 2. Fallback Evolution Node v2: GET /instance/connect/:instanceName?number=...
+    try {
       const response = await evolutionClient.get(`/instance/connect/${instanceName}`, {
         params: { number: formattedPhone },
       });
 
-      // Busca um código de pareamento legítimo (ex: 8-10 caracteres, ex: ABCD-1234 ou 12345678)
-      // NUNCA aceita a string 'code' do QR Code que é um Base64 longo (ex: hVluBG4t5Fy...)
       const rawCandidates = [
         response.data?.pairingCode,
         response.data?.qrcode?.pairingCode,
@@ -170,22 +247,29 @@ export const evolutionApi = {
         (c) => typeof c === 'string' && c.trim().length >= 6 && c.trim().length <= 12 && !c.includes('+') && !c.includes('/') && !c.includes('@')
       );
 
-      if (!validCode) {
-        throw new Error('Evolution API não retornou um pairingCode válido (apenas QR Code base64 disponível)');
+      if (validCode) {
+        return { code: validCode.trim() };
       }
-
-      return { code: validCode.trim() };
-    } catch (error: any) {
-      console.error(`Erro ao buscar Pairing Code para ${instanceName}:`, error?.response?.data || error.message);
-      throw new Error(error?.response?.data?.message || error.message || 'Falha ao obter código de pareamento');
+    } catch (nodeErr: any) {
+      console.error(`Erro ao buscar Pairing Code para ${instanceName}:`, nodeErr?.response?.data || nodeErr.message);
     }
+
+    throw new Error('Evolution API não retornou um pairingCode válido');
   },
 
   /**
    * Desconecta o WhatsApp da instância
    */
   async logoutInstance(instanceName: string): Promise<void> {
+    const token = this.getInstanceToken(instanceName);
     try {
+      try {
+        await evolutionClient.delete('/instance/logout', {
+          headers: { apikey: token },
+        });
+        return;
+      } catch (e) {}
+
       await evolutionClient.delete(`/instance/logout/${instanceName}`);
     } catch (error: any) {
       console.error(`Erro ao deslogar ${instanceName}:`, error?.response?.data || error.message);
@@ -198,6 +282,11 @@ export const evolutionApi = {
    */
   async deleteInstance(instanceName: string): Promise<void> {
     try {
+      try {
+        await evolutionClient.delete(`/instance/delete/${instanceName}`);
+        return;
+      } catch (e) {}
+
       await evolutionClient.delete(`/instance/delete/${instanceName}`);
     } catch (error: any) {
       console.error(`Erro ao excluir ${instanceName}:`, error?.response?.data || error.message);
@@ -209,17 +298,31 @@ export const evolutionApi = {
    * Verifica o status da conexão da instância
    */
   async getConnectionState(instanceName: string): Promise<'CONNECTED' | 'INITIALIZING' | 'DISCONNECTED'> {
+    const token = this.getInstanceToken(instanceName);
     try {
+      // 1. Tenta Evolution Go (/instance/status com token da instância)
+      try {
+        const goRes = await evolutionClient.get('/instance/status', {
+          headers: { apikey: token },
+        });
+        const data = goRes.data?.data;
+        if (data) {
+          if (data.LoggedIn) return 'CONNECTED';
+          if (data.Connected) return 'INITIALIZING';
+          return 'DISCONNECTED';
+        }
+      } catch (goErr: any) {
+        // Fallback
+      }
+
+      // 2. Fallback Evolution Node (/instance/connectionState/:instanceName)
       const response = await evolutionClient.get<ConnectionStateResponse>(`/instance/connectionState/${instanceName}`);
       const state = response.data?.instance?.state;
       
-      // IMPORTANTE: disconnectionReasonCode é HISTÓRICO e não deve sobrescrever o estado atual.
-      // Se a Evolution API reporta 'open', a instância ESTÁ conectada — ponto final.
       if (state === 'open') return 'CONNECTED';
       if (state === 'connecting') return 'INITIALIZING';
       return 'DISCONNECTED';
     } catch (error: any) {
-      // Se der erro 404 ou similar, significa que a instância não existe
       if (error?.response?.status === 404) {
         return 'DISCONNECTED';
       }
@@ -232,8 +335,33 @@ export const evolutionApi = {
    * Envia uma mensagem de texto simples
    */
   async sendTextMessage(instanceName: string, phone: string, text: string, delay: number = 1200): Promise<any> {
+    const formattedPhone = this.formatPhone(phone);
+    const token = this.getInstanceToken(instanceName);
+
     try {
-      const formattedPhone = this.formatPhone(phone);
+      // 1. Tenta Evolution Go (POST /send/text com apikey: token)
+      try {
+        const goRes = await evolutionClient.post(
+          '/send/text',
+          {
+            number: formattedPhone,
+            text: text,
+          },
+          {
+            headers: { apikey: token },
+          }
+        );
+        await registerSentMessage(goRes.data);
+        return goRes.data;
+      } catch (goErr: any) {
+        // Se for erro de validação ou erro de envio real do WhatsApp, extrai e lança
+        if (goErr?.response?.status && goErr?.response?.status !== 404) {
+          const errMsg = extractEvolutionError(goErr, 'Falha ao enviar mensagem de texto');
+          throw new Error(errMsg);
+        }
+      }
+
+      // 2. Fallback Evolution Node (/message/sendText/:instanceName)
       const response = await evolutionClient.post(`/message/sendText/${instanceName}`, {
         number: formattedPhone,
         text: text,
@@ -261,17 +389,41 @@ export const evolutionApi = {
     mediaType: 'image' | 'video' | 'audio' | 'document',
     caption?: string
   ): Promise<any> {
-    try {
-      const formattedPhone = this.formatPhone(phone);
-      
-      // Converte URLs relativas (/api/uploads/...) em URLs públicas absolutas
-      let finalMediaUrl = mediaUrl;
-      if (finalMediaUrl.startsWith('/')) {
-        const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://wajato.ftech-apps.com.br').replace(/\/$/, '');
-        finalMediaUrl = `${baseUrl}${finalMediaUrl}`;
-      }
+    const formattedPhone = this.formatPhone(phone);
+    const token = this.getInstanceToken(instanceName);
 
-      // Determina o nome do arquivo padrão com base no tipo e extensão
+    // Converte URLs relativas (/api/uploads/...) em URLs públicas absolutas
+    let finalMediaUrl = mediaUrl;
+    if (finalMediaUrl.startsWith('/')) {
+      const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://wajato.ftech-apps.com.br').replace(/\/$/, '');
+      finalMediaUrl = `${baseUrl}${finalMediaUrl}`;
+    }
+
+    // 1. Tenta Evolution Go (POST /send/media com apikey: token)
+    try {
+      const goRes = await evolutionClient.post(
+        '/send/media',
+        {
+          number: formattedPhone,
+          url: finalMediaUrl,
+          mediaType: mediaType,
+          caption: caption || '',
+        },
+        {
+          headers: { apikey: token },
+        }
+      );
+      await registerSentMessage(goRes.data);
+      return goRes.data;
+    } catch (goErr: any) {
+      if (goErr?.response?.status && goErr?.response?.status !== 404) {
+        const errMsg = extractEvolutionError(goErr, 'Falha ao enviar mídia');
+        throw new Error(errMsg);
+      }
+    }
+
+    // 2. Fallback Evolution Node (/message/sendMedia/:instanceName)
+    try {
       let fileName = 'file';
       if (mediaType === 'image') {
         fileName = finalMediaUrl.includes('.webp') ? 'image.webp' : (finalMediaUrl.includes('.png') ? 'image.png' : 'image.jpg');
@@ -288,7 +440,7 @@ export const evolutionApi = {
         mediatype: mediaType,
         media: finalMediaUrl,
         caption: caption || '',
-        fileName: fileName
+        fileName: fileName,
       });
       await registerSentMessage(response.data);
       return response.data;
@@ -322,6 +474,11 @@ export const evolutionApi = {
         }
       });
     } catch (error: any) {
+      if (error?.response?.status === 404) {
+        // No Evolution Go, webhooks são globais ou desabilitados por padrão
+        console.warn(`[Evolution] Webhook não suportado ou configurado de forma estática para ${instanceName}.`);
+        return;
+      }
       console.error(`Erro ao configurar webhook para ${instanceName}:`, error?.response?.data || error.message);
       throw new Error(error?.response?.data?.message || 'Falha ao configurar webhook');
     }
@@ -331,8 +488,28 @@ export const evolutionApi = {
    * Envia uma reação (emoji) a uma mensagem específica
    */
   async sendReaction(instanceName: string, phone: string, messageId: string, reaction: string): Promise<any> {
+    const formattedPhone = this.formatPhone(phone);
+    const token = this.getInstanceToken(instanceName);
+
     try {
-      const formattedPhone = this.formatPhone(phone);
+      // 1. Tenta Evolution Go (POST /message/react)
+      try {
+        const goRes = await evolutionClient.post(
+          '/message/react',
+          {
+            number: formattedPhone,
+            id: messageId,
+            reaction,
+            fromMe: false,
+          },
+          { headers: { apikey: token } }
+        );
+        return goRes.data;
+      } catch (goErr: any) {
+        // Fallback
+      }
+
+      // 2. Fallback Evolution Node
       const response = await evolutionClient.post(`/message/sendReaction/${instanceName}`, {
         key: {
           remoteJid: `${formattedPhone}@s.whatsapp.net`,
@@ -352,8 +529,26 @@ export const evolutionApi = {
    * Marca mensagens de um chat como lidas (simula abertura do chat)
    */
   async markAsRead(instanceName: string, phone: string): Promise<void> {
+    const formattedPhone = this.formatPhone(phone);
+    const token = this.getInstanceToken(instanceName);
+
     try {
-      const formattedPhone = this.formatPhone(phone);
+      // 1. Tenta Evolution Go (POST /message/markread)
+      try {
+        await evolutionClient.post(
+          '/message/markread',
+          {
+            number: formattedPhone,
+            id: ['all'],
+          },
+          { headers: { apikey: token } }
+        );
+        return;
+      } catch (goErr: any) {
+        // Fallback
+      }
+
+      // 2. Fallback Evolution Node
       await evolutionClient.post(`/chat/markMessageAsRead/${instanceName}`, {
         readMessages: [
           {
@@ -375,8 +570,34 @@ export const evolutionApi = {
    * Presença "recording" é enviada antes para máxima humanização.
    */
   async sendAudioUrl(instanceName: string, phone: string, audioUrl: string): Promise<any> {
+    const formattedPhone = this.formatPhone(phone);
+    const token = this.getInstanceToken(instanceName);
+
+    // Converte URLs relativas em URLs públicas absolutas
+    let finalAudioUrl = audioUrl;
+    if (finalAudioUrl.startsWith('/')) {
+      const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://wajato.ftech-apps.com.br').replace(/\/$/, '');
+      finalAudioUrl = `${baseUrl}${finalAudioUrl}`;
+    }
+
     try {
-      const formattedPhone = this.formatPhone(phone);
+      // 1. Tenta Evolution Go (POST /send/media com mediaType: audio)
+      try {
+        const goRes = await evolutionClient.post(
+          '/send/media',
+          {
+            number: formattedPhone,
+            url: finalAudioUrl,
+            mediaType: 'audio',
+          },
+          { headers: { apikey: token } }
+        );
+        await registerSentMessage(goRes.data);
+        return goRes.data;
+      } catch (goErr: any) {
+        // Fallback
+      }
+
       // Primeiro: sinaliza que está "gravando" (aumenta humanização)
       try {
         await evolutionClient.post(`/chat/presence/${instanceName}`, {
@@ -388,7 +609,7 @@ export const evolutionApi = {
       // Endpoint dedicado de áudio PTT da Evolution API
       const response = await evolutionClient.post(`/message/sendWhatsAppAudio/${instanceName}`, {
         number: formattedPhone,
-        audio: audioUrl,
+        audio: finalAudioUrl,
         options: {
           encoding: true, // force re-encode para garantir OPUS
           delay: 1000,
@@ -399,11 +620,10 @@ export const evolutionApi = {
     } catch (error: any) {
       // Fallback: sendMedia com mimetype opus (método antigo)
       try {
-        const formattedPhone = this.formatPhone(phone);
         const response = await evolutionClient.post(`/message/sendMedia/${instanceName}`, {
           number: formattedPhone,
           mediatype: 'audio',
-          media: audioUrl,
+          media: finalAudioUrl,
           mimetype: 'audio/ogg; codecs=opus',
           ptt: true,
           options: { presence: 'recording', delay: 1500 }
@@ -422,12 +642,38 @@ export const evolutionApi = {
    * Envia um sticker via URL (.webp)
    */
   async sendSticker(instanceName: string, phone: string, stickerUrl: string): Promise<any> {
+    const formattedPhone = this.formatPhone(phone);
+    const token = this.getInstanceToken(instanceName);
+
+    // Converte URLs relativas em URLs públicas absolutas
+    let finalStickerUrl = stickerUrl;
+    if (finalStickerUrl.startsWith('/')) {
+      const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://wajato.ftech-apps.com.br').replace(/\/$/, '');
+      finalStickerUrl = `${baseUrl}${finalStickerUrl}`;
+    }
+
     try {
-      const formattedPhone = this.formatPhone(phone);
+      // 1. Tenta Evolution Go (POST /send/sticker)
+      try {
+        const goRes = await evolutionClient.post(
+          '/send/sticker',
+          {
+            number: formattedPhone,
+            sticker: finalStickerUrl,
+          },
+          { headers: { apikey: token } }
+        );
+        await registerSentMessage(goRes.data);
+        return goRes.data;
+      } catch (goErr: any) {
+        // Fallback
+      }
+
+      // 2. Fallback Evolution Node
       const response = await evolutionClient.post(`/message/sendSticker/${instanceName}`, {
         number: formattedPhone,
         stickerMessage: {
-          image: stickerUrl,
+          image: finalStickerUrl,
         },
       });
       await registerSentMessage(response.data);
@@ -444,7 +690,25 @@ export const evolutionApi = {
    * CORREÇÃO: statusJidList deve conter JIDs completos com @s.whatsapp.net.
    */
   async sendStatusUpdate(instanceName: string, text: string, statusType: 'text' | 'image' | 'video' = 'text', targetPhone?: string, mediaUrl?: string): Promise<any> {
+    const token = this.getInstanceToken(instanceName);
+
     try {
+      // 1. Tenta Evolution Go
+      if (statusType === 'text') {
+        try {
+          const goRes = await evolutionClient.post(
+            '/send/status/text',
+            { text },
+            { headers: { apikey: token } }
+          );
+          await registerSentMessage(goRes.data);
+          return goRes.data;
+        } catch (goErr: any) {
+          // Fallback
+        }
+      }
+
+      // 2. Fallback Evolution Node
       const cleanPhone = targetPhone ? targetPhone.replace(/\D/g, '') : '';
       
       let statusJidList: string[] = [];
