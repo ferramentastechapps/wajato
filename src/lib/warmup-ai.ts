@@ -258,8 +258,8 @@ export async function generateContextualEmoji(
     if (isGroq || isOpenRouter) {
       const url = isGroq ? 'https://api.groq.com/openai/v1/chat/completions' : 'https://openrouter.ai/api/v1/chat/completions';
       // Aquecimento: modelo primário gratuito + fallback gratuito
-      const WARMUP_PRIMARY_MODEL = 'cohere/north-mini-code:free';
-      const WARMUP_FALLBACK_MODEL = 'poolside/laguna-xs-2.1:free';
+      const WARMUP_PRIMARY_MODEL = 'nex-agi/nex-n2.5-pro:free';
+      const WARMUP_FALLBACK_MODEL = 'google/gemma-4-31b-it:free';
       const model = isGroq ? 'llama-3.1-8b-instant' : WARMUP_PRIMARY_MODEL;
       const headers: Record<string, string> = {
         'Authorization': `Bearer ${apiKey}`,
@@ -338,6 +338,10 @@ function sanitizeAIMessage(text: string, historyHasFeriado: boolean): string {
   clean = clean.replace(/\n{2,}/g, '\n');
   clean = clean.replace(/\s{2,}/g, ' ');
 
+  // 7. Remove qualquer declaração acidental de IA/robô
+  clean = clean.replace(/como sou uma (ia|intelig[eê]ncia artificial)[^.!?\n]*[.!?]?/gi, '');
+  clean = clean.replace(/sou uma (ia|intelig[eê]ncia artificial|modelo de linguagem)[^.!?\n]*[.!?]?/gi, '');
+
   return clean.trim();
 }
 
@@ -395,6 +399,7 @@ export async function generateNextWarmupMessage(
 
 Você está simulando uma conversa de WhatsApp casual e autêntica entre ${isNamoro ? 'um casal de namorados brasileiros em um relacionamento carinhoso' : 'dois amigos brasileiros'}.
 Seu objetivo é fazer o algoritmo do WhatsApp acreditar que isso é uma conversa REAL entre pessoas.
+NUNCA diga que é uma IA, robô ou assistente virtual. Responda sempre como uma pessoa real brasileira no WhatsApp.
 
 CONTEXTO TEMPORAL REAL — OBRIGATÓRIO:
 - Hoje é ${weekDayPT}${isWeekend ? ' (fim de semana)' : ' (dia útil)'}.
@@ -433,11 +438,10 @@ RETORNE APENAS A MENSAGEM. Sem aspas, sem prefixo, sem explicação, sem HTML.`;
       const candidateModels = isGroq
         ? ['llama-3.1-8b-instant', 'llama-3.3-70b-versatile']
         : [
-            'google/gemini-2.0-flash-exp:free',
-            'meta-llama/llama-3.3-70b-instruct:free',
-            'meta-llama/llama-3.1-8b-instruct:free',
-            'mistralai/mistral-small-24b-instruct-2501:free',
-            'qwen/qwen-2.5-72b-instruct:free',
+            'nex-agi/nex-n2.5-pro:free',
+            'google/gemma-4-31b-it:free',
+            'google/gemma-4-26b-a4b-it:free',
+            'nvidia/nemotron-3-ultra-550b-a55b:free',
           ];
 
       const headers: Record<string, string> = {
@@ -479,6 +483,11 @@ RETORNE APENAS A MENSAGEM. Sem aspas, sem prefixo, sem explicação, sem HTML.`;
 
           const rawContent = data.choices?.[0]?.message?.content;
           if (rawContent && typeof rawContent === 'string' && rawContent.trim()) {
+            // Se o modelo declarou ser uma IA, tenta o próximo modelo da lista
+            if (/sou uma ia|como uma ia|modelo de linguagem/i.test(rawContent)) {
+              console.warn(`[Warmup AI] Modelo ${modelName} gerou auto-identificação de IA. Tentando próximo modelo.`);
+              continue;
+            }
             content = rawContent;
             break;
           }
