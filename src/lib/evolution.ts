@@ -223,12 +223,13 @@ export const evolutionApi = {
         { phone: formattedPhone },
         { headers: { apikey: token } }
       );
-      const pairCode = goRes.data?.data?.PairingCode || goRes.data?.PairingCode;
+      console.log('[DEBUG getPairingCode Go Response]', JSON.stringify(goRes.data));
+      const pairCode = goRes.data?.data?.PairingCode || goRes.data?.PairingCode || goRes.data?.data?.pairingCode || goRes.data?.pairingCode;
       if (pairCode && typeof pairCode === 'string') {
         return { code: pairCode.trim() };
       }
     } catch (goErr: any) {
-      // Fallback
+      console.error('[DEBUG getPairingCode Go Error]', goErr?.response?.status, goErr?.response?.data || goErr?.message);
     }
 
     // 2. Fallback Evolution Node v2: GET /instance/connect/:instanceName?number=...
