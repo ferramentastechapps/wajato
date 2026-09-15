@@ -282,11 +282,28 @@ export const evolutionApi = {
    */
   async deleteInstance(instanceName: string): Promise<void> {
     try {
-      try {
+      // 1. Se for UUID, tenta deletar diretamente no Evolution Go
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(instanceName);
+      if (isUuid) {
         await evolutionClient.delete(`/instance/delete/${instanceName}`);
         return;
-      } catch (e) {}
+      }
 
+      // 2. Se for nome, busca o UUID correspondente na lista de instâncias do Evolution Go
+      try {
+        const instances = await this.fetchInstances();
+        const found = instances.find(
+          (i: any) => (i.name && i.name.toLowerCase() === instanceName.toLowerCase()) || i.id === instanceName
+        );
+        if (found?.id && found.id !== found.name) {
+          await evolutionClient.delete(`/instance/delete/${found.id}`);
+          return;
+        }
+      } catch (goErr) {
+        // Fallback
+      }
+
+      // 3. Fallback Evolution Node (aceita nome diretamente na URL)
       await evolutionClient.delete(`/instance/delete/${instanceName}`);
     } catch (error: any) {
       console.error(`Erro ao excluir ${instanceName}:`, error?.response?.data || error.message);
