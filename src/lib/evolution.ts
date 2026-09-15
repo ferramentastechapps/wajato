@@ -117,7 +117,7 @@ export const evolutionApi = {
         name: instanceName,
         instanceName,
         token,
-        qrcode,
+        qrcode: true, // No Evolution Go whatsmeow, qrcode: true inicializa o cliente e permite tanto QR quanto Pairing Code
         integration: 'WHATSAPP-BAILEYS',
       };
       if (number) {
@@ -139,6 +139,18 @@ export const evolutionApi = {
         } : data?.qrcode,
       };
     } catch (error: any) {
+      // Se a instância já existe no Evolution Go, retorna de forma idempotente
+      if (error?.response?.data?.error === 'instance already exists' || error?.response?.status === 409) {
+        return {
+          instance: {
+            instanceName,
+            status: 'created',
+          },
+          hash: {
+            apikey: token,
+          },
+        };
+      }
       console.error(`Erro ao criar instância ${instanceName}:`, error?.response?.data || error.message);
       throw new Error(error?.response?.data?.message || error?.response?.data?.error || 'Falha ao criar instância no Evolution API');
     }
@@ -189,6 +201,10 @@ export const evolutionApi = {
     try {
       // 1. Tenta rota do Evolution Go (/instance/qr)
       try {
+        try {
+          await this.createInstance(instanceName, true);
+        } catch (e) {}
+
         const goRes = await evolutionClient.get('/instance/qr', {
           headers: { apikey: token },
         });
@@ -197,7 +213,10 @@ export const evolutionApi = {
           return { base64: data.qrcode, code: data.code };
         }
       } catch (goErr: any) {
-        // Fallback
+        // Se ainda está iniciando o socket do WhatsApp (400), retorna count: 1 para o cliente continuar polling
+        if (goErr?.response?.status === 400) {
+          return { count: 1 };
+        }
       }
 
       // 2. Fallback Evolution Node (/instance/connect/:instanceName)
@@ -205,7 +224,7 @@ export const evolutionApi = {
       return response.data;
     } catch (error: any) {
       console.error(`Erro ao buscar QR Code para ${instanceName}:`, error?.response?.data || error.message);
-      throw new Error(error?.response?.data?.message || 'Falha ao obter QR Code');
+      return { count: 0 };
     }
   },
 
@@ -218,18 +237,25 @@ export const evolutionApi = {
 
     // 1. Tenta Evolution Go: POST /instance/pair com apikey: token
     try {
+      // Garante que a instância existe no Evolution Go antes de solicitar o código de pareamento
+      try {
+        await this.createInstance(instanceName, true);
+        await new Promise((r) => setTimeout(r, 1200));
+      } catch (e) {
+        // Já existe ou foi criada
+      }
+
       const goRes = await evolutionClient.post(
         '/instance/pair',
         { phone: formattedPhone },
         { headers: { apikey: token } }
       );
-      console.log('[DEBUG getPairingCode Go Response]', JSON.stringify(goRes.data));
       const pairCode = goRes.data?.data?.PairingCode || goRes.data?.PairingCode || goRes.data?.data?.pairingCode || goRes.data?.pairingCode;
       if (pairCode && typeof pairCode === 'string') {
         return { code: pairCode.trim() };
       }
     } catch (goErr: any) {
-      console.error('[DEBUG getPairingCode Go Error]', goErr?.response?.status, goErr?.response?.data || goErr?.message);
+      // Fallback
     }
 
     // 2. Fallback Evolution Node v2: GET /instance/connect/:instanceName?number=...
