@@ -2,6 +2,7 @@ import { prisma } from './prisma';
 import { evolutionApi } from './evolution';
 import { isWithinBusinessHours } from './warmup-schedule';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { isLunaProvider, callLunaChatCompletions } from './luna-ai';
 import { logger } from './logger';
 import { lidResolver } from './lid-resolver';
 import {
@@ -410,7 +411,7 @@ export async function handleChatbotIncoming(
 
     const apiKey = config.geminiApiKey || process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      logger.error('Chave de API do Gemini não configurada');
+      logger.error('Chave de API da IA não configurada');
       return;
     }
 
@@ -534,7 +535,15 @@ Gere uma resposta curta, educada, prestativa e muito natural para o WhatsApp do 
     const isGroq = apiKey.startsWith('gsk_');
     const isOpenRouter = apiKey.startsWith('sk-or-');
 
-    if (isGroq || isOpenRouter) {
+    // Luna (teamsoclo) primeiro: seleção explícita por AI_PROVIDER=luna, antes de
+    // qualquer checagem de prefixo, para a chave nunca ir para openrouter.ai.
+    if (isLunaProvider()) {
+      aiResponse = await callLunaChatCompletions(
+        apiKey,
+        [{ role: 'user', content: prompt }],
+        { temperature: 0.7, maxTokens: 1000 }
+      );
+    } else if (isGroq || isOpenRouter) {
       const url = isGroq
         ? 'https://api.groq.com/openai/v1/chat/completions'
         : 'https://openrouter.ai/api/v1/chat/completions';

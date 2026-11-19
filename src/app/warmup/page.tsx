@@ -316,7 +316,7 @@ export default function WarmupPage() {
         </div>
       </div>
 
-      {/* Alert banner if Gemini API Key is missing */}
+      {/* Alert banner if AI API Key is missing */}
       {!apiKeyConfigured && (
         <div style={{
           display: 'flex',
@@ -332,7 +332,7 @@ export default function WarmupPage() {
         }}>
           <span style={{ fontSize: '1.25rem' }}>⚠️</span>
           <div>
-            <strong style={{ color: '#f59e0b', marginRight: '4px' }}>Chave da API do Google AI Studio Ausente:</strong>
+            <strong style={{ color: '#f59e0b', marginRight: '4px' }}>Chave da IA (Luna via teamsoclo) Ausente:</strong>
             O sistema de aquecimento usará mensagens estáticas prontas (Spintax) até que você configure sua chave. 
             Você pode cadastrar sua chave em <a href="/chatbot" style={{ color: '#f59e0b', textDecoration: 'underline', fontWeight: 600 }}>Configurações do Chatbot</a>.
           </div>

@@ -1,15 +1,24 @@
 /**
  * warmup-ai.ts
- * Geração de mensagens humanas para aquecimento via Gemini AI.
+ * Geração de mensagens humanas para aquecimento via IA (Luna via teamsoclo
+ * quando AI_PROVIDER=luna; Gemini/Groq/OpenRouter nos demais casos).
  * Inclui: Spintax engine, banco de tópicos dinâmicos, personas ricas.
  */
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { isLunaProvider, callLunaChatCompletions } from './luna-ai';
 import { prisma } from './prisma';
 
 let cachedGenAI: GoogleGenerativeAI | null = null;
 let cachedApiKey: string | null = null;
 
 export async function getGenAIInstance(): Promise<GoogleGenerativeAI> {
+  // A Luna não usa o SDK do Gemini: com AI_PROVIDER=luna, nenhum
+  // GoogleGenerativeAI pode ser instanciado — o caminho Luna usa
+  // callLunaChatCompletions (OpenAI-compatível, via teamsoclo).
+  if (isLunaProvider()) {
+    throw new Error('AI_PROVIDER=luna: a Luna não usa o SDK do Gemini — use callLunaChatCompletions.');
+  }
+
   let apiKey = process.env.GEMINI_API_KEY;
   
   if (!apiKey) {
@@ -255,7 +264,17 @@ export async function generateContextualEmoji(
     const isGroq = apiKey.startsWith('gsk_');
     const isOpenRouter = apiKey.startsWith('sk-or-');
 
-    if (isGroq || isOpenRouter) {
+    // Luna (teamsoclo) primeiro: seleção explícita por AI_PROVIDER=luna, antes de
+    // qualquer checagem de prefixo, para a chave nunca ir para openrouter.ai.
+    if (isLunaProvider()) {
+      const raw = await callLunaChatCompletions(
+        apiKey,
+        [{ role: 'user', content: prompt }],
+        { temperature: 0.7, maxTokens: 10 }
+      );
+      // Valida que retornou só emoji(s) — se vier texto, cai no fallback
+      if (raw && raw.length <= 8 && !/[a-zA-Z0-9]/.test(raw)) return raw;
+    } else if (isGroq || isOpenRouter) {
       const url = isGroq ? 'https://api.groq.com/openai/v1/chat/completions' : 'https://openrouter.ai/api/v1/chat/completions';
       // Aquecimento: modelo primário gratuito + fallback gratuito
       const WARMUP_PRIMARY_MODEL = 'nex-agi/nex-n2.5-pro:free';
@@ -426,6 +445,44 @@ RETORNE APENAS A MENSAGEM. Sem aspas, sem prefixo, sem explicação, sem HTML.`;
     const lastMessage = sanitizedHistory[sanitizedHistory.length - 1];
     const isModelLast = lastMessage?.role === 'model';
 
+    // Luna (teamsoclo) primeiro: seleção explícita por AI_PROVIDER=luna, antes de
+    // qualquer checagem de prefixo, para a chave nunca ir para openrouter.ai.
+    // Mesmo formato do ramo OpenRouter (system + histórico + prompt), modelo único
+    // gpt-5.6-luna — não há lista de candidatos com fallback.
+    if (isLunaProvider()) {
+      const prompt = sanitizedHistory.length === 0
+        ? (topic ? `Inicie uma conversa casual sobre ${topic}. Saudação curta e informal, máximo 1 frase.` : `Inicie a conversa com uma saudação muito casual para a ${periodoBRT}. Máximo 1 frase.`)
+        : (isModelLast
+            ? `Continue a conversa. Diga algo novo relacionado ao horário atual (${periodoBRT}). Máximo 2 frases.`
+            : `Responda à última mensagem de forma casual e curta. Máximo 2 frases.`);
+
+      const content = await callLunaChatCompletions(
+        apiKey,
+        [
+          { role: 'system', content: systemInstruction },
+          ...sanitizedHistory.map(h => ({
+            role: (h.role === 'model' ? 'assistant' : 'user') as 'assistant' | 'user',
+            content: h.parts[0].text,
+          })),
+          { role: 'user', content: prompt },
+        ],
+        { temperature: 0.9, maxTokens: 120 }
+      );
+
+      if (!content) {
+        throw new Error('A Luna retornou texto vazio.');
+      }
+      // Se o modelo declarou ser uma IA, cai no fallback de Spintax
+      if (/sou uma ia|como uma ia|modelo de linguagem/i.test(content)) {
+        throw new Error('A Luna gerou auto-identificação de IA.');
+      }
+      const cleanedContent = sanitizeAIMessage(String(content), historyHasFeriado);
+      if (!cleanedContent) {
+        throw new Error('Mensagem vazia após sanitização.');
+      }
+      return cleanedContent;
+    }
+
     if (isGroq || isOpenRouter) {
       const prompt = sanitizedHistory.length === 0
         ? (topic ? `Inicie uma conversa casual sobre ${topic}. Saudação curta e informal, máximo 1 frase.` : `Inicie a conversa com uma saudação muito casual para a ${periodoBRT}. Máximo 1 frase.`)
@@ -556,7 +613,7 @@ RETORNE APENAS A MENSAGEM. Sem aspas, sem prefixo, sem explicação, sem HTML.`;
       return cleanedText;
     }
   } catch (error) {
-    console.error('Erro ao gerar mensagem de warmup via Gemini:', error);
+    console.error('Erro ao gerar mensagem de warmup via IA:', error);
     // Fallback inteligente com Spintax — usa horário real
     const mergedHistory = mergeConsecutiveRoles(history);
     const isModelLast = mergedHistory[mergedHistory.length - 1]?.role === 'model';

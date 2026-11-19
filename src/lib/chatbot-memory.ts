@@ -1,5 +1,6 @@
 import { redisConnection } from './redis';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { isLunaProvider, callLunaChatCompletions } from './luna-ai';
 import { logger } from './logger';
 
 export interface ContactMemory {
@@ -97,7 +98,15 @@ Resumo objetivo:`;
     const isGroq = apiKey.startsWith('gsk_');
     const isOpenRouter = apiKey.startsWith('sk-or-');
 
-    if (isGroq || isOpenRouter) {
+    // Luna (teamsoclo) primeiro: seleção explícita por AI_PROVIDER=luna, antes de
+    // qualquer checagem de prefixo, para a chave nunca ir para openrouter.ai.
+    if (isLunaProvider()) {
+      return await callLunaChatCompletions(
+        apiKey,
+        [{ role: 'user', content: prompt }],
+        { temperature: 0.3, maxTokens: 60 }
+      );
+    } else if (isGroq || isOpenRouter) {
       const url = isGroq ? 'https://api.groq.com/openai/v1/chat/completions' : 'https://openrouter.ai/api/v1/chat/completions';
       const modelName = isGroq ? 'llama-3.1-8b-instant' : 'google/gemini-2.5-flash';
 
@@ -172,7 +181,15 @@ Retorne SOMENTE um objeto JSON com esta estrutura (sem markdown, sem explicaçõ
       const isGroq = apiKey.startsWith('gsk_');
       const isOpenRouter = apiKey.startsWith('sk-or-');
 
-      if (isGroq || isOpenRouter) {
+      // Luna (teamsoclo) primeiro: seleção explícita por AI_PROVIDER=luna, antes de
+      // qualquer checagem de prefixo, para a chave nunca ir para openrouter.ai.
+      if (isLunaProvider()) {
+        extractedJsonText = await callLunaChatCompletions(
+          apiKey,
+          [{ role: 'user', content: prompt }],
+          { temperature: 0.1, maxTokens: 150 }
+        );
+      } else if (isGroq || isOpenRouter) {
         const url = isGroq ? 'https://api.groq.com/openai/v1/chat/completions' : 'https://openrouter.ai/api/v1/chat/completions';
         const modelName = isGroq ? 'llama-3.1-8b-instant' : 'google/gemini-2.5-flash';
 

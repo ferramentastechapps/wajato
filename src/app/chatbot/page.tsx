@@ -285,12 +285,12 @@ export default function ChatbotPage() {
 
           <form onSubmit={handleSaveConfig} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
             
-            {/* Toggle IA Gemini */}
+            {/* Toggle IA */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem', backgroundColor: 'rgba(255,255,255,0.01)', border: '1px solid var(--border)', borderRadius: '10px' }}>
               <div style={{ display: 'flex', flexDirection: 'column' }}>
                 <span style={{ fontSize: '0.9rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
                   <Sparkles size={14} style={{ color: '#3b82f6' }} />
-                  Assistente Inteligente (Gemini AI)
+                  Assistente Inteligente (Luna)
                 </span>
                 <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>Usa inteligência artificial como fallback para responder conversas</span>
               </div>
@@ -317,11 +317,11 @@ export default function ChatbotPage() {
               </div>
             )}
 
-            {/* API Key do Gemini Individual */}
+            {/* Chave da IA individual */}
             {config.aiEnabled && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                 <label style={{ fontSize: '0.85rem', color: '#9ca3af', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>Chave de API do Gemini (Google AI Studio):</span>
+                  <span>Chave da IA (Luna via teamsoclo):</span>
                   <span style={{ fontSize: '0.7rem', color: 'var(--primary)', opacity: 0.85 }}>Opcional (usa a global do servidor se vazia)</span>
                 </label>
                 <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
@@ -331,7 +331,7 @@ export default function ChatbotPage() {
                     onChange={(e) => setConfig({ ...config, geminiApiKey: e.target.value })}
                     className="form-control"
                     style={{ paddingRight: '2.5rem', fontSize: '0.85rem' }}
-                    placeholder="Cole sua chave de API Gemini (AI_ZAsy...)"
+                    placeholder="Cole sua chave da IA (Luna via teamsoclo)"
                   />
                   <button 
                     type="button"
@@ -434,7 +434,7 @@ export default function ChatbotPage() {
                         color: log.source === 'RULE' ? 'var(--primary)' : '#3b82f6',
                         fontWeight: 600
                       }}>
-                        {log.source === 'RULE' ? 'Palavra-chave' : 'IA Gemini'}
+                        {log.source === 'RULE' ? 'Palavra-chave' : 'IA'}
                       </span>
                       <span style={{ color: '#9ca3af' }}>{new Date(log.createdAt).toLocaleTimeString('pt-BR')}</span>
                     </div>
