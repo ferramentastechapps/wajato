@@ -39,6 +39,8 @@ model User {
   name       String?           // Nome completo do perfil Google
   avatarUrl  String?           // Foto de perfil do Google
   role       UserRole @default(VIEWER)
+  companyId  String?
+  company    Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 }
@@ -174,6 +176,8 @@ model WhatsAppInstance {
   maxDailyLimit         Int      @default(200)   // Capacidade máxima base diária (ajustável pelo usuário)
   dailyLimitToday       Int      @default(200)   // Limite dinâmico sorteado para hoje (ex: 190 a 210 para base 200)
   warmupStage           String   @default("FOUNDATION") // FOUNDATION (Fase 1), EXPANSION (Fase 2), MATURED (Fase 3)
+  companyId             String?
+  company               Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
   updatedAt             DateTime @updatedAt
 }
 
@@ -345,6 +349,8 @@ model Company {
   isDefault        Boolean    @default(false)
   campaigns        Campaign[]
   contacts         Contact[]
+  users            User[]
+  whatsAppInstances WhatsAppInstance[]
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
 }

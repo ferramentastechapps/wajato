@@ -175,21 +175,57 @@ export async function POST(request: Request) {
             continue;
           }
 
-          // Salva ou atualiza o contato no banco de dados local com o nome de perfil do WhatsApp
-          if ((isDirectMessage || isLidMessage) && phone && pushName && !pushName.includes('@')) {
+          // Salva ou atualiza o contato no banco de dados local com isolamento por empresa
+          if ((isDirectMessage || isLidMessage) && phone) {
             try {
+              // 1. Resolve a empresa vinculada à instância ou a empresa padrão
+              let assignedCompanyId: string | null = null;
+              if (instanceName) {
+                const instRecord = await prisma.whatsAppInstance.findUnique({
+                  where: { name: instanceName },
+                  select: { companyId: true },
+                });
+                if (instRecord?.companyId) {
+                  assignedCompanyId = instRecord.companyId;
+                }
+              }
+
+              if (!assignedCompanyId) {
+                const defaultComp = await prisma.company.findFirst({
+                  where: { isDefault: true },
+                  select: { id: true },
+                });
+                assignedCompanyId = defaultComp?.id || null;
+              }
+
+              const validName = pushName && !pushName.includes('@') ? pushName.trim() : null;
               const contact = await prisma.contact.findUnique({ where: { phone } });
+
               if (!contact) {
                 await prisma.contact.create({
-                  data: { phone, name: pushName },
+                  data: {
+                    phone,
+                    name: validName,
+                    companyId: assignedCompanyId,
+                    tags: ['inbound', 'whatsapp'],
+                  },
                 });
-                console.log(`[Webhook] Contato ${phone} cadastrado automaticamente com pushName: ${pushName}`);
-              } else if (!contact.name) {
-                await prisma.contact.update({
-                  where: { id: contact.id },
-                  data: { name: pushName },
-                });
-                console.log(`[Webhook] Contato ${phone} atualizado com nome pushName: ${pushName}`);
+                console.log(`[Webhook] Contato ${phone} cadastrado automaticamente (empresa: ${assignedCompanyId}, nome: ${validName || 'Sem nome'})`);
+              } else {
+                const dataToUpdate: any = {};
+                if (!contact.name && validName) {
+                  dataToUpdate.name = validName;
+                }
+                if (!contact.companyId && assignedCompanyId) {
+                  dataToUpdate.companyId = assignedCompanyId;
+                }
+                if (Object.keys(dataToUpdate).length > 0) {
+                  await prisma.contact.update({
+                    where: { id: contact.id },
+                    data: dataToUpdate,
+                  });
+                  console.log(`[Webhook] Contato ${phone} atualizado:`, dataToUpdate);
+                }
               }
             } catch (err: any) {
               console.error(`[Webhook] Erro ao cadastrar/atualizar contato ${phone}:`, err.message);

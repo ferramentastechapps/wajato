@@ -25,6 +25,9 @@ import {
   Check,
   Layers,
   RefreshCw,
+  KeyRound,
+  Shield,
+  UserCheck,
 } from 'lucide-react';
 import AppLayout from '@/components/layout/AppLayout';
 import {
@@ -74,6 +77,89 @@ export default function CompaniesPage() {
   const [isDefault, setIsDefault] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+
+  // User Management state per company
+  const [userModalOpen, setUserModalOpen] = useState(false);
+  const [selectedCompanyForUsers, setSelectedCompanyForUsers] = useState<Company | null>(null);
+  const [companyUsers, setCompanyUsers] = useState<any[]>([]);
+  const [userLoading, setUserLoading] = useState(false);
+  const [userForm, setUserForm] = useState({
+    username: '',
+    email: '',
+    name: '',
+    password: '',
+    role: 'OPERATOR',
+  });
+  const [userError, setUserError] = useState('');
+  const [userSubmitting, setUserSubmitting] = useState(false);
+
+  const fetchCompanyUsers = async (companyId: string) => {
+    setUserLoading(true);
+    try {
+      const res = await fetch(`/api/users?companyId=${companyId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setCompanyUsers(data.users || []);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setUserLoading(false);
+    }
+  };
+
+  const handleOpenUserModal = (comp: Company) => {
+    setSelectedCompanyForUsers(comp);
+    setUserForm({
+      username: '',
+      email: '',
+      name: '',
+      password: '',
+      role: 'OPERATOR',
+    });
+    setUserError('');
+    setUserModalOpen(true);
+    fetchCompanyUsers(comp.id);
+  };
+
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCompanyForUsers) return;
+    setUserSubmitting(true);
+    setUserError('');
+    try {
+      const res = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...userForm,
+          companyId: selectedCompanyForUsers.id,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || 'Erro ao criar usuário');
+      }
+      setUserForm({ username: '', email: '', name: '', password: '', role: 'OPERATOR' });
+      fetchCompanyUsers(selectedCompanyForUsers.id);
+    } catch (err: any) {
+      setUserError(err.message || 'Erro ao cadastrar usuário');
+    } finally {
+      setUserSubmitting(false);
+    }
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    if (!confirm('Tem certeza que deseja excluir este acesso?')) return;
+    try {
+      const res = await fetch(`/api/users/${userId}`, { method: 'DELETE' });
+      if (res.ok && selectedCompanyForUsers) {
+        fetchCompanyUsers(selectedCompanyForUsers.id);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   // Spreadsheet import states
   const [isImportingFile, setIsImportingFile] = useState(false);
@@ -359,6 +445,13 @@ export default function CompaniesPage() {
                       </button>
                     )}
                     <button
+                      title="Gerenciar acessos / usuários desta empresa"
+                      onClick={() => handleOpenUserModal(comp)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#38bdf8', padding: '0.3rem' }}
+                    >
+                      <KeyRound size={15} />
+                    </button>
+                    <button
                       title="Editar empresa"
                       onClick={() => handleOpenEditModal(comp)}
                       style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: '0.3rem' }}
@@ -413,13 +506,20 @@ export default function CompaniesPage() {
                   </span>
                 </div>
 
-                <button
-                  onClick={() => handleOpenEditModal(comp)}
-                  className="btn btn-secondary"
-                  style={{ padding: '0.25rem 0.6rem', fontSize: '0.7rem' }}
-                >
-                  Ver Detalhes
-                </button>
+                  <button
+                    onClick={() => handleOpenUserModal(comp)}
+                    className="btn btn-secondary"
+                    style={{ padding: '0.25rem 0.6rem', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '0.3rem', color: '#38bdf8' }}
+                  >
+                    <KeyRound size={12} /> Acessos
+                  </button>
+                  <button
+                    onClick={() => handleOpenEditModal(comp)}
+                    className="btn btn-secondary"
+                    style={{ padding: '0.25rem 0.6rem', fontSize: '0.7rem' }}
+                  >
+                    Ver Detalhes
+                  </button>
               </div>
             </div>
           ))}
@@ -962,6 +1062,151 @@ export default function CompaniesPage() {
                 </div>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Gestão de Usuários da Empresa */}
+      {userModalOpen && selectedCompanyForUsers && (
+        <div className="modal-overlay" style={{ zIndex: 1000 }}>
+          <div className="modal-content" style={{ maxWidth: '650px', width: '100%', border: '1px solid rgba(255,255,255,0.1)' }}>
+            <div className="modal-header" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+              <h3 className="modal-title" style={{ fontSize: '1.1rem', fontWeight: 700, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <KeyRound size={18} color="#38bdf8" />
+                Acessos da Empresa: {selectedCompanyForUsers.name}
+              </h3>
+              <X className="modal-close" onClick={() => setUserModalOpen(false)} />
+            </div>
+
+            <div className="modal-body" style={{ padding: '1.5rem', maxHeight: '70vh', overflowY: 'auto' }}>
+              {/* Formulário de Novo Usuário */}
+              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '1.25rem', marginBottom: '1.5rem' }}>
+                <h4 style={{ fontSize: '0.9rem', fontWeight: 600, color: '#e2e8f0', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <UserCheck size={16} color="#25d366" /> Criar Novo Acesso (Email e Senha)
+                </h4>
+
+                {userError && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', backgroundColor: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', color: '#ef4444', padding: '0.6rem 0.8rem', borderRadius: '8px', fontSize: '0.78rem', marginBottom: '1rem' }}>
+                    <AlertCircle size={15} />
+                    <span>{userError}</span>
+                  </div>
+                )}
+
+                <form onSubmit={handleCreateUser} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                    <div>
+                      <label style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block', marginBottom: '0.25rem' }}>Nome Completo</label>
+                      <input
+                        type="text"
+                        className="input-control"
+                        placeholder="Ex: João Silva"
+                        value={userForm.name}
+                        onChange={(e) => setUserForm({ ...userForm, name: e.target.value })}
+                        required
+                        style={{ width: '100%', fontSize: '0.8rem' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block', marginBottom: '0.25rem' }}>Nome de Usuário (Login)</label>
+                      <input
+                        type="text"
+                        className="input-control"
+                        placeholder="Ex: joao.empresa"
+                        value={userForm.username}
+                        onChange={(e) => setUserForm({ ...userForm, username: e.target.value })}
+                        required
+                        style={{ width: '100%', fontSize: '0.8rem' }}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '0.75rem' }}>
+                    <div>
+                      <label style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block', marginBottom: '0.25rem' }}>E-mail de Acesso</label>
+                      <input
+                        type="email"
+                        className="input-control"
+                        placeholder="Ex: joao@empresa.com"
+                        value={userForm.email}
+                        onChange={(e) => setUserForm({ ...userForm, email: e.target.value })}
+                        required
+                        style={{ width: '100%', fontSize: '0.8rem' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block', marginBottom: '0.25rem' }}>Senha Inicial</label>
+                      <input
+                        type="password"
+                        className="input-control"
+                        placeholder="Mínimo 6 caracteres"
+                        value={userForm.password}
+                        onChange={(e) => setUserForm({ ...userForm, password: e.target.value })}
+                        required
+                        style={{ width: '100%', fontSize: '0.8rem' }}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+                    <button type="submit" className="btn btn-primary" disabled={userSubmitting} style={{ fontSize: '0.8rem', padding: '0.5rem 1rem' }}>
+                      {userSubmitting ? 'Cadastrando...' : 'Cadastrar Usuário'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* Lista de Usuários Existentes */}
+              <div>
+                <h4 style={{ fontSize: '0.85rem', fontWeight: 600, color: '#94a3b8', marginBottom: '0.75rem' }}>
+                  Usuários com acesso a esta empresa ({companyUsers.length})
+                </h4>
+
+                {userLoading ? (
+                  <div style={{ textAlign: 'center', padding: '1rem', color: '#94a3b8', fontSize: '0.8rem' }}>Carregando usuários...</div>
+                ) : companyUsers.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '1.5rem', background: 'rgba(255,255,255,0.01)', borderRadius: '8px', color: '#64748b', fontSize: '0.8rem' }}>
+                    Nenhum usuário exclusivo vinculado a esta empresa ainda.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    {companyUsers.map((u) => (
+                      <div
+                        key={u.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          background: 'rgba(255,255,255,0.03)',
+                          border: '1px solid rgba(255,255,255,0.05)',
+                          borderRadius: '8px',
+                          padding: '0.65rem 0.85rem',
+                        }}
+                      >
+                        <div>
+                          <strong style={{ fontSize: '0.82rem', color: '#f8fafc', display: 'block' }}>{u.name || u.username}</strong>
+                          <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
+                            Usuário: <code style={{ color: '#38bdf8' }}>{u.username}</code> {u.email && `• ${u.email}`} • Cargo: {u.role}
+                          </span>
+                        </div>
+                        <button
+                          title="Remover acesso"
+                          onClick={() => handleDeleteUser(u.id)}
+                          style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '0.3rem' }}
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="modal-footer" style={{ borderTop: '1px solid rgba(255,255,255,0.08)', padding: '0.75rem 1.5rem', display: 'flex', justifyContent: 'flex-end' }}>
+              <button type="button" className="btn btn-secondary" onClick={() => setUserModalOpen(false)}>
+                Fechar
+              </button>
+            </div>
           </div>
         </div>
       )}

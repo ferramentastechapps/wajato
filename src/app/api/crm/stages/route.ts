@@ -65,11 +65,18 @@ export async function GET() {
       return NextResponse.json({ message: 'Não autorizado' }, { status: 401 });
     }
 
+    // Filtro por empresa
+    const contactWhere: any = {};
+    if (user.role !== 'ADMIN') {
+      contactWhere.companyId = user.companyId || '__none__';
+    }
+
     // 1. Busca estágios ordenados com contatos completos
     let stages = await prisma.crmStage.findMany({
       orderBy: { order: 'asc' },
       include: {
         contacts: {
+          where: contactWhere,
           select: contactSelect,
           orderBy: { updatedAt: 'desc' },
         },
@@ -95,6 +102,7 @@ export async function GET() {
         orderBy: { order: 'asc' },
         include: {
           contacts: {
+            where: contactWhere,
             select: contactSelect,
             orderBy: { updatedAt: 'desc' },
           },
@@ -104,7 +112,7 @@ export async function GET() {
 
     // 3. Busca contatos sem nenhum estágio atribuído (Novos/Sem Funil)
     const unassignedContacts = await prisma.contact.findMany({
-      where: { stageId: null },
+      where: { stageId: null, ...contactWhere },
       select: contactSelect,
       orderBy: { createdAt: 'desc' },
       take: 100,
@@ -242,6 +250,7 @@ export async function POST(request: Request) {
           notes: notes || null,
           stageId: stageId || null,
           groupId: groupId || null,
+          companyId: user.role !== 'ADMIN' ? (user.companyId || null) : null,
         },
         select: contactSelect,
       });

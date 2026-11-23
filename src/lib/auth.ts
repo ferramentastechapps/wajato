@@ -18,6 +18,8 @@ export async function comparePassword(password: string, hashed: string): Promise
 export function signToken(payload: {
   userId: string;
   username: string;
+  role?: string;
+  companyId?: string | null;
   email?: string | null;
   name?: string | null;
   avatarUrl?: string | null;
@@ -28,6 +30,8 @@ export function signToken(payload: {
 export function verifyToken(token: string): {
   userId: string;
   username: string;
+  role?: string;
+  companyId?: string | null;
   email?: string | null;
   name?: string | null;
   avatarUrl?: string | null;
@@ -36,6 +40,8 @@ export function verifyToken(token: string): {
     return jwt.verify(token, JWT_SECRET) as {
       userId: string;
       username: string;
+      role?: string;
+      companyId?: string | null;
       email?: string | null;
       name?: string | null;
       avatarUrl?: string | null;
@@ -53,17 +59,26 @@ export async function getSessionUser() {
   try {
     const cookieStore = await cookies();
     const token = cookieStore.get(COOKIE_NAME)?.value;
-    
+
     if (!token) return null;
-    
+
     const decoded = verifyToken(token);
     if (!decoded) return null;
-    
+
     const user = await prisma.user.findUnique({
       where: { id: decoded.userId },
-      select: { id: true, username: true, email: true, name: true, avatarUrl: true, role: true },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        name: true,
+        avatarUrl: true,
+        role: true,
+        companyId: true,
+        company: { select: { id: true, name: true } },
+      },
     });
-    
+
     return user;
   } catch (error) {
     console.error('Erro ao obter sessão de usuário:', error);

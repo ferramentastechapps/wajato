@@ -21,6 +21,18 @@ export async function GET(request: Request) {
     // Cláusula de busca no banco
     const where: any = {};
 
+    // Se usuário não for ADMIN master, isola contatos da empresa dele
+    if (user.role !== 'ADMIN') {
+      if (user.companyId) {
+        where.companyId = user.companyId;
+      } else {
+        // Usuário sem empresa não vê contatos
+        where.companyId = '__none__';
+      }
+    } else if (searchParams.get('companyId')) {
+      where.companyId = searchParams.get('companyId');
+    }
+
     if (groupId) {
       where.groupId = groupId;
     }
@@ -209,6 +221,9 @@ export async function POST(request: Request) {
 
     const { name, phone, tags, groupId, stageId, value, notes, companyId, optOut, chatbotPausedUntil } = result.data;
 
+    // Usuário não-admin vincula automaticamente à sua própria empresa
+    const targetCompanyId = user.role !== 'ADMIN' ? (user.companyId || null) : (companyId || null);
+
     const cleanPhone = evolutionApi.formatPhone(phone);
 
     const contact = await prisma.contact.upsert({
@@ -220,7 +235,7 @@ export async function POST(request: Request) {
         ...(stageId !== undefined ? { stageId: stageId || null } : {}),
         ...(value !== undefined ? { value: value || 0 } : {}),
         ...(notes !== undefined ? { notes: notes || null } : {}),
-        ...(companyId !== undefined ? { companyId: companyId || null } : {}),
+        ...(targetCompanyId !== undefined ? { companyId: targetCompanyId } : {}),
         ...(typeof optOut === 'boolean' ? { optOut, optOutAt: optOut ? new Date() : null } : {}),
         ...(chatbotPausedUntil !== undefined ? { chatbotPausedUntil: chatbotPausedUntil ? new Date(chatbotPausedUntil) : null } : {}),
       },
@@ -232,7 +247,7 @@ export async function POST(request: Request) {
         stageId: stageId || null,
         value: value || 0,
         notes: notes || null,
-        companyId: companyId || null,
+        companyId: targetCompanyId,
         optOut: optOut ?? false,
         optOutAt: optOut ? new Date() : null,
         chatbotPausedUntil: chatbotPausedUntil ? new Date(chatbotPausedUntil) : null,

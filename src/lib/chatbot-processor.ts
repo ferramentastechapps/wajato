@@ -14,6 +14,11 @@ import {
 } from './chatbot-memory';
 
 import { redisConnection } from './redis';
+import {
+  createTrialForLead,
+  checkCustomerExpiry,
+  resyncCustomer,
+} from './sigma-agent';
 
 // ── Tipos internos ─────────────────────────────────────────────────────────────
 
@@ -185,8 +190,21 @@ async function removeTagFromContact(phone: string, tagToRemove: string): Promise
 
 // ── Resolver empresa para o contato ───────────────────────────────────────────
 
-async function resolveCompany(contactRecord: any, overrideCompanyId?: string | null): Promise<any> {
+async function resolveCompany(
+  contactRecord: any,
+  overrideCompanyId?: string | null,
+  instanceName?: string
+): Promise<any> {
   try {
+    // 0. Instância WhatsApp conectada a uma empresa específica
+    if (instanceName) {
+      const inst = await prisma.whatsAppInstance.findUnique({
+        where: { name: instanceName },
+        include: { company: true },
+      });
+      if (inst?.company) return inst.company;
+    }
+
     // 1. Prioridade: companyId passado como override (ex: vindo da campanha mais recente)
     if (overrideCompanyId) {
       const c = await prisma.company.findUnique({ where: { id: overrideCompanyId } });
@@ -281,7 +299,7 @@ export async function handleChatbotIncoming(
           });
           await removeTagFromContact(phone, 'opt-out');
 
-          const company = await resolveCompany(contactRecord, opts.companyId);
+          const company = await resolveCompany(contactRecord, opts.companyId, instanceName);
           const companyName = company?.name || 'nossa equipe';
           await evolutionApi.sendTextMessage(
             instanceName,
@@ -416,7 +434,7 @@ export async function handleChatbotIncoming(
     }
 
     // Resolver empresa
-    const company = await resolveCompany(contactRecord, opts.companyId);
+    const company = await resolveCompany(contactRecord, opts.companyId, instanceName);
 
     // Formatar base de conhecimento da empresa
     let companyKnowledgeSection = '';
@@ -520,8 +538,22 @@ ${sections.join('\n\n')}
    - Evite respostas longas ou formais demais. Seja objetivo e prestativo.
 `;
 
+    const sigmaToolsInstructions = `
+[AÇÕES AUTOMÁTICAS DO SISTEMA SIGMA - DETECÇÃO DE COMANDOS]:
+Se o cliente pedir uma das ações abaixo, inclua EXATAMENTE a tag de comando correspondente no final da sua resposta:
+1. PEDIDO DE TESTE GRÁTIS: Se o cliente quiser testar o serviço ou pedir teste grátis (ex: "quero um teste", "manda teste pra minha tv samsung", "tem teste no roku?"):
+   - Se ele já informou o dispositivo/aplicativo (ex: Roku, Samsung, LG, Firestick, TV Box, Celular Android, iPhone, PC): inclua no final a tag: [[SIGMA_ACTION:CREATE_TRIAL:<dispositivo>]] (Ex: [[SIGMA_ACTION:CREATE_TRIAL:samsung]])
+   - Se ele NÃO informou em qual aparelho vai usar, NÃO gere a tag ainda. Pergunte primeiro em qual dispositivo ou aplicativo ele vai assistir (ex: TV Samsung, LG, Roku, TV Box, celular etc).
+2. CONSULTA DE VENCIMENTO / DIAS: Se o cliente perguntar quando vence a assinatura, quantos dias faltam ou status da conta dele:
+   - Inclua no final a tag: [[SIGMA_ACTION:CHECK_EXPIRY]]
+3. SUPORTE / REINICIAR LINHA / TRAVAMENTO: Se o cliente relatar que os canais estão travando, fora do ar ou pedir para atualizar/reiniciar a linha:
+   - Inclua no final a tag: [[SIGMA_ACTION:RESYNC]]
+As tags [[SIGMA_ACTION:...]] são comandos do sistema executados automaticamente. O sistema substituirá a tag pela resposta da ação.
+`;
+
     const prompt = `${systemContext}
 ${humanEmulationRules}
+${sigmaToolsInstructions}
 ${companyKnowledgeSection}
 ${memoryPromptSection}
 
@@ -583,7 +615,33 @@ Gere uma resposta curta, educada, prestativa e muito natural para o WhatsApp do 
     }
 
     if (aiResponse) {
-      const cleanResponse = aiResponse.replace(/^(Você|Atendente|Suporte|Equipe|AI|IA|Bot):\s*/i, '').trim();
+      let cleanResponse = aiResponse.replace(/^(Você|Atendente|Suporte|Equipe|AI|IA|Bot):\s*/i, '').trim();
+
+      // Interceptar e executar ações automáticas do Sigma
+      const actionMatch = cleanResponse.match(/\[\[SIGMA_ACTION:([A-Z_]+)(?::([^\]]+))?\]\]/i);
+      if (actionMatch) {
+        const actionType = actionMatch[1].toUpperCase();
+        const actionParam = actionMatch[2]?.trim() || '';
+
+        // Remove a tag do texto da IA
+        cleanResponse = cleanResponse.replace(actionMatch[0], '').trim();
+
+        let actionResult = '';
+        if (actionType === 'CREATE_TRIAL') {
+          const outcome = await createTrialForLead(phone, actionParam);
+          actionResult = outcome.message;
+        } else if (actionType === 'CHECK_EXPIRY') {
+          const outcome = await checkCustomerExpiry(phone);
+          actionResult = outcome.message;
+        } else if (actionType === 'RESYNC') {
+          const outcome = await resyncCustomer(phone);
+          actionResult = outcome.message;
+        }
+
+        if (actionResult) {
+          cleanResponse = cleanResponse ? `${cleanResponse}\n\n${actionResult}` : actionResult;
+        }
+      }
 
       const parts = splitMessageIntoNaturalParts(cleanResponse);
 

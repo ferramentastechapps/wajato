@@ -155,7 +155,7 @@ export async function PATCH(req: Request, { params }: Params) {
 
     const { name } = await params;
     const body = await req.json();
-    const { proxy, profileName, profileStatus, profilePic, allowCampaigns, maxDailyLimit, warmupStage } = body;
+    const { proxy, profileName, profileStatus, profilePic, allowCampaigns, maxDailyLimit, warmupStage, companyId } = body;
 
     const dbInst = await prisma.whatsAppInstance.findUnique({
       where: { name },
@@ -219,6 +219,9 @@ export async function PATCH(req: Request, { params }: Params) {
     }
     if (warmupStage !== undefined) {
       dataToUpdate.warmupStage = warmupStage;
+    }
+    if (companyId !== undefined) {
+      dataToUpdate.companyId = companyId || null;
     }
 
     const updatedInst = await prisma.whatsAppInstance.update({

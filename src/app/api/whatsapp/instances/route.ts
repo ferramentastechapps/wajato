@@ -43,7 +43,20 @@ export async function GET() {
     }
 
     // 2. Busca instâncias no banco de dados local com ordenação estável por nome
+    const whereInst: any = {};
+    if (user.role !== 'ADMIN') {
+      if (user.companyId) {
+        whereInst.companyId = user.companyId;
+      } else {
+        whereInst.companyId = '__none__';
+      }
+    }
+
     const dbInstances = await prisma.whatsAppInstance.findMany({
+      where: whereInst,
+      include: {
+        company: { select: { id: true, name: true } },
+      },
       orderBy: { name: 'asc' },
     });
 

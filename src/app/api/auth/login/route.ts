@@ -44,9 +44,15 @@ export async function POST(request: Request) {
 
     const { username, password } = result.data;
 
-    // 4. Buscar usuário
-    const user = await prisma.user.findUnique({
-      where: { username },
+    // 4. Buscar usuário por username ou por email
+    const identifier = username.toLowerCase().trim();
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { username: { equals: identifier, mode: 'insensitive' } },
+          { email: { equals: identifier, mode: 'insensitive' } },
+        ],
+      },
     });
 
     if (!user) {
@@ -75,7 +81,12 @@ export async function POST(request: Request) {
     }
 
     // 6. Gerar token e cookie
-    const token = signToken({ userId: user.id, username: user.username });
+    const token = signToken({
+      userId: user.id,
+      username: user.username,
+      role: user.role,
+      companyId: user.companyId,
+    });
     await setSessionCookie(token);
 
     // Limpar o contador do rate limit após login de sucesso
@@ -86,7 +97,9 @@ export async function POST(request: Request) {
       user: {
         id: user.id,
         username: user.username,
+        email: user.email,
         role: user.role,
+        companyId: user.companyId,
       },
     });
   } catch (error: any) {
