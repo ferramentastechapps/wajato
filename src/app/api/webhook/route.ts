@@ -52,11 +52,12 @@ export async function POST(request: Request) {
     const { event, data } = payload;
 
     console.log(`[Webhook] Evento recebido: ${event}`);
+    console.log(`[Webhook Payload Full]`, JSON.stringify(payload, null, 2));
 
     const eventUpper = String(event).toUpperCase().replace('.', '_');
 
-    // ── MESSAGES_UPSERT: novas mensagens recebidas ────────────────────────────
-    if (eventUpper === 'MESSAGES_UPSERT') {
+    // ── MESSAGES_UPSERT / MESSAGE: novas mensagens recebidas (Evolution Node e Evolution Go) ────
+    if (eventUpper === 'MESSAGES_UPSERT' || eventUpper === 'MESSAGE') {
       // Evolution API pode enviar de 3 formas:
       // 1. data.messages[] → array de mensagens (alguns endpoints v2)
       // 2. data diretamente com data.key → objeto mensagem único
@@ -69,21 +70,48 @@ export async function POST(request: Request) {
             ? data
             : [data];
 
-      const instanceName = payload.instance || data?.instance;
+      let instanceName = payload.instance || data?.instance || payload.instanceName || data?.instanceName || payload.name || data?.name;
+      if (instanceName) {
+        try {
+          const dbInst = await prisma.whatsAppInstance.findFirst({
+            where: {
+              OR: [
+                { name: instanceName },
+                { id: instanceName },
+              ],
+            },
+            select: { name: true },
+          });
+          if (dbInst?.name) {
+            instanceName = dbInst.name;
+          }
+        } catch {}
+      }
+      if (!instanceName) {
+        try {
+          const single = await prisma.whatsAppInstance.findFirst({
+            where: { status: 'CONNECTED' },
+            select: { name: true },
+          });
+          if (single?.name) instanceName = single.name;
+        } catch {}
+      }
 
       console.log(`[Webhook Debug] MESSAGES_UPSERT - instance: ${instanceName}, mensagens: ${messagesArray.length}, payload:`, JSON.stringify(payload, null, 2));
 
       for (const messageData of messagesArray) {
-        const fromMe = messageData?.key?.fromMe;
-        const remoteJid = messageData?.key?.remoteJid || '';
-        const incomingMessageId = messageData?.key?.id;
+        const isFromMe = messageData?.key?.fromMe === true || messageData?.fromMe === true;
+        const remoteJid = messageData?.key?.remoteJid || messageData?.remoteJid || messageData?.from || '';
+        const incomingMessageId = messageData?.key?.id || messageData?.id;
 
         const isGroupMessage = remoteJid.endsWith('@g.us');
-        const isDirectMessage = remoteJid.endsWith('@s.whatsapp.net');
+        const isDirectMessage = remoteJid.endsWith('@s.whatsapp.net') || (!remoteJid.includes('@') && remoteJid.length >= 8);
         const isLidMessage = remoteJid.endsWith('@lid');
         const isStatusUpdate = remoteJid === 'status@broadcast';
 
-        if (!fromMe && remoteJid && (isDirectMessage || isLidMessage || isGroupMessage || isStatusUpdate) && instanceName) {
+        console.log(`[Webhook Details] isFromMe:${isFromMe}, remoteJid:${remoteJid}, isDirect:${isDirectMessage}, isLid:${isLidMessage}, isGroup:${isGroupMessage}, instanceName:${instanceName}`);
+
+        if (!isFromMe && remoteJid && (isDirectMessage || isLidMessage || isGroupMessage || isStatusUpdate) && instanceName) {
           // Se for mensagem direta e tiver altJid (LID), prefere o altJid para obter o número real em vez do ID interno
           const altJid = messageData?.key?.remoteJidAlt || messageData?.key?.participantAlt;
           const senderJid = (isGroupMessage || isStatusUpdate)
@@ -135,7 +163,7 @@ export async function POST(request: Request) {
             payload?.pushName ||
             null;
 
-          console.log(`[Webhook Debug] Mensagem de ${phone} (fromMe:${fromMe}, grupo:${isGroupMessage}, status:${isStatusUpdate}): "${messageText}" pushName:"${pushName}"`);
+          console.log(`[Webhook Debug] Mensagem de ${phone} (isFromMe:${isFromMe}, grupo:${isGroupMessage}, status:${isStatusUpdate}): "${messageText}" pushName:"${pushName}"`);
 
           // Se for uma atualização de Status do WhatsApp, salva e continua
           if (isStatusUpdate) {
@@ -480,7 +508,7 @@ export async function POST(request: Request) {
             }
 
           }
-        } else if (fromMe && remoteJid && (isDirectMessage || isLidMessage) && instanceName) {
+        } else if (isFromMe && remoteJid && (isDirectMessage || isLidMessage) && instanceName) {
           // Mensagem enviada a partir da nossa própria instância
           const altJid = messageData?.key?.remoteJidAlt || messageData?.key?.participantAlt;
           const senderJid = altJid && altJid.includes('@s.whatsapp.net') ? altJid : remoteJid;
@@ -515,8 +543,8 @@ export async function POST(request: Request) {
       }
     }
 
-    // ── MESSAGES_UPDATE: atualização de status de entrega/leitura ─────────────
-    if (eventUpper === 'MESSAGES_UPDATE') {
+    // ── MESSAGES_UPDATE / SEND_MESSAGE: atualização de status de entrega/leitura ─────
+    if (eventUpper === 'MESSAGES_UPDATE' || eventUpper === 'SEND_MESSAGE') {
       const messageData = data?.message || data;
       const status = data?.status || messageData?.status;
       const remoteJid = data?.key?.remoteJid || messageData?.key?.remoteJid;
@@ -585,10 +613,10 @@ export async function POST(request: Request) {
       }
     }
 
-    // ── CONNECTION_UPDATE: estado da conexão da instância ─────────────────────
-    if (eventUpper === 'CONNECTION_UPDATE') {
-      const state = data?.state;
-      const instanceName = data?.instance;
+    // ── CONNECTION_UPDATE / CONNECTED / DISCONNECTED: estado da conexão da instância ───
+    if (eventUpper === 'CONNECTION_UPDATE' || eventUpper === 'CONNECTED' || eventUpper === 'DISCONNECTED') {
+      const state = eventUpper === 'CONNECTED' ? 'open' : eventUpper === 'DISCONNECTED' ? 'close' : data?.state;
+      const instanceName = data?.instance || payload.instance;
 
       if (instanceName && state) {
         let dbStatus = 'DISCONNECTED';

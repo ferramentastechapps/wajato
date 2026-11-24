@@ -50,6 +50,11 @@ services:
       - DATABASE_SAVE_MESSAGES=false
       - WADEBUG=INFO
       - LOGTYPE=console
+      - WEBHOOK_URL=http://host.docker.internal:3000/api/webhook
+      - WEBHOOK_GLOBAL_ENABLED=true
+      - WEBHOOK_GLOBAL_URL=http://host.docker.internal:3000/api/webhook
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - wajato-db
     networks:

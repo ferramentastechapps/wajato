@@ -51,21 +51,28 @@ export async function POST() {
       return NextResponse.json({ message: 'Não autorizado' }, { status: 401 });
     }
 
-    // 1. Verifica estado na Evolution API
-    let connectionState = await evolutionApi.getConnectionState(INSTANCE_NAME);
+    // Busca se já existe uma instância cadastrada para conectar
+    const existingInstance = await prisma.whatsAppInstance.findFirst({
+      orderBy: { createdAt: 'asc' },
+    });
+
+    if (!existingInstance) {
+      return NextResponse.json(
+        { message: 'Nenhuma instância cadastrada. Crie uma conexão na tela de Conexões primeiro.' },
+        { status: 400 }
+      );
+    }
+
+    const targetName = existingInstance.name;
+    const connectionState = await evolutionApi.getConnectionState(targetName);
     let qrCodeBase64 = null;
 
     if (connectionState === 'DISCONNECTED' || connectionState === 'INITIALIZING') {
       try {
-        // Tenta obter QR Code. Se a instância não existir, dará erro e nós a criamos.
-        const connectData = await evolutionApi.getQRCode(INSTANCE_NAME);
+        const connectData = await evolutionApi.getQRCode(targetName);
         qrCodeBase64 = connectData?.base64 || (connectData as any)?.qrcode?.base64 || null;
       } catch (error) {
-        console.log('Instância não encontrada ou offline. Criando nova instância...');
-        // Instância não existe ou deu erro. Vamos criar.
-        const createData = await evolutionApi.createInstance(INSTANCE_NAME);
-        qrCodeBase64 = createData?.qrcode?.base64 || (createData as any)?.base64 || null;
-        connectionState = 'INITIALIZING';
+        // Ignora
       }
     }
 
@@ -73,33 +80,16 @@ export async function POST() {
       qrCodeBase64 = `data:image/png;base64,${qrCodeBase64}`;
     }
 
-    // 2. Atualiza ou cria o registro no nosso banco de dados local
     const dbStatus = connectionState === 'CONNECTED' ? 'CONNECTED' : (connectionState === 'INITIALIZING' ? 'INITIALIZING' : 'DISCONNECTED');
-    
-    await prisma.whatsAppInstance.upsert({
-      where: { name: INSTANCE_NAME },
-      update: {
-        status: dbStatus,
-        qrCode: qrCodeBase64,
-        updatedAt: new Date(),
-      },
-      create: {
-        name: INSTANCE_NAME,
+
+    await prisma.whatsAppInstance.update({
+      where: { id: existingInstance.id },
+      data: {
         status: dbStatus,
         qrCode: qrCodeBase64,
         updatedAt: new Date(),
       },
     });
-
-    // 3. Configura o webhook para receber atualizações na API de webhook local
-    if (connectionState === 'CONNECTED' || connectionState === 'INITIALIZING') {
-      const appUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-      try {
-        await evolutionApi.setWebhook(INSTANCE_NAME, `${appUrl}/api/webhook`);
-      } catch (webhookErr) {
-        console.error('Erro ao registrar webhook:', webhookErr);
-      }
-    }
 
     return NextResponse.json({
       success: true,

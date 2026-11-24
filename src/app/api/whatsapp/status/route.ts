@@ -12,44 +12,13 @@ export async function GET() {
       return NextResponse.json({ message: 'Não autorizado' }, { status: 401 });
     }
 
-    // 1. Consulta o estado atual na Evolution API
-    const connectionState = await evolutionApi.getConnectionState(INSTANCE_NAME);
-    let qrCodeBase64 = null;
-
-    if (connectionState === 'DISCONNECTED' || connectionState === 'INITIALIZING') {
-      try {
-        const connectData = await evolutionApi.getQRCode(INSTANCE_NAME);
-        qrCodeBase64 = connectData?.base64 || null;
-      } catch (error) {
-        // Se a instância não existe, retorna desconectado sem QR Code.
-        // O frontend chamará /connect para recriá-la
-      }
-    }
-
-    // 2. Atualiza no banco local apenas se a instância principal existir
-    const existingInstance = await prisma.whatsAppInstance.findUnique({
-      where: { name: INSTANCE_NAME },
-    });
-
-    let status: 'CONNECTED' | 'INITIALIZING' | 'DISCONNECTED' = connectionState === 'CONNECTED' ? 'CONNECTED' : (connectionState === 'INITIALIZING' ? 'INITIALIZING' : 'DISCONNECTED');
-    let updatedAt = new Date();
-
-    if (existingInstance) {
-      await prisma.whatsAppInstance.update({
-        where: { name: INSTANCE_NAME },
-        data: {
-          status,
-          qrCode: qrCodeBase64,
-          updatedAt,
-        },
-      });
-    }
-
-    // Verifica o estado global de todas as instâncias cadastradas:
+    // 1. Verifica o estado global de todas as instâncias cadastradas:
     // Se houver qualquer instância conectada, o cabeçalho mostra CONECTADO.
     const activeConnected = await prisma.whatsAppInstance.findFirst({
       where: { status: 'CONNECTED' },
     });
+
+    let status: 'CONNECTED' | 'INITIALIZING' | 'DISCONNECTED' = 'DISCONNECTED';
 
     if (activeConnected) {
       status = 'CONNECTED';
@@ -63,15 +32,11 @@ export async function GET() {
     return NextResponse.json({
       success: true,
       status,
-      qrCode: qrCodeBase64,
-      updatedAt,
+      updatedAt: new Date(),
     });
   } catch (error: any) {
-    console.error('Erro ao verificar status do WhatsApp:', error);
-    return NextResponse.json(
-      { message: 'Erro interno no servidor' },
-      { status: 500 }
-    );
+    console.error('Erro ao buscar status global do WhatsApp:', error);
+    return NextResponse.json({ status: 'DISCONNECTED' }, { status: 500 });
   }
 }
 
