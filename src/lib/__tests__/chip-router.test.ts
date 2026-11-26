@@ -43,6 +43,10 @@ const makeInstance = (overrides: Partial<any> = {}) => ({
   maxUnrepliedLimit: 20,
   unrepliedBlockEnabled: true,
   allowCampaigns: true, // campo adicionado para controle de disparo
+  maxDailyLimit: 200,   // capacidade máxima base diária (schema atual)
+  dailyLimitToday: 200, // limite dinâmico sorteado para hoje (schema atual)
+  warmupStage: 'FOUNDATION', // fase de aquecimento (schema atual)
+  companyId: null,      // empresa vinculada à instância (schema atual)
   updatedAt: new Date(),
   ...overrides,
 });

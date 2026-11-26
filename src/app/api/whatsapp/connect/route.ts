@@ -53,7 +53,7 @@ export async function POST() {
 
     // Busca se já existe uma instância cadastrada para conectar
     const existingInstance = await prisma.whatsAppInstance.findFirst({
-      orderBy: { createdAt: 'asc' },
+      orderBy: { updatedAt: 'asc' },
     });
 
     if (!existingInstance) {

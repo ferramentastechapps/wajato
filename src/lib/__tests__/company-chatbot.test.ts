@@ -45,6 +45,9 @@ vi.mock('../prisma', () => {
         create: vi.fn(),
         findMany: vi.fn(),
       },
+      whatsAppInstance: {
+        findUnique: vi.fn(),
+      },
     },
   };
 });
@@ -120,6 +123,7 @@ describe('Company Knowledge Base & Chatbot Integration Tests', () => {
       optOut: false,
       optOutAt: null,
       notes: null,
+      value: 0,
       createdAt: new Date(),
       updatedAt: new Date(),
     });
@@ -189,6 +193,7 @@ describe('Company Knowledge Base & Chatbot Integration Tests', () => {
       optOut: false,
       optOutAt: null,
       notes: null,
+      value: 0,
       createdAt: new Date(),
       updatedAt: new Date(),
     });
