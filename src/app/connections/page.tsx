@@ -69,6 +69,13 @@ interface Instance {
   // Controle de disparo em massa
   allowCampaigns: boolean;
   isMatured?: boolean;
+  // Empresa vinculada (define qual agente/config do chatbot responde neste chip)
+  companyId: string | null;
+}
+
+interface CompanyOption {
+  id: string;
+  name: string;
 }
 
 const MAX_DAILY = 200;
@@ -452,8 +459,47 @@ export default function ConnectionsPage() {
     }
   };
 
+  // Empresas disponíveis para vincular aos chips
+  const [companies, setCompanies] = useState<CompanyOption[]>([]);
+  const [savingCompany, setSavingCompany] = useState<Record<string, boolean>>({});
+
+  const fetchCompanies = async () => {
+    try {
+      const res = await fetch('/api/companies');
+      if (res.ok) {
+        const data = await res.json();
+        setCompanies((data.companies || []).map((c: any) => ({ id: c.id, name: c.name })));
+      }
+    } catch (err) {
+      console.error('Erro ao buscar empresas:', err);
+    }
+  };
+
+  const handleUpdateInstanceCompany = async (name: string, companyId: string) => {
+    setSavingCompany(prev => ({ ...prev, [name]: true }));
+    try {
+      const res = await fetch(`/api/whatsapp/instances/${name}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId: companyId || null }),
+      });
+      if (res.ok) {
+        await fetchInstances();
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Erro ao vincular empresa à conexão.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Erro de conexão ao vincular empresa.');
+    } finally {
+      setSavingCompany(prev => ({ ...prev, [name]: false }));
+    }
+  };
+
   useEffect(() => {
     fetchInstances();
+    fetchCompanies();
     checkWebshareStatus();
     const interval = setInterval(fetchInstances, 10000);
     return () => clearInterval(interval);
@@ -1356,6 +1402,48 @@ export default function ConnectionsPage() {
                           </div>
                         );
                       })()}
+
+                      {/* ── Empresa vinculada (agente do chatbot) ── */}
+                      <div style={{
+                        padding: '0.6rem 0.8rem',
+                        background: 'rgba(59,130,246,0.05)',
+                        border: '1px solid rgba(59,130,246,0.15)',
+                        borderRadius: '8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '0.5rem',
+                      }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            color: 'rgba(255,255,255,0.75)',
+                            display: 'flex', alignItems: 'center', gap: '5px',
+                            marginBottom: '2px',
+                          }}>
+                            <span style={{ fontSize: '0.85rem' }}>🏢</span>
+                            Empresa vinculada
+                            {savingCompany[inst.name] && <span style={{ fontSize: '0.6rem', color: '#94a3b8' }}>Salvando...</span>}
+                          </div>
+                          <div style={{ fontSize: '0.62rem', color: '#9ca3af' }}>
+                            O agente do chatbot responde neste chip conforme esta empresa
+                          </div>
+                        </div>
+                        <select
+                          className="form-control"
+                          style={{ fontSize: '0.75rem', maxWidth: '180px', height: '30px' }}
+                          value={inst.companyId || ''}
+                          disabled={savingCompany[inst.name]}
+                          onChange={(e) => handleUpdateInstanceCompany(inst.name, e.target.value)}
+                          title="Empresa vinculada a este chip"
+                        >
+                          <option value="">Sem empresa (config global)</option>
+                          {companies.map((c) => (
+                            <option key={c.id} value={c.id}>{c.name}</option>
+                          ))}
+                        </select>
+                      </div>
 
                       {/* Alertas do chip */}
                       {chipAlerts.length > 0 && (

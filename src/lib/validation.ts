@@ -102,6 +102,8 @@ export const chatbotRuleSchema = z.object({
 });
 
 export const chatbotConfigSchema = z.object({
+  // Opcional: quando presente, salva a config daquela empresa; ausente/nulo = config global
+  companyId: z.string().uuid('ID de empresa inválido').nullable().optional(),
   aiEnabled: z.boolean(),
   aiContext: z.string().trim().min(1, 'O contexto de inteligência artificial é obrigatório'),
   geminiApiKey: z.string().trim().nullable().optional(),

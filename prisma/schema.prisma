@@ -305,6 +305,10 @@ model ChatbotRule {
 
 model ChatbotConfig {
   id                String   @id @default("global")
+  // Config por empresa: companyId nulo = config GLOBAL (fallback, linha "global" histórica).
+  // Cada empresa pode ter no máximo uma config própria (@unique).
+  companyId         String?  @unique
+  company           Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
   aiEnabled         Boolean  @default(false)
   aiContext         String   @default("Você é um assistente de atendimento virtual prestativo e educado.")
   geminiApiKey      String?
@@ -351,6 +355,7 @@ model Company {
   contacts         Contact[]
   users            User[]
   whatsAppInstances WhatsAppInstance[]
+  chatbotConfig    ChatbotConfig?
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
 }

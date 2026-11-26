@@ -296,6 +296,8 @@ export async function GET() {
           unrepliedBlockEnabled: dbInst.unrepliedBlockEnabled,
           // Controle de disparo em massa
           allowCampaigns: dbInst.allowCampaigns,
+          // Empresa vinculada (agente/config do chatbot responde por esta empresa)
+          companyId: dbInst.companyId ?? null,
           // Capacidade diária com jitter e estágio de aquecimento
           maxDailyLimit: dbInst.maxDailyLimit ?? 200,
           dailyLimitToday: dbInst.dailyLimitToday ?? 200,

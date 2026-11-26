@@ -96,6 +96,7 @@ describe('Company Knowledge Base & Chatbot Integration Tests', () => {
     // 1. Config do chatbot com IA ativada
     vi.mocked(prisma.chatbotConfig.findUnique).mockResolvedValueOnce({
       id: 'global',
+      companyId: null,
       aiEnabled: true,
       aiContext: 'Você é um vendedor humano da nossa equipe.',
       geminiApiKey: null,
@@ -164,6 +165,7 @@ describe('Company Knowledge Base & Chatbot Integration Tests', () => {
   it('deve usar a empresa padrão como fallback quando o contato não tiver companyId definido', async () => {
     vi.mocked(prisma.chatbotConfig.findUnique).mockResolvedValueOnce({
       id: 'global',
+      companyId: null,
       aiEnabled: true,
       aiContext: 'Você é um assistente virtual prestativo.',
       geminiApiKey: null,

@@ -237,6 +237,47 @@ async function resolveCompany(
   }
 }
 
+// ── Resolver configuração efetiva do chatbot ──────────────────────────────────
+// Prioridade: config própria da empresa vinculada à instância que recebeu a
+// mensagem. Se a instância não tiver empresa, ou a empresa ainda não tiver
+// config própria, usa a config GLOBAL (linha id 'global', companyId nulo).
+
+async function resolveChatbotConfig(instanceName?: string): Promise<any> {
+  try {
+    if (instanceName) {
+      const inst = await prisma.whatsAppInstance.findUnique({
+        where: { name: instanceName },
+        select: { companyId: true },
+      });
+      if (inst?.companyId) {
+        const companyConfig = await prisma.chatbotConfig.findUnique({
+          where: { companyId: inst.companyId },
+        });
+        if (companyConfig) return companyConfig;
+      }
+    }
+  } catch (err: any) {
+    logger.warn?.('[Chatbot] Erro ao resolver config da empresa da instância', { instanceName, error: err?.message });
+  }
+
+  let config = await prisma.chatbotConfig.findUnique({ where: { id: 'global' } });
+
+  if (!config) {
+    config = await prisma.chatbotConfig.create({
+      data: {
+        id: 'global',
+        aiEnabled: false,
+        aiContext: 'Você é um atendente humano da nossa equipe de suporte. Seu objetivo é ajudar o cliente de forma prestativa, educada e natural.',
+        businessHoursOnly: false,
+        startHour: 8,
+        endHour: 18,
+      },
+    });
+  }
+
+  return config;
+}
+
 // ── Processor principal ───────────────────────────────────────────────────────
 
 /**
@@ -320,21 +361,8 @@ export async function handleChatbotIncoming(
       return;
     }
 
-    // ── Obter configuração global do chatbot ──────────────────────────────────
-    let config = await prisma.chatbotConfig.findUnique({ where: { id: 'global' } });
-
-    if (!config) {
-      config = await prisma.chatbotConfig.create({
-        data: {
-          id: 'global',
-          aiEnabled: false,
-          aiContext: 'Você é um atendente humano da nossa equipe de suporte. Seu objetivo é ajudar o cliente de forma prestativa, educada e natural.',
-          businessHoursOnly: false,
-          startHour: 8,
-          endHour: 18,
-        },
-      });
-    }
+    // ── Obter configuração efetiva do chatbot (empresa da instância → global) ──
+    const config = await resolveChatbotConfig(instanceName);
 
     // ── Verificar horário de atendimento ──────────────────────────────────────
     if (config.businessHoursOnly) {

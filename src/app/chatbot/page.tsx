@@ -84,12 +84,36 @@ export default function ChatbotPage() {
   const [errorMsg, setErrorMsg] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
 
+  // Config por empresa: '' = configuração Global (padrão/fallback)
+  const [companies, setCompanies] = useState<{ id: string; name: string }[]>([]);
+  const [selectedCompanyId, setSelectedCompanyId] = useState('');
+
+  const fetchConfig = async (companyId: string) => {
+    const url = companyId ? `/api/chatbot/config?companyId=${companyId}` : '/api/chatbot/config';
+    const configRes = await fetch(url);
+    if (configRes.ok) {
+      const configData = await configRes.json();
+      setConfig(configData.config);
+    }
+  };
+
+  const handleSelectCompany = async (companyId: string) => {
+    setSelectedCompanyId(companyId);
+    try {
+      await fetchConfig(companyId);
+    } catch (err) {
+      console.error('Erro ao buscar configuração da empresa:', err);
+    }
+  };
+
   const fetchData = async () => {
     try {
-      const configRes = await fetch('/api/chatbot/config');
-      if (configRes.ok) {
-        const configData = await configRes.json();
-        setConfig(configData.config);
+      await fetchConfig(selectedCompanyId);
+
+      const companiesRes = await fetch('/api/companies');
+      if (companiesRes.ok) {
+        const companiesData = await companiesRes.json();
+        setCompanies((companiesData.companies || []).map((c: any) => ({ id: c.id, name: c.name })));
       }
 
       const rulesRes = await fetch('/api/chatbot/rules');
@@ -116,7 +140,7 @@ export default function ChatbotPage() {
       const response = await fetch('/api/chatbot/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config),
+        body: JSON.stringify({ ...config, companyId: selectedCompanyId || null }),
       });
 
       if (response.ok) {
@@ -276,7 +300,7 @@ export default function ChatbotPage() {
     <AppLayout title="Auto-Responder & Chatbot IA">
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '2rem', marginBottom: '2.5rem' }}>
         
-        {/* Painel de Configuração Global do Chatbot */}
+        {/* Painel de Configuração do Chatbot (Global ou por empresa) */}
         <div className="card-glass" style={{ padding: '1.75rem' }}>
           <h3 style={{ fontSize: '1.125rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <Bot size={18} style={{ color: 'var(--primary)' }} />
@@ -284,7 +308,28 @@ export default function ChatbotPage() {
           </h3>
 
           <form onSubmit={handleSaveConfig} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-            
+
+            {/* Seletor de empresa do agente */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <label style={{ fontSize: '0.85rem', color: '#9ca3af' }}>Agente de qual empresa?</label>
+              <select
+                value={selectedCompanyId}
+                onChange={(e) => handleSelectCompany(e.target.value)}
+                className="form-control"
+                style={{ fontSize: '0.85rem' }}
+              >
+                <option value="">Global (padrão)</option>
+                {companies.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+              <span style={{ fontSize: '0.72rem', color: '#6b7280' }}>
+                {selectedCompanyId
+                  ? 'Estas configurações valem só para os chips vinculados a esta empresa. Se a empresa ainda não tinha config própria, ela começa como cópia da global.'
+                  : 'A configuração Global é o padrão: vale para chips sem empresa vinculada ou de empresas sem config própria.'}
+              </span>
+            </div>
+
             {/* Toggle IA */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem', backgroundColor: 'rgba(255,255,255,0.01)', border: '1px solid var(--border)', borderRadius: '10px' }}>
               <div style={{ display: 'flex', flexDirection: 'column' }}>

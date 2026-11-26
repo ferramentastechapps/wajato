@@ -97,6 +97,7 @@ describe('Chatbot Processor Unit Tests', () => {
     // Configura horário comercial habilitado e simula estar fora dele (retorna false)
     vi.mocked(prisma.chatbotConfig.findUnique).mockResolvedValueOnce({
       id: 'global',
+      companyId: null,
       aiEnabled: false,
       aiContext: '',
       geminiApiKey: null,
@@ -118,6 +119,7 @@ describe('Chatbot Processor Unit Tests', () => {
   it('deve responder e logar baseado em uma regra EXACT de palavra-chave', async () => {
     vi.mocked(prisma.chatbotConfig.findUnique).mockResolvedValueOnce({
       id: 'global',
+      companyId: null,
       aiEnabled: false,
       aiContext: '',
       geminiApiKey: null,
@@ -162,6 +164,7 @@ describe('Chatbot Processor Unit Tests', () => {
   it('deve responder e logar baseado em uma regra CONTAINS de palavra-chave', async () => {
     vi.mocked(prisma.chatbotConfig.findUnique).mockResolvedValueOnce({
       id: 'global',
+      companyId: null,
       aiEnabled: false,
       aiContext: '',
       geminiApiKey: null,
@@ -199,6 +202,7 @@ describe('Chatbot Processor Unit Tests', () => {
 
     vi.mocked(prisma.chatbotConfig.findUnique).mockResolvedValueOnce({
       id: 'global',
+      companyId: null,
       aiEnabled: true,
       aiContext: 'Você é um vendedor.',
       geminiApiKey: null,
@@ -233,6 +237,7 @@ describe('Chatbot Processor Unit Tests', () => {
 
     vi.mocked(prisma.chatbotConfig.findUnique).mockResolvedValueOnce({
       id: 'global',
+      companyId: null,
       aiEnabled: true,
       aiContext: 'Você é um assistente.',
       geminiApiKey: 'individual-client-key',
