@@ -33,7 +33,7 @@ interface ProcessorOptions {
 
 const lastResponseMap = new Map<string, number>();
 const inFlightPhones = new Set<string>();
-const RATE_LIMIT_MS = 30_000; // 30 segundos de cooldown entre respostas automáticas
+const RATE_LIMIT_MS = 4_000; // 4 segundos de cooldown contra cliques duplos imediatos
 const HOOK_COOLDOWN_SECONDS = 90; // 90 segundos de resguardo após resposta ao gancho de campanha
 const REDIS_COOLDOWN_PREFIX = 'wajato:hook_cooldown:';
 
@@ -539,16 +539,43 @@ ${sections.join('\n\n')}
 `;
 
     const sigmaToolsInstructions = `
-[AÇÕES AUTOMÁTICAS DO SISTEMA SIGMA - DETECÇÃO DE COMANDOS]:
-Se o cliente pedir uma das ações abaixo, inclua EXATAMENTE a tag de comando correspondente no final da sua resposta:
-1. PEDIDO DE TESTE GRÁTIS: Se o cliente quiser testar o serviço ou pedir teste grátis (ex: "quero um teste", "manda teste pra minha tv samsung", "tem teste no roku?"):
-   - Se ele já informou o dispositivo/aplicativo (ex: Roku, Samsung, LG, Firestick, TV Box, Celular Android, iPhone, PC): inclua no final a tag: [[SIGMA_ACTION:CREATE_TRIAL:<dispositivo>]] (Ex: [[SIGMA_ACTION:CREATE_TRIAL:samsung]])
-   - Se ele NÃO informou em qual aparelho vai usar, NÃO gere a tag ainda. Pergunte primeiro em qual dispositivo ou aplicativo ele vai assistir (ex: TV Samsung, LG, Roku, TV Box, celular etc).
-2. CONSULTA DE VENCIMENTO / DIAS: Se o cliente perguntar quando vence a assinatura, quantos dias faltam ou status da conta dele:
+[FLUXO DE ATENDIMENTO E TESTE GRÁTIS - SIGA RIGOROSAMENTE]:
+Você é o atendente de vendas e suporte de IPTV/Streaming da nossa equipe no WhatsApp.
+O processo de teste grátis funciona em 3 passos simples:
+
+PASSO 1: DESCOBRIR O DISPOSITIVO
+Se o cliente pedir teste ou demonstrar interesse, mas ainda NÃO disse onde vai assistir:
+- Pergunte de forma simpática em qual aparelho ele vai assistir (Smart TV Samsung, LG, Roku, TV Box, Fire Stick, celular Android, iPhone ou Computador/PC).
+- NUNCA gere o teste no Passo 1!
+
+PASSO 2: INDICAR O NOME EXATO DO APLICATIVO PARA O CLIENTE BAIXAR
+Assim que o cliente disser o aparelho dele, informe o aplicativo EXATO que ele deve baixar na loja do aparelho:
+- Computador / PC / Notebook: Informe: "No computador/PC você pode usar o aplicativo **IPTV Smarters Pro** para Windows (ou se preferir, pode assistir direto pelo nosso Web Player no navegador Google Chrome/Edge sem precisar instalar nada!). Assim que estiver pronto na tela, me manda um 'já baixei' ou 'pronto' que eu gero na hora o seu usuário e senha de teste de 4 horas!"
+- Smart TV Roku: Mandar pesquisar e baixar o app **Classe Play** (ou **Lótus**) na loja de canais da Roku.
+- Smart TV Samsung: Mandar pesquisar e baixar o app **Classe Play** ou **Lótus** na loja de apps da Samsung.
+- Smart TV LG: Mandar pesquisar e baixar o app **Lótus** ou **IBO Player** na loja de aplicativos da LG.
+- TV Box / Fire Stick: Mandar baixar o app **XCIPTV Player** ou **UniTv**.
+- Celular Android: Mandar baixar o app **XCIPTV Player** ou **UniTv** na Play Store.
+- iPhone / iPad (iOS): Mandar baixar o app **XCIPTV** ou **UniTv** na App Store.
+
+Sempre diga o nome do aplicativo e complete: "Assim que você baixar e abrir ele aí, me avisa aqui com um 'já baixei' que eu gero na hora o seu acesso gratuito de 4 horas com usuário e senha para você colocar nele!"
+- NUNCA gere o teste no Passo 2! O cliente precisa saber o aplicativo primeiro e confirmar que abriu para não desperdiçar o tempo do teste.
+
+PASSO 3: GERAÇÃO DO TESTE
+Quando o cliente disser que já baixou, já instalou ou disser que está pronto (ex: "já baixei", "instalei", "pronto", "tô no app", "manda o login", "já tá aberto"):
+- Responda avisando que está liberando o acesso e inclua no final a tag:
+  [[SIGMA_ACTION:CREATE_TRIAL:<dispositivo>]]
+  Onde <dispositivo> é o aparelho dele (pc, samsung, lg, roku, firestick, android, ios, unitv).
+  Exemplo: [[SIGMA_ACTION:CREATE_TRIAL:pc]]
+  O sistema gerará automaticamente o usuário, senha e URL do servidor da API Sigma e entregará no chat.
+
+OUTRAS AÇÕES:
+2. CONSULTA DE VENCIMENTO / DIAS: Se o cliente perguntar quando vence a assinatura dele, quantos dias faltam ou status da conta dele:
    - Inclua no final a tag: [[SIGMA_ACTION:CHECK_EXPIRY]]
 3. SUPORTE / REINICIAR LINHA / TRAVAMENTO: Se o cliente relatar que os canais estão travando, fora do ar ou pedir para atualizar/reiniciar a linha:
    - Inclua no final a tag: [[SIGMA_ACTION:RESYNC]]
-As tags [[SIGMA_ACTION:...]] são comandos do sistema executados automaticamente. O sistema substituirá a tag pela resposta da ação.
+
+As tags [[SIGMA_ACTION:...]] são comandos automáticos executados pelo sistema. O sistema substituirá a tag pela resposta da ação.
 `;
 
     const prompt = `${systemContext}

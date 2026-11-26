@@ -10,51 +10,60 @@ export interface SigmaActionOutcome {
 
 // Mapeamento de termos de aplicativo/dispositivo para pacotes de teste do Sigma
 // Cada entrada tem o ID do pacote e o ID do servidor correspondente
-const APP_PACKAGE_MAP: Record<string, { packageId: string; serverId: string; label: string }> = {
+const APP_PACKAGE_MAP: Record<string, { packageId: string; serverId: string; label: string; appName: string }> = {
   roku: {
     packageId: 'ayb1BOPLPR', // APP CLASSE PLAY (TV ROKU - SAMSUNG)
     serverId: 'rdqLkQWAE9',
     label: 'Classe Play (Roku TV)',
+    appName: 'Classe Play',
   },
   samsung: {
     packageId: 'ayb1BOPLPR',
     serverId: 'rdqLkQWAE9',
     label: 'Classe Play (Smart TV Samsung)',
+    appName: 'Classe Play',
   },
   lg: {
     packageId: '64vLb2RLgG', // APP LOTUS (Roku - Samsung - LG - Android)
     serverId: 'ANKWPKDPRq',
     label: 'Lótus / IBO Player (Smart TV LG)',
+    appName: 'Lótus ou IBO Player',
   },
   firestick: {
     packageId: 'rdqLkQpWAE', // XCIPTV PLAYER
     serverId: 'rdqLkQWAE9',
     label: 'XCIPTV Player (Fire Stick)',
+    appName: 'XCIPTV Player',
   },
   android: {
-    packageId: 'EMeWe54WnN', // TESTE 4 HORAS CELULAR ANDROID
+    packageId: 'rdqLkQpWAE', // XCIPTV PLAYER
     serverId: 'rdqLkQWAE9',
-    label: 'Celular / TV Box Android',
+    label: 'XCIPTV Player (Android)',
+    appName: 'XCIPTV Player ou UniTv',
   },
   ios: {
     packageId: 'XKjLM2xD04', // TESTE 4 HORAS IPHONE - IOS
     serverId: 'rdqLkQWAE9',
     label: 'iPhone / iPad (iOS)',
+    appName: 'XCIPTV ou UniTv',
   },
   pc: {
     packageId: 'we6WnB7WK8', // TESTE 4 HORAS PC E NOTEBOOK
     serverId: 'rdqLkQWAE9',
     label: 'Computador / Notebook Windows',
+    appName: 'IPTV Smarters ou Web Player',
   },
   unitv: {
     packageId: 'ryJDzOYWge', // UniTv TESTE COMPLETO
     serverId: 'rdqLkQWAE9',
     label: 'UniTv',
+    appName: 'UniTv',
   },
   default: {
-    packageId: 'ZVdWXPpW3q', // MultServe TESTE COMPLETO
+    packageId: 'ayb1BOPLPR',
     serverId: 'rdqLkQWAE9',
-    label: 'Teste Completo MultServe',
+    label: 'Classe Play / XCIPTV',
+    appName: 'Classe Play ou XCIPTV',
   },
 };
 
@@ -92,10 +101,10 @@ export async function createTrialForLead(phone: string, deviceInput?: string): P
       };
     }
 
-    // Cria cliente de teste no Sigma
+    // Cria cliente de teste no Sigma (senha com mínimo 8 caracteres exigido pela API)
     const randomSuffix = Math.floor(1000 + Math.random() * 9000);
     const username = `teste${normPhone.slice(-4)}${randomSuffix}`;
-    const password = `${Math.floor(100000 + Math.random() * 900000)}`;
+    const password = `${Math.floor(10000000 + Math.random() * 90000000)}`;
 
     const newCustomer = await sigma.customers.create({
       username,
@@ -122,20 +131,26 @@ export async function createTrialForLead(phone: string, deviceInput?: string): P
 
     logger.info('[Sigma Agent] Teste criado com sucesso', { phone: normPhone, username });
 
+    const serverDns = (newCustomer as any).m3u_url
+      ? new URL((newCustomer as any).m3u_url).origin
+      : 'http://td.ntxv8s.site';
+
     return {
       success: true,
-      message: `✅ *Seu Teste Grátis foi criado com sucesso!*
+      message: `✅ *Seu Teste Grátis de 4 Horas está liberado!*
 
-📱 *Aplicativo indicado:* ${target.label}
+📱 *Aplicativo:* ${target.label}
 👤 *Usuário:* \`${username}\`
 🔑 *Senha:* \`${password}\`
+🌐 *URL / DNS:* \`${serverDns}\`
 ⏳ *Duração:* 4 horas
 
-Aproveite todos os canais, filmes e séries! Se precisar de ajuda para configurar no seu aparelho, é só me chamar.`,
+Coloque esses dados no aplicativo que você abriu. Se tiver qualquer dúvida, é só me chamar aqui!`,
       data: {
         id: newCustomer.id,
         username,
         password,
+        serverDns,
         expiresAt: newCustomer.expires_at,
       },
     };

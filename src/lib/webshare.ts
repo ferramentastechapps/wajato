@@ -1,6 +1,8 @@
 import axios from 'axios';
 
-const WEBSHARE_API_KEY = process.env.WEBSHARE_API_KEY || '';
+function getWebshareApiKey(): string {
+  return (process.env.WEBSHARE_API_KEY || '').trim();
+}
 
 export interface WebshareProxy {
   username: string;
@@ -15,14 +17,15 @@ export interface WebshareProxy {
  * Verifica se a integração com a Webshare está configurada no .env
  */
 export function isWebshareConfigured(): boolean {
-  return WEBSHARE_API_KEY.trim().length > 0;
+  return getWebshareApiKey().length > 0;
 }
 
 /**
  * Busca a lista de proxies cadastrados na conta da Webshare
  */
 export async function getWebshareProxies(): Promise<string[]> {
-  if (!isWebshareConfigured()) {
+  const apiKey = getWebshareApiKey();
+  if (!apiKey) {
     return [];
   }
 
@@ -34,12 +37,12 @@ export async function getWebshareProxies(): Promise<string[]> {
         page_size: 100,
       },
       headers: {
-        'Authorization': `Token ${WEBSHARE_API_KEY}`,
+        'Authorization': `Token ${apiKey}`,
       },
     });
 
     const results = response.data?.results || [];
-    
+
     // Mapeia os proxies válidos para o formato http://user:pass@ip:port
     return results
       .filter((p: any) => p.valid === true)

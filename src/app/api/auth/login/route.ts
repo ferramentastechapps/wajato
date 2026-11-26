@@ -6,15 +6,29 @@ import { redisConnection } from '@/lib/redis';
 
 // Função auxiliar para verificar o limite de requisições de login (Rate Limit)
 async function checkLoginRateLimit(ip: string): Promise<boolean> {
-  const key = `rate_limit:login:${ip}`;
-  const limit = 5; // 5 tentativas
-  const windowSeconds = 60; // por minuto
+  try {
+    const key = `rate_limit:login:${ip}`;
+    const limit = 5; // 5 tentativas
+    const windowSeconds = 60; // por minuto
 
-  const current = await redisConnection.incr(key);
-  if (current === 1) {
-    await redisConnection.expire(key, windowSeconds);
+    // Timeout de 1 segundo para garantir que falha/lentidão do Redis nunca trave o login
+    const redisPromise = (async () => {
+      const current = await redisConnection.incr(key);
+      if (current === 1) {
+        await redisConnection.expire(key, windowSeconds);
+      }
+      return current > limit;
+    })();
+
+    const timeoutPromise = new Promise<boolean>((resolve) => {
+      setTimeout(() => resolve(false), 1000);
+    });
+
+    return await Promise.race([redisPromise, timeoutPromise]);
+  } catch (err) {
+    console.warn('[Login Rate Limit] Erro no Redis, liberando login:', err);
+    return false;
   }
-  return current > limit;
 }
 
 export async function POST(request: Request) {
@@ -89,8 +103,8 @@ export async function POST(request: Request) {
     });
     await setSessionCookie(token);
 
-    // Limpar o contador do rate limit após login de sucesso
-    await redisConnection.del(`rate_limit:login:${ip}`);
+    // Limpar o contador do rate limit após login de sucesso (sem travar se Redis falhar)
+    redisConnection.del(`rate_limit:login:${ip}`).catch(() => {});
 
     return NextResponse.json({
       success: true,

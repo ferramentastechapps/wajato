@@ -15,6 +15,35 @@ export async function GET() {
     // 1. Busca instâncias no Evolution API
     const apiInstances = await evolutionApi.fetchInstances();
 
+    // 1b. Auto-cadastra no banco local qualquer instância que já exista na Evolution API
+    if (Array.isArray(apiInstances) && apiInstances.length > 0) {
+      for (const apiInst of apiInstances) {
+        if (!apiInst.name) continue;
+        try {
+          const exists = await prisma.whatsAppInstance.findUnique({ where: { name: apiInst.name } });
+          if (!exists) {
+            let phone = null;
+            if (apiInst.ownerJid) phone = apiInst.ownerJid.split(':')[0].split('@')[0];
+            const status = apiInst.connectionStatus === 'open' ? 'CONNECTED' : (apiInst.qrcode ? 'INITIALIZING' : 'DISCONNECTED');
+            await prisma.whatsAppInstance.create({
+              data: {
+                name: apiInst.name,
+                phone,
+                status,
+                profilePicUrl: apiInst.profilePicUrl || null,
+                profileName: apiInst.profileName || null,
+                qrCode: apiInst.qrcode?.base64 || null,
+                companyId: user.companyId || null,
+                healthScore: 100,
+              },
+            });
+          }
+        } catch (syncErr: any) {
+          console.warn(`[Instances Route] Falha ao auto-sincronizar ${apiInst.name}:`, syncErr?.message);
+        }
+      }
+    }
+
     // 2. Busca instâncias no banco de dados local com ordenação estável por nome
     const whereInst: any = {};
     if (user.role !== 'ADMIN') {
@@ -341,6 +370,7 @@ export async function POST(req: Request) {
         status: dbStatus,
         qrCode: qrCodeBase64,
         proxy: proxy || null,
+        companyId: user.companyId || null,
       },
     });
 

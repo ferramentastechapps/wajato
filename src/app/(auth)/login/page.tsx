@@ -10,6 +10,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -53,8 +54,7 @@ export default function LoginPage() {
         throw new Error(data.message || 'Falha ao realizar login');
       }
 
-      router.push('/');
-      router.refresh();
+      window.location.href = '/';
     } catch (err: any) {
       setError(err.message || 'Erro ao conectar ao servidor');
     } finally {
@@ -122,10 +122,10 @@ export default function LoginPage() {
           type="button"
           id="btn-google-login"
           onClick={() => {
-            setLoading(true);
+            setGoogleLoading(true);
             window.location.href = '/api/auth/google';
           }}
-          disabled={loading}
+          disabled={loading || googleLoading}
           style={{
             width: '100%',
             display: 'flex',
@@ -139,14 +139,14 @@ export default function LoginPage() {
             padding: '0.78rem',
             fontSize: '0.95rem',
             fontWeight: 600,
-            cursor: loading ? 'not-allowed' : 'pointer',
+            cursor: (loading || googleLoading) ? 'not-allowed' : 'pointer',
             transition: 'all 0.2s ease',
             boxShadow: '0 1px 3px 0 rgba(0,0,0,0.1)',
             marginBottom: '1.25rem',
-            opacity: loading ? 0.7 : 1,
+            opacity: (loading || googleLoading) ? 0.7 : 1,
           }}
           onMouseOver={(e) => {
-            if (!loading) {
+            if (!loading && !googleLoading) {
               e.currentTarget.style.backgroundColor = '#f8fafc';
               e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0,0,0,0.1)';
               e.currentTarget.style.transform = 'translateY(-1px)';
@@ -165,7 +165,7 @@ export default function LoginPage() {
             <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/>
             <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/>
           </svg>
-          {loading ? 'Redirecionando...' : 'Continuar com Google'}
+          {googleLoading ? 'Redirecionando...' : 'Continuar com Google'}
         </button>
 
         {/* Divisor "ou" */}

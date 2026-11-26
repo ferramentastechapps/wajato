@@ -100,9 +100,12 @@ export async function POST(request: Request) {
       console.log(`[Webhook Debug] MESSAGES_UPSERT - instance: ${instanceName}, mensagens: ${messagesArray.length}, payload:`, JSON.stringify(payload, null, 2));
 
       for (const messageData of messagesArray) {
-        const isFromMe = messageData?.key?.fromMe === true || messageData?.fromMe === true;
-        const remoteJid = messageData?.key?.remoteJid || messageData?.remoteJid || messageData?.from || '';
-        const incomingMessageId = messageData?.key?.id || messageData?.id;
+        const info = messageData?.Info || messageData?.info;
+        const msg = messageData?.Message || messageData?.message;
+
+        const isFromMe = messageData?.key?.fromMe === true || messageData?.fromMe === true || info?.IsFromMe === true || info?.fromMe === true;
+        const remoteJid = info?.Chat || info?.Sender || messageData?.key?.remoteJid || messageData?.remoteJid || messageData?.from || '';
+        const incomingMessageId = info?.ID || info?.id || messageData?.key?.id || messageData?.id;
 
         const isGroupMessage = remoteJid.endsWith('@g.us');
         const isDirectMessage = remoteJid.endsWith('@s.whatsapp.net') || (!remoteJid.includes('@') && remoteJid.length >= 8);
@@ -112,12 +115,26 @@ export async function POST(request: Request) {
         console.log(`[Webhook Details] isFromMe:${isFromMe}, remoteJid:${remoteJid}, isDirect:${isDirectMessage}, isLid:${isLidMessage}, isGroup:${isGroupMessage}, instanceName:${instanceName}`);
 
         if (!isFromMe && remoteJid && (isDirectMessage || isLidMessage || isGroupMessage || isStatusUpdate) && instanceName) {
+          // Desduplicação de webhook: ignora mensagens repetidas com o mesmo ID nos últimos 60 segundos
+          if (incomingMessageId) {
+            try {
+              const dedupKey = `wajato:msg_dedup:${incomingMessageId}`;
+              const isFirst = await redisConnection.set(dedupKey, '1', 'EX', 60, 'NX');
+              if (!isFirst) {
+                console.log(`[Webhook] Mensagem duplicada ignorada (ID: ${incomingMessageId})`);
+                continue;
+              }
+            } catch (dedupErr) {
+              // Se Redis falhar, segue o processamento normal
+            }
+          }
+
           // Se for mensagem direta e tiver altJid (LID), prefere o altJid para obter o número real em vez do ID interno
-          const altJid = messageData?.key?.remoteJidAlt || messageData?.key?.participantAlt;
+          const altJid = info?.SenderAlt || messageData?.key?.remoteJidAlt || messageData?.key?.participantAlt;
           const senderJid = (isGroupMessage || isStatusUpdate)
-            ? (messageData?.key?.participant || remoteJid)
-            : (altJid && altJid.includes('@s.whatsapp.net') ? altJid : remoteJid);
-          
+            ? (info?.Sender || messageData?.key?.participant || remoteJid)
+            : (altJid && altJid.includes('@s.whatsapp.net') ? altJid : (info?.Sender || remoteJid));
+
           let phone = normalizePhone(senderJid.split('@')[0]);
           if (senderJid.endsWith('@lid')) {
             const resolved = lidResolver.getPhone(senderJid);
@@ -141,22 +158,30 @@ export async function POST(request: Request) {
             console.error(`[Webhook] Erro ao resetar unrepliedMsgCount para ${instanceName}:`, err.message);
           }
 
-          const isReaction = !!messageData?.message?.reactionMessage;
-          const isSticker = !!messageData?.message?.stickerMessage;
-          const isAudio = !!messageData?.message?.audioMessage;
+          const isReaction = !!(msg?.reactionMessage);
+          const isSticker = !!(msg?.stickerMessage);
+          const isAudio = !!(msg?.audioMessage);
 
           const messageText =
-            messageData?.message?.conversation ||
-            messageData?.message?.extendedTextMessage?.text ||
-            messageData?.message?.imageMessage?.caption ||
-            messageData?.message?.videoMessage?.caption ||
-            messageData?.message?.reactionMessage?.text ||
-            (isSticker ? '[sticker]' : '') ||
-            (isAudio ? '[audio]' : '') ||
-            messageData?.text || '';
+            (typeof msg === 'string' ? msg : '') ||
+            msg?.conversation ||
+            msg?.extendedTextMessage?.text ||
+            msg?.imageMessage?.caption ||
+            msg?.videoMessage?.caption ||
+            msg?.reactionMessage?.text ||
+            messageData?.text ||
+            messageData?.body ||
+            '';
 
           // Nome do contato/grupo recebido pelo webhook
           const pushName =
+            info?.PushName ||
+            info?.pushName ||
+            messageData?.pushName ||
+            messageData?.notifyName ||
+            data?.pushName ||
+            payload?.pushName ||
+            null;
             messageData?.pushName ||
             messageData?.notifyName ||
             data?.pushName ||

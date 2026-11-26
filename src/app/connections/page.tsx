@@ -1062,21 +1062,19 @@ export default function ConnectionsPage() {
                                   width: '100%', outline: 'none'
                                 }}
                               />
-                              {webshareAvailable && (
-                                <button
-                                  type="button"
-                                  onClick={handleGetWebshareProxyForEdit}
-                                  disabled={loadingWebshare}
-                                  style={{
-                                    background: 'none', border: 'none', cursor: 'pointer',
-                                    color: '#3b82f6', fontSize: '0.62rem', fontWeight: 700,
-                                    textDecoration: 'underline', padding: 0, textAlign: 'left',
-                                    marginBottom: 2
-                                  }}
-                                >
-                                  {loadingWebshare ? 'Gerando...' : '⚡ Gerar via Webshare'}
-                                </button>
-                              )}
+                              <button
+                                type="button"
+                                onClick={handleGetWebshareProxyForEdit}
+                                disabled={loadingWebshare}
+                                style={{
+                                  background: 'none', border: 'none', cursor: loadingWebshare ? 'not-allowed' : 'pointer',
+                                  color: '#3b82f6', fontSize: '0.62rem', fontWeight: 700,
+                                  textDecoration: 'underline', padding: 0, textAlign: 'left',
+                                  marginBottom: 2
+                                }}
+                              >
+                                {loadingWebshare ? 'Gerando...' : '⚡ Gerar via Webshare'}
+                              </button>
                               <div style={{ display: 'flex', gap: 4 }}>
                                 <button
                                   type="button"
@@ -1699,25 +1697,23 @@ export default function ConnectionsPage() {
                   <label style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', margin: 0 }}>
                     Proxy de Conexão (Opcional)
                   </label>
-                  {webshareAvailable && (
-                    <button
-                      type="button"
-                      onClick={handleGetWebshareProxy}
-                      disabled={loadingWebshare}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        color: '#10b981',
-                        fontSize: '0.72rem',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        textDecoration: 'underline',
-                        padding: 0
-                      }}
-                    >
-                      {loadingWebshare ? 'Buscando IP...' : '⚡ Gerar via Webshare'}
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={handleGetWebshareProxy}
+                    disabled={loadingWebshare}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#10b981',
+                      fontSize: '0.72rem',
+                      fontWeight: 700,
+                      cursor: loadingWebshare ? 'not-allowed' : 'pointer',
+                      textDecoration: 'underline',
+                      padding: 0
+                    }}
+                  >
+                    {loadingWebshare ? 'Buscando IP...' : '⚡ Gerar via Webshare'}
+                  </button>
                 </div>
                 <input
                   type="text"
