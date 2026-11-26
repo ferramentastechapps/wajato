@@ -58,10 +58,17 @@ describe('Chip Router Unit Tests', () => {
 
   describe('getNextWhatsAppInstance', () => {
     it('deve lançar erro se não houver chips habilitados para disparo', async () => {
-      vi.mocked(prisma.whatsAppInstance.findMany).mockResolvedValueOnce([]);
+      // Busca principal (saúde > 20) e fallback de recuperação (saúde > 0) voltam vazias
+      vi.mocked(prisma.whatsAppInstance.findMany)
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([]);
 
       await expect(getNextWhatsAppInstance()).rejects.toThrow();
-      expect(prisma.whatsAppInstance.findMany).toHaveBeenCalledTimes(1);
+      expect(prisma.whatsAppInstance.findMany).toHaveBeenCalledTimes(2);
+      // A 2ª chamada é o fallback que relaxa a saúde mínima para > 0 (evita travamento total)
+      expect(prisma.whatsAppInstance.findMany).toHaveBeenNthCalledWith(2, {
+        where: expect.objectContaining({ healthScore: { gt: 0 } }),
+      });
     });
 
     it('deve priorizar a instância com menor dailyMsgCount e maior healthScore', async () => {
@@ -175,7 +182,7 @@ describe('Chip Router Unit Tests', () => {
   });
 
   describe('reportChipFailure', () => {
-    it('deve rebaixar a saúde do chip em 4 pontos para erro genérico (timeout)', async () => {
+    it('deve rebaixar a saúde do chip em 3 pontos para erro genérico (timeout)', async () => {
       vi.mocked(prisma.whatsAppInstance.findUnique).mockResolvedValueOnce(
         makeInstance({ name: 'chip-1', healthScore: 80 })
       );
@@ -184,7 +191,7 @@ describe('Chip Router Unit Tests', () => {
 
       expect(prisma.whatsAppInstance.update).toHaveBeenCalledWith({
         where: { name: 'chip-1' },
-        data: { healthScore: 76, status: 'CONNECTED' },
+        data: { healthScore: 77, status: 'CONNECTED' },
       });
     });
 
@@ -206,7 +213,9 @@ describe('Chip Router Unit Tests', () => {
         makeInstance({ name: 'chip-1', healthScore: 90 })
       );
 
-      await reportChipFailure('chip-1', 'Instance disconnected or token expired');
+      // Desde o fix de oscilação (09/09), só logout/expiração explícita de sessão
+      // conta como desconexão real; 'disconnected' genérico virou penalidade leve (-3)
+      await reportChipFailure('chip-1', 'Session expired or instance logged out');
 
       expect(prisma.whatsAppInstance.update).toHaveBeenCalledWith({
         where: { name: 'chip-1' },
