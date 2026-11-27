@@ -97,12 +97,17 @@ const SMARTPLAY_SERVERS: Array<{ name: string; packages: Partial<Record<SmartPac
 ];
 
 /**
- * Zuxo e navegador (portal slimweb) são atendidos pelo Painel Plus
+ * Zuxo, aplicativos Slim (Smart/XC/Fflix/Ibo), Smarters, Media Station X (Zuxo)
+ * e navegador (portal slimweb) são atendidos pelo Painel Plus
  */
 function isPlusRoute(deviceInput: string): boolean {
   const clean = deviceInput.toLowerCase();
   return (
     clean.includes('zuxo') ||
+    clean.includes('slim') ||
+    clean.includes('smarters') ||
+    clean.includes('media station') ||
+    clean.includes('msx') ||
     clean.includes('navegador') ||
     clean.includes('browser') ||
     clean.includes('portal') ||
@@ -226,7 +231,7 @@ async function generateFromLink(url: string): Promise<Omit<PanelLinkTrial, 'pane
 
 /**
  * Gera o teste grátis pelos links dos painéis, roteando pelo app/aparelho:
- * - Zuxo / navegador → Painel Plus (6h com adultos)
+ * - Zuxo / Slim / Smarters / Media Station X / navegador → Painel Plus (6h com adultos)
  * - UniTV e demais aparelhos/apps → SmartPlay (4h), servidores em ordem até um gerar
  * Retorna null se nenhum link gerar (quem chama cai para a API do Sigma)
  */

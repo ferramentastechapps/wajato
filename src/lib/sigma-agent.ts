@@ -212,13 +212,12 @@ export async function createTrialForLead(phone: string, deviceInput?: string): P
 
     return {
       success: true,
-      message: `✅ *Seu Teste Grátis de 4 Horas está liberado!*
+      message: `✅ *Seu Teste Grátis está liberado!*
 
 📱 *Aplicativo:* ${target.label}
 👤 *Usuário:* \`${username}\`
 🔑 *Senha:* \`${password}\`
 🌐 *URL / DNS:* \`${serverDns}\`
-⏳ *Duração:* 4 horas
 
 Coloque esses dados no aplicativo que você abriu. Se tiver qualquer dúvida, é só me chamar aqui!`,
       data: {
