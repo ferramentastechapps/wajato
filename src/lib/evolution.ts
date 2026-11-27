@@ -1214,10 +1214,13 @@ export const evolutionApi = {
       });
     } catch (error: any) {
       console.error(`Erro ao verificar lote de números no WhatsApp:`, error?.response?.data || error.message);
+      // Falha técnica (ex.: endpoint indisponível na Evolution Go) NÃO pode
+      // marcar todo mundo como inexistente — mesmo critério da verificação
+      // individual: na dúvida, assume que o número existe.
       return phones.map(p => ({
         phone: p,
         formattedPhone: this.formatPhone(p),
-        exists: false,
+        exists: true,
         jid: null,
         name: null,
       }));
