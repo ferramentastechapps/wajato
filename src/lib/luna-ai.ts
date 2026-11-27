@@ -15,6 +15,9 @@
  */
 export const LUNA_MODEL = 'gpt-5.6-luna';
 
+/** Timeout de uma chamada à Luna: sem ele, um proxy travado prende o processamento do número. */
+const LUNA_TIMEOUT_MS = 60000;
+
 /** Verdadeiro quando o provedor de IA selecionado é a Luna. */
 export function isLunaProvider(): boolean {
   return process.env.AI_PROVIDER === 'luna';
@@ -47,6 +50,8 @@ export interface LunaChatOptions {
  * com `Authorization: Bearer <key>` e modelo `gpt-5.6-luna`.
  * Retorna o texto da primeira escolha (vazio se não houver).
  * Lança erro quando a resposta HTTP não é 2xx, seguindo o padrão do ramo OpenRouter.
+ * A chamada tem timeout de `LUNA_TIMEOUT_MS`: se o proxy travar, o fetch é
+ * abortado e o erro sobe para o chamador, em vez de prender o número para sempre.
  */
 export async function callLunaChatCompletions(
   apiKey: string,
@@ -55,21 +60,28 @@ export async function callLunaChatCompletions(
 ): Promise<string> {
   const url = `${getLunaBaseUrl()}/chat/completions`;
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: LUNA_MODEL,
-      messages,
-      temperature: options.temperature ?? 0.7,
-      max_tokens: options.maxTokens ?? 180,
-    }),
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), LUNA_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: LUNA_MODEL,
+        messages,
+        temperature: options.temperature ?? 0.7,
+        max_tokens: options.maxTokens ?? 180,
+      }),
+      signal: controller.signal,
+    });
 
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.message || `Erro na API Luna (${res.status})`);
-  return String(data.choices?.[0]?.message?.content || '').trim();
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error?.message || `Erro na API Luna (${res.status})`);
+    return String(data.choices?.[0]?.message?.content || '').trim();
+  } finally {
+    clearTimeout(timer);
+  }
 }
