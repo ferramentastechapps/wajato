@@ -83,6 +83,15 @@ export function detectDeviceType(text: string): string {
   return 'default';
 }
 
+// Números isentos do bloqueio de teste duplicado (ex.: o número do dono, para testar o agente)
+// Configurável via env TRIAL_EXEMPT_PHONES (separados por vírgula); padrão: número pessoal do dono
+const TRIAL_EXEMPT_PHONES = new Set(
+  (process.env.TRIAL_EXEMPT_PHONES || '5516994201706')
+    .split(',')
+    .map((p) => p.replace(/\D/g, ''))
+    .filter(Boolean),
+);
+
 /**
  * 1. Gerador Automático de Teste Grátis no Sigma
  */
@@ -92,9 +101,9 @@ export async function createTrialForLead(phone: string, deviceInput?: string): P
   const target = APP_PACKAGE_MAP[deviceKey] || APP_PACKAGE_MAP.default;
 
   try {
-    // Evita duplicar se já gerou nas últimas 24h
+    // Evita duplicar se o contato já gerou um teste (números isentos nunca bloqueiam)
     const existing = await (prisma.contact as any).findUnique({ where: { phone: normPhone } });
-    if (existing?.tags?.includes('teste-gerado')) {
+    if (!TRIAL_EXEMPT_PHONES.has(normPhone) && existing?.tags?.includes('teste-gerado')) {
       return {
         success: false,
         message: 'Você já gerou um teste grátis recente em nosso sistema.',
