@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { prisma } from './prisma';
 import { sentMessagesCache } from './sent-messages-cache';
-import { recordChatMessage } from './chat-store';
+import { recordChatMessage, getLocalContactName } from './chat-store';
 
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://localhost:8082';
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || 'wajato_global_api_key_5544';
@@ -396,7 +396,7 @@ export const evolutionApi = {
   /**
    * Envia uma mensagem de texto simples
    */
-  async sendTextMessage(instanceName: string, phone: string, text: string, delay: number = 1200): Promise<any> {
+  async sendTextMessage(instanceName: string, phone: string, text: string, delay: number = 1200, quoted?: any): Promise<any> {
     const formattedPhone = this.formatPhone(phone);
     const token = this.getInstanceToken(instanceName);
 
@@ -408,6 +408,7 @@ export const evolutionApi = {
           {
             number: formattedPhone,
             text: text,
+            ...(quoted ? { quoted } : {}),
           },
           {
             headers: { apikey: token },
@@ -428,6 +429,7 @@ export const evolutionApi = {
       const response = await evolutionClient.post(`/message/sendText/${instanceName}`, {
         number: formattedPhone,
         text: text,
+        ...(quoted ? { quoted } : {}),
         options: {
           delay: delay,
           presence: 'composing',
@@ -1061,7 +1063,7 @@ export const evolutionApi = {
           number: formattedPhone,
         });
         const data = response.data as any;
-        return {
+        const info = {
           name: data?.name || data?.pushName || null,
           pushName: data?.pushName || data?.name || null,
           profilePicUrl: data?.picture || data?.profilePicUrl || null,
@@ -1069,6 +1071,16 @@ export const evolutionApi = {
           isGroup: false,
           groupSubject: null,
         };
+        // Evolution Go não devolve perfil (fetchProfile volta vazio): usa o
+        // nome que o próprio contato apresentou nas mensagens (histórico local).
+        if (!info.name && !info.pushName) {
+          const localName = await getLocalContactName(instanceName, formattedPhone);
+          if (localName) {
+            info.name = localName;
+            info.pushName = localName;
+          }
+        }
+        return info;
       }
     } catch (error: any) {
       // Retorna nulo silenciosamente se não conseguir buscar o perfil

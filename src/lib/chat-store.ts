@@ -111,6 +111,28 @@ export function localMessageToEvolutionShape(r: {
   };
 }
 
+/**
+ * Nome mais recente conhecido de um contato no histórico local (pushName das
+ * mensagens recebidas). A Evolution Go não devolve perfil do contato
+ * (fetchProfile volta vazio), então o nome exibido vem daqui.
+ */
+export async function getLocalContactName(instanceName: string, phone: string): Promise<string | null> {
+  try {
+    const row = await prisma.chatMessage.findFirst({
+      where: {
+        instanceName,
+        pushName: { not: null },
+        OR: [{ phone }, { remoteJid: `${phone}@s.whatsapp.net` }],
+      },
+      orderBy: { timestamp: 'desc' },
+      select: { pushName: true },
+    });
+    return row?.pushName || null;
+  } catch {
+    return null;
+  }
+}
+
 /** Mensagens do histórico local de uma conversa, no formato da Evolution. */
 export async function getLocalMessages(instanceName: string, remoteJid: string, limit: number = 100) {
   const rows = await prisma.chatMessage.findMany({

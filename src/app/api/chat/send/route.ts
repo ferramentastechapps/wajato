@@ -45,42 +45,22 @@ export async function POST(req: Request) {
 
     const formattedPhone = evolutionApi.formatPhone(remoteJid);
 
-    // Build request body — with optional quoted message (reply)
-    const body: any = {
-      number: formattedPhone,
-      text: message,
-      options: {
-        delay: 1000,
-        presence: 'composing',
-      },
-    };
+    // Resposta citada (reply), quando a tela de Conversas manda uma
+    const quoted = quotedMessageId
+      ? {
+          key: {
+            id: quotedMessageId,
+            remoteJid: formattedPhone,
+            fromMe: false,
+          },
+          message: quotedMessage || {},
+        }
+      : undefined;
 
-    if (quotedMessageId) {
-      body.quoted = {
-        key: {
-          id: quotedMessageId,
-          remoteJid: formattedPhone,
-          fromMe: false,
-        },
-        message: quotedMessage || {},
-      };
-    }
-
-    // Use direct HTTP call to support the quoted field properly
-    const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://localhost:8080';
-    const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || '';
-
-    const res = await fetch(`${EVOLUTION_API_URL}/message/sendText/${activeInstance}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': EVOLUTION_API_KEY,
-      },
-      body: JSON.stringify(body),
-    });
-
-    const data = await res.json();
-    if (res.ok && message) {
+    // Envia pelo evolutionApi (Evolution Go primeiro, Node como fallback).
+    // A chamada direta ao endpoint antigo /message/sendText não funciona na Go.
+    const data = await evolutionApi.sendTextMessage(activeInstance, formattedPhone, message, 1000, quoted);
+    if (message) {
       await recordChatMessage({
         instanceName: activeInstance,
         remoteJid: remoteJid.endsWith('@g.us') ? remoteJid : `${formattedPhone}@s.whatsapp.net`,
@@ -90,7 +70,7 @@ export async function POST(req: Request) {
         messageId: data?.key?.id || data?.id || null,
       });
     }
-    return NextResponse.json(data, { status: res.status });
+    return NextResponse.json(data);
   } catch (error: any) {
     console.error('[Chat Send] Erro ao enviar mensagem:', error?.message);
     return NextResponse.json({ error: error.message }, { status: 500 });
