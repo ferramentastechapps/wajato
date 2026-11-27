@@ -1,6 +1,7 @@
 import { sigma } from './sigma';
 import { prisma } from './prisma';
 import { logger } from './logger';
+import { createTrialViaPanelLinks } from './panel-links';
 
 export interface SigmaActionOutcome {
   success: boolean;
@@ -107,6 +108,46 @@ export async function createTrialForLead(phone: string, deviceInput?: string): P
       return {
         success: false,
         message: 'Você já gerou um teste grátis recente em nosso sistema.',
+      };
+    }
+
+    // Primeiro tenta gerar pelos links dos painéis (Painel Plus / SmartPlay);
+    // se nenhum link gerar, cai para a API do Sigma mais abaixo (reserva)
+    const linkTrial = await createTrialViaPanelLinks(deviceInput || '', deviceKey);
+    if (linkTrial) {
+      // Registra tag no contato local (mesmo registro do fluxo do Sigma)
+      await (prisma.contact as any).upsert({
+        where: { phone: normPhone },
+        create: {
+          phone: normPhone,
+          tags: ['teste-gerado', `app-${deviceKey}`],
+          notes: `Login ${linkTrial.panel}: ${linkTrial.username}`,
+        },
+        update: {
+          tags: { push: ['teste-gerado', `app-${deviceKey}`] },
+          notes: `Login ${linkTrial.panel}: ${linkTrial.username}`,
+        },
+      });
+
+      logger.info('[Sigma Agent] Teste criado via link de painel', {
+        phone: normPhone,
+        username: linkTrial.username,
+        panel: linkTrial.panel,
+        server: linkTrial.server,
+      });
+
+      return {
+        success: true,
+        // Mensagem pronta do painel (não usar a montada do Sigma: a duração muda por painel)
+        message: linkTrial.reply,
+        data: {
+          username: linkTrial.username,
+          password: linkTrial.password,
+          serverDns: linkTrial.dns,
+          expiresAt: linkTrial.expiresAt,
+          panel: linkTrial.panel,
+          server: linkTrial.server,
+        },
       };
     }
 
