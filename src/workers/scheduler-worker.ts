@@ -228,6 +228,46 @@ scheduleDailyChipReset().catch(err =>
   logger.error('[Scheduler] Erro ao iniciar cron de reset de chips:', err)
 );
 
+// ─── Cron diário: aviso de vencimento de assinaturas às 09:05 BRT ────────────
+/**
+ * Envia, uma vez ao dia de manhã, o aviso de vencimento para assinaturas
+ * 'active' que vencem em até 3 dias (ver src/lib/subscriptions.ts).
+ * Executa às 09:05 BRT (12:05 UTC) todo dia.
+ * Roda dentro do wajato-worker (este arquivo é importado pelo message-worker).
+ */
+async function scheduleDailyExpiryWarnings() {
+  const { runExpiryWarnings } = await import('../lib/subscriptions');
+
+  function getMsUntilNextRun(): number {
+    const now = new Date();
+    // Próximo 12:05 UTC = 09:05 BRT
+    const next = new Date(now);
+    next.setUTCHours(12, 5, 0, 0);
+    if (next.getTime() <= now.getTime()) {
+      // Já passou hoje, agenda para amanhã
+      next.setUTCDate(next.getUTCDate() + 1);
+    }
+    return next.getTime() - now.getTime();
+  }
+
+  async function runWarnings() {
+    logger.info('[Scheduler] Iniciando avisos diários de vencimento de assinaturas...');
+    await runExpiryWarnings();
+    logger.info('[Scheduler] ✅ Avisos de vencimento concluídos.');
+    // Re-agenda para o próximo dia
+    setTimeout(runWarnings, getMsUntilNextRun());
+  }
+
+  // Agenda a primeira execução
+  const msUntilFirst = getMsUntilNextRun();
+  logger.info(`[Scheduler] Avisos de vencimento agendados em ${Math.round(msUntilFirst / 3600000)}h.`);
+  setTimeout(runWarnings, msUntilFirst);
+}
+
+scheduleDailyExpiryWarnings().catch(err =>
+  logger.error('[Scheduler] Erro ao iniciar cron de avisos de vencimento:', err)
+);
+
 // ─── Cron de Auto-Healing de Campanhas de Aquecimento (Verificação a cada 3 minutos) ───
 /**
  * Recupera de forma automática qualquer campanha de aquecimento (WarmupCampaign)

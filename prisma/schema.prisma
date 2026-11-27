@@ -58,6 +58,7 @@ model Contact {
   companyId          String?
   company            Company?      @relation(fields: [companyId], references: [id], onDelete: SetNull)
   logs               MessageLog[]
+  subscriptions      Subscription[]
   chatbotPausedUntil DateTime?
   optOut             Boolean       @default(false)  // Contato optou por não receber mensagens
   optOutAt           DateTime?                      // Quando foi registrado o opt-out
@@ -344,6 +345,27 @@ model ChatMessage {
 
   @@index([instanceName, remoteJid, timestamp])
   @@index([instanceName, messageId])
+}
+
+model Subscription {
+  id          String    @id @default(uuid())
+  contactId   String?
+  contact     Contact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  phone       String
+  panel       String // 'painel_plus' | 'smartplay'
+  username    String
+  planName    String?
+  connections Int?
+  expiresAt   DateTime
+  payUrl      String?
+  status      String    @default("trial") // 'trial' | 'active' | 'expired'
+  warnedAt    DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([expiresAt, status])
+  @@index([phone])
+  @@index([phone, username])
 }
 
 model WhatsAppStatus {

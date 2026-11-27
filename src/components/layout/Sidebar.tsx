@@ -17,6 +17,7 @@ import {
   ListFilter,
   Columns,
   Building2,
+  CalendarClock,
   X
 } from 'lucide-react';
 
@@ -50,6 +51,7 @@ export default function Sidebar({ username = 'Admin', isOpen = false, onClose }:
     { label: 'Segmentações', href: '/contacts/segments', icon: ListFilter },
     { label: 'CRM Kanban', href: '/crm', icon: Columns },
     { label: 'Empresas & IA', href: '/companies', icon: Building2 },
+    { label: 'Assinaturas', href: '/subscriptions', icon: CalendarClock },
     { label: 'Templates', href: '/templates', icon: FileText },
     { label: 'Campanhas', href: '/campaigns', icon: Send },
     { label: 'Auto-Responder', href: '/chatbot', icon: Bot },

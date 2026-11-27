@@ -2,6 +2,7 @@ import { sigma } from './sigma';
 import { prisma } from './prisma';
 import { logger } from './logger';
 import { createTrialViaPanelLinks } from './panel-links';
+import { recordTrialSubscription } from './subscriptions';
 
 export interface SigmaActionOutcome {
   success: boolean;
@@ -116,7 +117,7 @@ export async function createTrialForLead(phone: string, deviceInput?: string): P
     const linkTrial = await createTrialViaPanelLinks(deviceInput || '', deviceKey);
     if (linkTrial) {
       // Registra tag no contato local (mesmo registro do fluxo do Sigma)
-      await (prisma.contact as any).upsert({
+      const contact = await (prisma.contact as any).upsert({
         where: { phone: normPhone },
         create: {
           phone: normPhone,
@@ -127,6 +128,18 @@ export async function createTrialForLead(phone: string, deviceInput?: string): P
           tags: { push: ['teste-gerado', `app-${deviceKey}`] },
           notes: `Login ${linkTrial.panel}: ${linkTrial.username}`,
         },
+      });
+
+      // Auto-registro do teste como assinatura (status 'trial' — nunca é avisado)
+      await recordTrialSubscription({
+        phone: normPhone,
+        contactId: contact?.id,
+        panel: linkTrial.panel,
+        username: linkTrial.username,
+        planName: linkTrial.packageName,
+        connections: 1,
+        expiresAt: linkTrial.expiresAt,
+        payUrl: linkTrial.payUrl,
       });
 
       logger.info('[Sigma Agent] Teste criado via link de painel', {
@@ -166,7 +179,7 @@ export async function createTrialForLead(phone: string, deviceInput?: string): P
     });
 
     // Registra tag no contato local
-    await (prisma.contact as any).upsert({
+    const contact = await (prisma.contact as any).upsert({
       where: { phone: normPhone },
       create: {
         phone: normPhone,
@@ -177,6 +190,18 @@ export async function createTrialForLead(phone: string, deviceInput?: string): P
         tags: { push: ['teste-gerado', `app-${deviceKey}`] },
         notes: `Login Sigma: ${username}`,
       },
+    });
+
+    // Auto-registro do teste como assinatura (status 'trial' — nunca é avisado)
+    await recordTrialSubscription({
+      phone: normPhone,
+      contactId: contact?.id,
+      panel: 'SmartPlay',
+      username,
+      planName: target.label,
+      connections: 1,
+      expiresAt: newCustomer.expires_at,
+      payUrl: null,
     });
 
     logger.info('[Sigma Agent] Teste criado com sucesso', { phone: normPhone, username });
