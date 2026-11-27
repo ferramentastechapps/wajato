@@ -14,6 +14,7 @@ import {
 } from './chatbot-memory';
 
 import { redisConnection } from './redis';
+import { getLocalMessages } from './chat-store';
 import {
   createTrialForLead,
   checkCustomerExpiry,
@@ -517,6 +518,23 @@ ${sections.join('\n\n')}
             }
             finalMessages = Array.from(unique.values());
           }
+        } catch {}
+      }
+
+      // Evolution Go não devolve as mensagens do chat (findMessages volta vazio):
+      // sem isso o robô respondia cada mensagem "do zero", sem lembrar da conversa.
+      // O histórico local (ChatMessage, o mesmo da tela de Conversas) cobre esse caso.
+      if (finalMessages.length === 0) {
+        try {
+          const localMain = await getLocalMessages(instanceName, jid, 12);
+          let localMerged: any[] = Array.isArray(localMain) ? localMain : [];
+          if (otherJid) {
+            const localOther = await getLocalMessages(instanceName, otherJid, 12);
+            if (Array.isArray(localOther) && localOther.length > 0) {
+              localMerged = [...localMerged, ...localOther];
+            }
+          }
+          if (localMerged.length > 0) finalMessages = localMerged;
         } catch {}
       }
 
