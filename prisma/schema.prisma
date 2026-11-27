@@ -328,6 +328,24 @@ model ChatbotLog {
   createdAt  DateTime @default(now())
 }
 
+// Histórico local das conversas (webhook + envios). A tela de Conversas lê
+// daqui quando a Evolution não devolve os chats/mensagens da instância.
+model ChatMessage {
+  id           String   @id @default(uuid())
+  instanceName String
+  remoteJid    String
+  phone        String?
+  pushName     String?
+  fromMe       Boolean  @default(false)
+  body         String
+  messageId    String? // id da mensagem no WhatsApp/Evolution (dedupe)
+  timestamp    Int // epoch em segundos
+  createdAt    DateTime @default(now())
+
+  @@index([instanceName, remoteJid, timestamp])
+  @@index([instanceName, messageId])
+}
+
 model WhatsAppStatus {
   id           String   @id @default(uuid())
   instanceName String

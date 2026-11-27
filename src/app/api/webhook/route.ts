@@ -7,6 +7,7 @@ import { sentMessagesCache } from '@/lib/sent-messages-cache';
 import { recordChipReadEngagement } from '@/lib/chip-router';
 import { formatMessageText } from '@/lib/spintax';
 import { redisConnection } from '@/lib/redis';
+import { recordChatMessage } from '@/lib/chat-store';
 
 /**
  * Normaliza um número de telefone removendo DDI duplicado, + e espaços.
@@ -113,6 +114,37 @@ export async function POST(request: Request) {
         const isStatusUpdate = remoteJid === 'status@broadcast';
 
         console.log(`[Webhook Details] isFromMe:${isFromMe}, remoteJid:${remoteJid}, isDirect:${isDirectMessage}, isLid:${isLidMessage}, isGroup:${isGroupMessage}, instanceName:${instanceName}`);
+
+        // Registra a mensagem no histórico local de conversas (entrada e saída).
+        // A tela de Conversas lê deste histórico quando a Evolution não
+        // devolve os chats/mensagens da instância.
+        if (instanceName && remoteJid && !isStatusUpdate && (isDirectMessage || isLidMessage || isGroupMessage)) {
+          const recordBody =
+            (typeof msg === 'string' ? msg : '') ||
+            msg?.conversation ||
+            msg?.extendedTextMessage?.text ||
+            msg?.imageMessage?.caption ||
+            msg?.videoMessage?.caption ||
+            (msg?.audioMessage ? '[Áudio]' : '') ||
+            (msg?.imageMessage ? '[Imagem]' : '') ||
+            (msg?.videoMessage ? '[Vídeo]' : '') ||
+            (msg?.stickerMessage ? '[Figurinha]' : '') ||
+            (msg?.documentMessage ? '[Documento]' : '') ||
+            messageData?.text ||
+            messageData?.body ||
+            '';
+          const recordTimestamp = Number(messageData?.messageTimestamp || info?.Timestamp || 0);
+          void recordChatMessage({
+            instanceName,
+            remoteJid,
+            phone: remoteJid.endsWith('@s.whatsapp.net') ? normalizePhone(remoteJid.split('@')[0]) : null,
+            pushName: info?.PushName || info?.pushName || messageData?.pushName || null,
+            fromMe: isFromMe,
+            body: recordBody,
+            messageId: incomingMessageId || null,
+            timestamp: recordTimestamp > 0 ? recordTimestamp : undefined,
+          });
+        }
 
         if (!isFromMe && remoteJid && (isDirectMessage || isLidMessage || isGroupMessage || isStatusUpdate) && instanceName) {
           // Desduplicação de webhook: ignora mensagens repetidas com o mesmo ID nos últimos 60 segundos

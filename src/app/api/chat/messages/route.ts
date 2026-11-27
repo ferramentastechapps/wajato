@@ -2,10 +2,44 @@ import { NextResponse } from 'next/server';
 import { evolutionApi } from '@/lib/evolution';
 import { lidResolver } from '@/lib/lid-resolver';
 import { prisma } from '@/lib/prisma';
+import { getLocalMessages } from '@/lib/chat-store';
+
+function messageTextOf(m: any): string {
+  return m?.message?.conversation || m?.message?.extendedTextMessage?.text || m?.text || '';
+}
+
+/**
+ * Mescla mensagens da Evolution com as do histórico local (ChatMessage),
+ * removendo duplicados: pelo id da mensagem e, para registros sem id
+ * confiável, por autor + texto + timestamp próximo (eco do envio via API).
+ */
+function mergeLocalMessages(evolutionMessages: any[], localMessages: any[], limit: number) {
+  const evoIds = new Set(evolutionMessages.map((m: any) => m.key?.id).filter(Boolean));
+
+  const extras = localMessages.filter((local: any) => {
+    const id = local.key?.id;
+    if (id && evoIds.has(id)) return false;
+
+    const localText = messageTextOf(local);
+    const localTs = Number(local.messageTimestamp || 0);
+    const isDuplicate = evolutionMessages.some((evo: any) => {
+      if (!!evo.key?.fromMe !== !!local.key?.fromMe) return false;
+      if (messageTextOf(evo) !== localText) return false;
+      return Math.abs(Number(evo.messageTimestamp || 0) - localTs) <= 300;
+    });
+    return !isDuplicate;
+  });
+
+  const merged = [...evolutionMessages, ...extras];
+  merged.sort((a, b) => Number(b.messageTimestamp || 0) - Number(a.messageTimestamp || 0));
+  return merged.slice(0, limit);
+}
 
 async function fetchUnifiedMessages(instanceName: string, remoteJid: string, limit = 100) {
   const messages = await evolutionApi.findMessages(instanceName, remoteJid, limit);
-  
+
+  let evolutionMessages = messages;
+
   let otherJid = null;
   if (remoteJid.endsWith('@s.whatsapp.net')) {
     const phone = remoteJid.split('@')[0];
@@ -15,7 +49,7 @@ async function fetchUnifiedMessages(instanceName: string, remoteJid: string, lim
     const phone = lidResolver.getPhone(remoteJid);
     if (phone) otherJid = `${phone}@s.whatsapp.net`;
   }
-  
+
   if (otherJid) {
     try {
       const otherMessages = await evolutionApi.findMessages(instanceName, otherJid, limit);
@@ -31,22 +65,31 @@ async function fetchUnifiedMessages(instanceName: string, remoteJid: string, lim
             }
           }
         }
-        
+
         // Ordena por timestamp decrescente (mais recente primeiro)
-        const sorted = Array.from(unique.values()).sort((a, b) => {
+        evolutionMessages = Array.from(unique.values()).sort((a, b) => {
           const tsA = Number(a.messageTimestamp || 0);
           const tsB = Number(b.messageTimestamp || 0);
           return tsB - tsA;
-        });
-        
-        return sorted.slice(0, limit);
+        }).slice(0, limit);
       }
     } catch (err) {
       console.error(`[Fetch Unified Messages] Erro ao buscar JID secundário ${otherJid}:`, err);
     }
   }
-  
-  return messages;
+
+  // Histórico local (webhook/envios): garante as mensagens da conversa
+  // mesmo quando a Evolution não devolve o histórico da instância
+  try {
+    const localMessages = await getLocalMessages(instanceName, remoteJid, limit);
+    if (localMessages.length > 0) {
+      return mergeLocalMessages(evolutionMessages, localMessages, limit);
+    }
+  } catch (err) {
+    console.error(`[Fetch Unified Messages] Erro ao buscar histórico local:`, err);
+  }
+
+  return evolutionMessages;
 }
 
 export async function GET(req: Request) {

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { evolutionApi } from '@/lib/evolution';
 import { prisma } from '@/lib/prisma';
+import { recordChatMessage } from '@/lib/chat-store';
 
 export async function POST(req: Request) {
   try {
@@ -30,6 +31,15 @@ export async function POST(req: Request) {
         mediaType || 'image',
         message || ''
       );
+      const mediaLabels: Record<string, string> = { image: '[Imagem]', video: '[Vídeo]', audio: '[Áudio]', document: '[Documento]' };
+      await recordChatMessage({
+        instanceName: activeInstance,
+        remoteJid,
+        phone: remoteJid.endsWith('@s.whatsapp.net') ? remoteJid.split('@')[0] : null,
+        fromMe: true,
+        body: message || mediaLabels[mediaType || 'image'] || '[Mídia]',
+        messageId: sentMedia?.key?.id || sentMedia?.id || null,
+      });
       return NextResponse.json(sentMedia);
     }
 
@@ -70,6 +80,16 @@ export async function POST(req: Request) {
     });
 
     const data = await res.json();
+    if (res.ok && message) {
+      await recordChatMessage({
+        instanceName: activeInstance,
+        remoteJid: remoteJid.endsWith('@g.us') ? remoteJid : `${formattedPhone}@s.whatsapp.net`,
+        phone: formattedPhone,
+        fromMe: true,
+        body: message,
+        messageId: data?.key?.id || data?.id || null,
+      });
+    }
     return NextResponse.json(data, { status: res.status });
   } catch (error: any) {
     console.error('[Chat Send] Erro ao enviar mensagem:', error?.message);

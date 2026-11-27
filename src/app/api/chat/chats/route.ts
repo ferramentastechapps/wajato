@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { evolutionApi } from '@/lib/evolution';
 import { prisma } from '@/lib/prisma';
 import { lidResolver } from '@/lib/lid-resolver';
+import { getLocalChatSummaries } from '@/lib/chat-store';
 
 export async function GET(req: Request) {
   try {
@@ -13,12 +14,14 @@ export async function GET(req: Request) {
     }
 
     let chats: any[] = [];
+    let scopeNames: string[] = [];
     if (instanceName === 'all') {
       const dbInsts = await prisma.whatsAppInstance.findMany({
         where: { status: 'CONNECTED' },
         select: { name: true }
       });
       const names = dbInsts.map(i => i.name);
+      scopeNames = names;
       if (names.length === 0) {
         return NextResponse.json([]);
       }
@@ -36,6 +39,7 @@ export async function GET(req: Request) {
       const results = await Promise.all(chatsPromises);
       chats = results.flat();
     } else {
+      scopeNames = [instanceName];
       const list = await evolutionApi.findChats(instanceName);
       chats = list.map((c: any) => ({ ...c, instanceName }));
     }
@@ -93,9 +97,35 @@ export async function GET(req: Request) {
       };
     });
 
+    // Histórico local de conversas (gravado pelo webhook e pelos envios):
+    // entra na mesma deduplicação, para a conversa aparecer na lista mesmo
+    // quando a Evolution não devolve os chats da instância
+    let localMapped: any[] = [];
+    try {
+      const summaries = await getLocalChatSummaries(scopeNames);
+      localMapped = summaries.map((s) => ({
+        id: s.remoteJid,
+        name: s.pushName && !s.pushName.includes('@')
+          ? s.pushName
+          : s.phone
+            ? `+${s.phone}`
+            : s.remoteJid.split('@')[0],
+        unreadCount: 0,
+        conversationTimestamp: s.lastTimestamp,
+        lastMessage: s.lastBody,
+        phoneNumber: s.phone || undefined,
+        pushName: s.pushName || null,
+        profilePicUrl: null,
+        remoteJid: s.remoteJid,
+        instanceName: s.instanceName,
+      }));
+    } catch (err) {
+      console.error('[Chats Route] Erro ao buscar histórico local de conversas:', err);
+    }
+
     // Deduplicar chats por número de telefone para evitar duplicidade de LID e s.whatsapp.net
     const deduplicatedMap = new Map<string, any>();
-    for (const chat of mappedChats) {
+    for (const chat of [...mappedChats, ...localMapped]) {
       const key = chat.phoneNumber || chat.id;
       if (!deduplicatedMap.has(key)) {
         deduplicatedMap.set(key, chat);

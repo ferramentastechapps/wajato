@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { prisma } from './prisma';
 import { sentMessagesCache } from './sent-messages-cache';
+import { recordChatMessage } from './chat-store';
 
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://localhost:8082';
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || 'wajato_global_api_key_5544';
@@ -66,6 +67,23 @@ async function registerSentMessage(data: any) {
   } catch (err) {
     console.error('[Evolution API] Erro ao registrar mensagem enviada:', err);
   }
+}
+
+/**
+ * Registra um texto enviado no histórico local de conversas (ChatMessage),
+ * para a tela de Conversas exibir a conversa mesmo quando a Evolution não
+ * devolve o histórico da instância.
+ */
+async function recordSentChatMessage(instanceName: string, formattedPhone: string, text: string, data: any) {
+  const first = Array.isArray(data) ? data[0] : data;
+  await recordChatMessage({
+    instanceName,
+    remoteJid: `${formattedPhone}@s.whatsapp.net`,
+    phone: formattedPhone,
+    fromMe: true,
+    body: text,
+    messageId: first?.key?.id || first?.id || null,
+  });
 }
 
 /**
@@ -396,6 +414,7 @@ export const evolutionApi = {
           }
         );
         await registerSentMessage(goRes.data);
+        await recordSentChatMessage(instanceName, formattedPhone, text, goRes.data);
         return goRes.data;
       } catch (goErr: any) {
         // Se for erro de validação ou erro de envio real do WhatsApp, extrai e lança
@@ -415,6 +434,7 @@ export const evolutionApi = {
         },
       });
       await registerSentMessage(response.data);
+      await recordSentChatMessage(instanceName, formattedPhone, text, response.data);
       return response.data;
     } catch (error: any) {
       console.error(`Erro ao enviar mensagem de texto para ${phone}:`, error?.response?.data || error.message);
@@ -1062,7 +1082,7 @@ export const evolutionApi = {
   async findChats(instanceName: string): Promise<any[]> {
     try {
       const response = await evolutionClient.post(`/chat/findChats/${instanceName}`, {});
-      return Array.isArray(response.data) ? response.data : [];
+      return Array.isArray(response.data) ? response.data : (response.data?.records || response.data?.chats || response.data?.data || []);
     } catch (error: any) {
       console.error(`Erro ao buscar conversas para ${instanceName}:`, error?.response?.data || error.message);
       return [];
