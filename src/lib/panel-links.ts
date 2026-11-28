@@ -13,8 +13,9 @@ export interface PanelLinkTrial {
   dns?: string;
   packageName?: string;
   expiresAt?: string;
+  expiresAtFormatted?: string;
   payUrl?: string;
-  reply: string; // mensagem pronta do painel para enviar ao cliente
+  reply: string; // mensagem CURTA montada por nós (dados do teste + link de renovação)
 }
 
 const PANEL_TIMEOUT_MS = 20000;
@@ -220,6 +221,7 @@ async function generateFromLink(url: string): Promise<Omit<PanelLinkTrial, 'pane
       dns: json.dns || undefined,
       packageName: json.package || undefined,
       expiresAt: json.expiresAt || undefined,
+      expiresAtFormatted: json.expiresAtFormatted || undefined,
       payUrl: json.payUrl || undefined,
       reply: extractReplyText(json),
     };
@@ -230,41 +232,50 @@ async function generateFromLink(url: string): Promise<Omit<PanelLinkTrial, 'pane
 }
 
 /**
- * A mensagem pronta do painel traz as instruções de TODOS os aplicativos
- * (trechos "Preencha o <app> conforme abaixo:"), mas o cliente escolheu UM:
- * fica só o cabeçalho (credenciais e vencimento) + o trecho do aplicativo
- * dele. Portal/navegador não tem trecho: vai só o cabeçalho. Sem trecho
- * correspondente, devolve a mensagem inteira (comportamento anterior).
+ * A mensagem que vai ao cliente NÃO é mais o texto pronto do painel: ele é
+ * enorme, repete as instruções de instalação que o agente já mandou na
+ * mensagem anterior (e, no SmartPlay, nem tem os marcadores de seção do
+ * Plus, então ia inteiro). Decisão do dono (28/11): montar uma mensagem
+ * CURTA só com os dados do teste + o link de renovação do painel.
  */
-const APP_SECTION_RULES: Array<{ match: RegExp; section: RegExp | null }> = [
-  { match: /zuxo|media station|msx/i, section: /zuxo/i },
-  { match: /smarters/i, section: /smarters/i },
-  { match: /xciptv|slim|\bxc\b/i, section: /xciptv/i },
-  { match: /unitv/i, section: /unitv/i },
-  { match: /portal|navegador|browser|webplayer/i, section: null },
-];
-
-function filterReplyForApp(reply: string, deviceInput: string): string {
-  const starts: number[] = [];
-  const re = /^.*Preencha o .+conforme abaixo:.*$/gim;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(reply)) !== null) starts.push(m.index);
-  if (!starts.length) return reply;
-
-  const rule = APP_SECTION_RULES.find((r) => r.match.test(deviceInput));
-  if (!rule) return reply;
-
-  const header = reply.slice(0, starts[0]).trim();
-  if (rule.section === null) return header || reply;
-
-  for (let i = 0; i < starts.length; i++) {
-    const end = i + 1 < starts.length ? starts[i + 1] : reply.length;
-    const section = reply.slice(starts[i], end).trim();
-    if (rule.section.test(section.split('\n')[0])) {
-      return header ? `${header}\n\n${section}` : section;
-    }
+function formatExpiry(trial: { expiresAt?: string; expiresAtFormatted?: string }): string | null {
+  if (trial.expiresAtFormatted) return trial.expiresAtFormatted;
+  if (!trial.expiresAt) return null;
+  const d = new Date(trial.expiresAt);
+  if (Number.isNaN(d.getTime())) return trial.expiresAt;
+  try {
+    return new Intl.DateTimeFormat('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(d);
+  } catch {
+    return trial.expiresAt;
   }
-  return reply;
+}
+
+function composeTrialMessage(trial: {
+  username: string;
+  password: string;
+  dns?: string;
+  expiresAt?: string;
+  expiresAtFormatted?: string;
+  payUrl?: string;
+}): string {
+  const lines = [
+    '✅ *Seu teste grátis está liberado!*',
+    '',
+    `👤 *Usuário:* \`${trial.username}\``,
+    `🔑 *Senha:* \`${trial.password}\``,
+  ];
+  if (trial.dns) lines.push(`🌐 *URL / DNS:* \`${trial.dns}\``);
+  const expiry = formatExpiry(trial);
+  if (expiry) lines.push(`⏳ *Válido até:* ${expiry}`);
+  if (trial.payUrl) lines.push('', `💳 *Pra continuar depois do teste, renove aqui:* ${trial.payUrl}`);
+  return lines.join('\n');
 }
 
 /**
@@ -280,7 +291,7 @@ export async function createTrialViaPanelLinks(
   if (isPlusRoute(deviceInput)) {
     const trial = await generateFromLink(PLUS_TRIAL_6H_ADULT_URL);
     return trial
-      ? { ...trial, panel: 'Painel Plus', reply: filterReplyForApp(trial.reply, deviceInput) }
+      ? { ...trial, panel: 'Painel Plus', reply: composeTrialMessage(trial) }
       : null;
   }
 
@@ -296,7 +307,7 @@ export async function createTrialViaPanelLinks(
         ...trial,
         panel: 'SmartPlay',
         server: server.name,
-        reply: filterReplyForApp(trial.reply, deviceInput),
+        reply: composeTrialMessage(trial),
       };
   }
 

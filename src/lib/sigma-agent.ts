@@ -151,7 +151,8 @@ export async function createTrialForLead(phone: string, deviceInput?: string): P
 
       return {
         success: true,
-        // Mensagem pronta do painel (não usar a montada do Sigma: a duração muda por painel)
+        // Mensagem curta montada em panel-links (dados do teste + link de
+        // renovação) — o texto pronto do painel NÃO vai ao cliente.
         message: linkTrial.reply,
         data: {
           username: linkTrial.username,
