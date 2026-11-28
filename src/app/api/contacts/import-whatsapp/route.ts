@@ -16,6 +16,11 @@ import { evolutionApi } from '@/lib/evolution';
  *
  * Um dos dois (targetGroupId ou createGroupName) deve ser fornecido.
  * Se ambos forem enviados, targetGroupId prevalece.
+ *
+ * Regras da extração (dono, 28/11):
+ * - Administradores do grupo (admin/superadmin) NÃO são extraídos.
+ * - Cada contato extraído ganha uma TAG com o nome do grupo do WhatsApp
+ *   de onde veio (se vier de mais de um grupo, ganha uma tag por grupo).
  */
 export async function POST(request: Request) {
   try {
@@ -65,14 +70,29 @@ export async function POST(request: Request) {
       finalGroupId = group.id;
     }
 
+    // --- Nome de cada grupo do WhatsApp (para a tag com o nome do grupo) ---
+    const groupNameByJid = new Map<string, string>();
+    const allGroups = await evolutionApi.fetchGroups(instanceName);
+    for (const g of allGroups) {
+      if (g?.id && g?.subject) groupNameByJid.set(g.id, String(g.subject).trim());
+    }
+
     // --- Coleta participantes de cada grupo ---
     const phoneSet = new Set<string>();
-    const contactMap = new Map<string, { name: string | null }>();
+    const contactMap = new Map<string, { name: string | null; tags: string[] }>();
+    let adminsSkipped = 0;
 
     for (const groupJid of groupJids) {
       const participants = await evolutionApi.fetchGroupParticipants(instanceName, groupJid);
+      const groupTag = groupNameByJid.get(groupJid) || null;
 
       for (const p of participants) {
+        // Administrador do grupo NÃO é extraído (regra do dono, 28/11)
+        if (p.admin || (p as any).isAdmin || (p as any).isSuperAdmin) {
+          adminsSkipped++;
+          continue;
+        }
+
         // JID real fica em p.phoneNumber se o JID principal p.id for uma LID (ex: community announcement)
         const finalJid = p.phoneNumber || p.id;
         if (!finalJid) continue;
@@ -83,13 +103,12 @@ export async function POST(request: Request) {
         const formatted = evolutionApi.formatPhone(rawPhone);
         if (!formatted) continue;
 
-        const name = p.name || null;
         phoneSet.add(formatted);
 
-        const existingInfo = contactMap.get(formatted);
-        if (!existingInfo || (!existingInfo.name && name)) {
-          contactMap.set(formatted, { name });
-        }
+        const info = contactMap.get(formatted) || { name: null, tags: [] as string[] };
+        if (!info.name && p.name) info.name = p.name;
+        if (groupTag && !info.tags.includes(groupTag)) info.tags.push(groupTag);
+        contactMap.set(formatted, info);
       }
     }
 
@@ -106,10 +125,10 @@ export async function POST(request: Request) {
     // --- Importa em lote (upsert: atualiza groupId se já existe, cria se não existe) ---
     const phonesArray = Array.from(phoneSet);
 
-    // Identifica quais já existem no banco
+    // Identifica quais já existem no banco (com as tags atuais, p/ mesclar)
     const existing = await prisma.contact.findMany({
       where: { phone: { in: phonesArray } },
-      select: { phone: true },
+      select: { phone: true, tags: true },
     });
     const existingPhones = new Set(existing.map((c) => c.phone));
 
@@ -119,7 +138,7 @@ export async function POST(request: Request) {
         phone,
         name: contactMap.get(phone)?.name || null,
         groupId: finalGroupId,
-        tags: [] as string[],
+        tags: contactMap.get(phone)?.tags || [],
       }));
 
     const toUpdate = phonesArray.filter((p) => existingPhones.has(p));
@@ -170,16 +189,37 @@ export async function POST(request: Request) {
         data: { groupId: finalGroupId },
       });
       updated = result.count;
+
+      // 3. Mescla a tag do nome do grupo nas tags atuais (sem remover nenhuma)
+      const tagUpdatePromises = existing
+        .map((c) => {
+          const newTags = contactMap.get(c.phone)?.tags || [];
+          if (newTags.length === 0) return null;
+          const merged = Array.from(new Set([...(c.tags || []), ...newTags]));
+          if (merged.length === (c.tags || []).length) return null;
+          return prisma.contact.update({
+            where: { phone: c.phone },
+            data: { tags: merged },
+          });
+        })
+        .filter(Boolean);
+
+      if (tagUpdatePromises.length > 0) {
+        await Promise.all(tagUpdatePromises);
+      }
     }
 
     const total = phonesArray.length;
 
     return NextResponse.json({
       success: true,
-      message: `Importação concluída: ${created} novos contatos criados, ${updated} contatos existentes atualizados.`,
+      message:
+        `Importação concluída: ${created} novos contatos criados, ${updated} contatos existentes atualizados.` +
+        (adminsSkipped > 0 ? ` ${adminsSkipped} administradores ignorados.` : ''),
       imported: created,
       updated,
       total,
+      adminsSkipped,
     });
   } catch (error: any) {
     console.error('Erro ao importar contatos do WhatsApp:', error);
