@@ -160,6 +160,83 @@ function TagBadge({ tag }: { tag: string }) {
   );
 }
 
+/** Campo de tags em cartões: cada tag é um chip com X pra remover; Enter ou vírgula adiciona */
+function TagsInput({ value, onChange, placeholder }: { value: string[]; onChange: (tags: string[]) => void; placeholder?: string }) {
+  const [draft, setDraft] = useState('');
+  const [focused, setFocused] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const addTags = (raw: string) => {
+    const parts = raw.split(',').map(t => t.trim()).filter(Boolean);
+    if (parts.length === 0) return;
+    const seen = new Set(value.map(t => t.toLowerCase()));
+    const merged = [...value];
+    for (const p of parts) {
+      if (!seen.has(p.toLowerCase())) {
+        seen.add(p.toLowerCase());
+        merged.push(p);
+      }
+    }
+    onChange(merged);
+  };
+
+  const commitDraft = () => {
+    if (draft.trim()) addTags(draft);
+    setDraft('');
+  };
+
+  return (
+    <div
+      className="input-control"
+      onClick={() => inputRef.current?.focus()}
+      style={{
+        display: 'flex', flexWrap: 'wrap', gap: '0.35rem', alignItems: 'center',
+        padding: '0.45rem 0.6rem', height: 'auto', minHeight: '2.75rem', cursor: 'text',
+        ...(focused ? { borderColor: 'var(--primary)', boxShadow: '0 0 0 2px var(--primary-glow)' } : {}),
+      }}
+    >
+      {value.map((tag, i) => {
+        const color = hashColor(tag);
+        return (
+          <span key={`${tag}-${i}`} style={{
+            fontSize: '0.75rem', padding: '0.2rem 0.35rem 0.2rem 0.55rem',
+            backgroundColor: `${color}15`, border: `1px solid ${color}35`, borderRadius: '999px',
+            color, fontWeight: 500, display: 'inline-flex', alignItems: 'center', gap: '0.3rem', whiteSpace: 'nowrap',
+          }}>
+            {tag}
+            <button type="button" aria-label={`Remover tag ${tag}`}
+              onClick={e => { e.stopPropagation(); onChange(value.filter((_, idx) => idx !== i)); }}
+              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '15px', height: '15px', borderRadius: '999px', border: 'none', background: 'transparent', color, cursor: 'pointer', padding: 0 }}>
+              <X size={11} />
+            </button>
+          </span>
+        );
+      })}
+      <input
+        ref={inputRef}
+        type="text"
+        value={draft}
+        placeholder={value.length === 0 ? (placeholder || 'Digite e pressione Enter') : ''}
+        onChange={e => {
+          if (e.target.value.includes(',')) { addTags(e.target.value); setDraft(''); }
+          else setDraft(e.target.value);
+        }}
+        onKeyDown={e => {
+          if (e.key === 'Enter') { e.preventDefault(); commitDraft(); }
+          else if (e.key === 'Backspace' && draft === '' && value.length > 0) onChange(value.slice(0, -1));
+        }}
+        onPaste={e => {
+          const text = e.clipboardData.getData('text');
+          if (text.includes(',')) { e.preventDefault(); addTags(text); setDraft(''); }
+        }}
+        onFocus={() => setFocused(true)}
+        onBlur={() => { commitDraft(); setFocused(false); }}
+        style={{ flex: 1, minWidth: '110px', background: 'transparent', border: 'none', outline: 'none', color: 'var(--text-primary)', fontSize: '0.875rem', padding: '0.15rem 0.1rem' }}
+      />
+    </div>
+  );
+}
+
 /** Toggle estilo switch */
 function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void }) {
   return (
@@ -269,7 +346,7 @@ export default function ContactsPage() {
   const [waResult, setWaResult] = useState<{ imported: number; updated: number; total: number } | null>(null);
 
   // Form novo contato
-  const [newContact, setNewContact] = useState({ name: '', phone: '', tags: '', groupId: '', optOut: false });
+  const [newContact, setNewContact] = useState<{ name: string; phone: string; tags: string[]; groupId: string; optOut: boolean }>({ name: '', phone: '', tags: [], groupId: '', optOut: false });
   const [newGroup, setNewGroup] = useState({ name: '', description: '' });
   const [importGroupId, setImportGroupId] = useState('');
   const [csvFileContent, setCsvFileContent] = useState<string | null>(null);
@@ -440,9 +517,7 @@ export default function ContactsPage() {
     if (!newContact.phone) return;
     setIsSubmitting(true);
     try {
-      const tagsArray = newContact.tags
-        ? newContact.tags.split(',').map(t => t.trim()).filter(Boolean)
-        : [];
+      const tagsArray = Array.from(new Set(newContact.tags.map(t => t.trim()).filter(Boolean)));
       const response = await fetch('/api/contacts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -455,7 +530,7 @@ export default function ContactsPage() {
         }),
       });
       if (response.ok) {
-        setNewContact({ name: '', phone: '', tags: '', groupId: '', optOut: false });
+        setNewContact({ name: '', phone: '', tags: [], groupId: '', optOut: false });
         setPhoneCheckResult(null);
         setWaCheckResult(null);
         setShowAddContact(false);
@@ -512,9 +587,9 @@ export default function ContactsPage() {
     if (!editingContact?.phone) return;
     setIsSubmitting(true);
     try {
-      const tagsArray = Array.isArray(editingContact.tags)
+      const tagsArray = Array.from(new Set((Array.isArray(editingContact.tags)
         ? editingContact.tags.map(t => t.trim()).filter(Boolean)
-        : (editingContact.tags as string).split(',').map(t => t.trim()).filter(Boolean);
+        : (editingContact.tags as string).split(',').map(t => t.trim()).filter(Boolean))));
 
       const response = await fetch('/api/contacts', {
         method: 'POST',
@@ -1536,9 +1611,8 @@ export default function ContactsPage() {
                   </select>
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Tags <span style={{ color: '#6b7280', fontWeight: 400 }}>(separadas por vírgula)</span></label>
-                  <input type="text" className="input-control" placeholder="vip, cliente, novo"
-                    value={newContact.tags} onChange={e => setNewContact({ ...newContact, tags: e.target.value })} />
+                  <label className="form-label">Tags</label>
+                  <TagsInput value={newContact.tags} onChange={tags => setNewContact({ ...newContact, tags })} placeholder="vip, cliente, novo" />
                 </div>
                 <div className="form-group">
                   <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer', userSelect: 'none' }}>
@@ -1655,9 +1729,10 @@ export default function ContactsPage() {
                   </div>
                   <div className="form-group">
                     <label className="form-label">Tags</label>
-                    <input type="text" className="input-control" placeholder="vip, cliente, novo"
-                      value={Array.isArray(editingContact.tags) ? editingContact.tags.join(', ') : (editingContact.tags || '')}
-                      onChange={e => setEditingContact({ ...editingContact, tags: e.target.value.split(',').map(t => t.trim()) })} />
+                    <TagsInput
+                      value={Array.isArray(editingContact.tags) ? editingContact.tags : String(editingContact.tags || '').split(',').map(t => t.trim()).filter(Boolean)}
+                      onChange={tags => setEditingContact({ ...editingContact, tags })}
+                      placeholder="vip, cliente, novo" />
                   </div>
                   <div className="form-group">
                     <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer', userSelect: 'none' }}>
