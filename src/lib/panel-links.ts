@@ -230,6 +230,44 @@ async function generateFromLink(url: string): Promise<Omit<PanelLinkTrial, 'pane
 }
 
 /**
+ * A mensagem pronta do painel traz as instruções de TODOS os aplicativos
+ * (trechos "Preencha o <app> conforme abaixo:"), mas o cliente escolheu UM:
+ * fica só o cabeçalho (credenciais e vencimento) + o trecho do aplicativo
+ * dele. Portal/navegador não tem trecho: vai só o cabeçalho. Sem trecho
+ * correspondente, devolve a mensagem inteira (comportamento anterior).
+ */
+const APP_SECTION_RULES: Array<{ match: RegExp; section: RegExp | null }> = [
+  { match: /zuxo|media station|msx/i, section: /zuxo/i },
+  { match: /smarters/i, section: /smarters/i },
+  { match: /xciptv|slim|\bxc\b/i, section: /xciptv/i },
+  { match: /unitv/i, section: /unitv/i },
+  { match: /portal|navegador|browser|webplayer/i, section: null },
+];
+
+function filterReplyForApp(reply: string, deviceInput: string): string {
+  const starts: number[] = [];
+  const re = /^.*Preencha o .+conforme abaixo:.*$/gim;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(reply)) !== null) starts.push(m.index);
+  if (!starts.length) return reply;
+
+  const rule = APP_SECTION_RULES.find((r) => r.match.test(deviceInput));
+  if (!rule) return reply;
+
+  const header = reply.slice(0, starts[0]).trim();
+  if (rule.section === null) return header || reply;
+
+  for (let i = 0; i < starts.length; i++) {
+    const end = i + 1 < starts.length ? starts[i + 1] : reply.length;
+    const section = reply.slice(starts[i], end).trim();
+    if (rule.section.test(section.split('\n')[0])) {
+      return header ? `${header}\n\n${section}` : section;
+    }
+  }
+  return reply;
+}
+
+/**
  * Gera o teste grátis pelos links dos painéis, roteando pelo app/aparelho:
  * - Zuxo / Slim / Smarters / Media Station X / navegador → Painel Plus (6h com adultos)
  * - UniTV e demais aparelhos/apps → SmartPlay (4h), servidores em ordem até um gerar
@@ -241,7 +279,9 @@ export async function createTrialViaPanelLinks(
 ): Promise<PanelLinkTrial | null> {
   if (isPlusRoute(deviceInput)) {
     const trial = await generateFromLink(PLUS_TRIAL_6H_ADULT_URL);
-    return trial ? { ...trial, panel: 'Painel Plus' } : null;
+    return trial
+      ? { ...trial, panel: 'Painel Plus', reply: filterReplyForApp(trial.reply, deviceInput) }
+      : null;
   }
 
   const kinds = resolveSmartKinds(deviceInput, deviceKey);
@@ -251,7 +291,13 @@ export async function createTrialViaPanelLinks(
     if (!token) continue;
 
     const trial = await generateFromLink(`${SMARTPLAY_BASE}/${token}`);
-    if (trial) return { ...trial, panel: 'SmartPlay', server: server.name };
+    if (trial)
+      return {
+        ...trial,
+        panel: 'SmartPlay',
+        server: server.name,
+        reply: filterReplyForApp(trial.reply, deviceInput),
+      };
   }
 
   return null;
