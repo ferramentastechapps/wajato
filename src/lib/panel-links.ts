@@ -225,21 +225,26 @@ function formatExpiry(trial: { expiresAt?: string; expiresAtFormatted?: string }
   }
 }
 
-function composeTrialMessage(trial: {
-  username: string;
-  password: string;
-  dns?: string;
-  expiresAt?: string;
-  expiresAtFormatted?: string;
-  payUrl?: string;
-}): string {
+function composeTrialMessage(
+  trial: {
+    username: string;
+    password: string;
+    dns?: string;
+    expiresAt?: string;
+    expiresAtFormatted?: string;
+    payUrl?: string;
+  },
+  hideDns = false,
+): string {
   const lines = [
     '✅ *Seu teste grátis está liberado!*',
     '',
     `👤 *Usuário:* \`${trial.username}\``,
     `🔑 *Senha:* \`${trial.password}\``,
   ];
-  if (trial.dns) lines.push(`🌐 *URL / DNS:* \`${trial.dns}\``);
+  // Zuxo NÃO usa DNS: a configuração é pela Playlist com o código 'slim'
+  // (regra do dono, 28/11) — a linha de DNS só confunde o cliente.
+  if (trial.dns && !hideDns) lines.push(`🌐 *URL / DNS:* \`${trial.dns}\``);
   const expiry = formatExpiry(trial);
   if (expiry) lines.push(`⏳ *Válido até:* ${expiry}`);
   if (trial.payUrl) lines.push('', `💳 *Pra continuar depois do teste, renove aqui:* ${trial.payUrl}`);
@@ -261,11 +266,14 @@ export async function createTrialViaPanelLinks(
 ): Promise<PanelLinkTrial | null> {
   if (!panelConfig) return null;
 
+  // Zuxo (direto ou via Media Station X) não usa DNS — ver composeTrialMessage
+  const hideDns = /zuxo/i.test(deviceInput);
+
   if (isPlusRoute(deviceInput)) {
     if (!panelConfig.plusUrl) return null;
     const trial = await generateFromLink(panelConfig.plusUrl);
     return trial
-      ? { ...trial, panel: 'Painel Plus', reply: composeTrialMessage(trial) }
+      ? { ...trial, panel: 'Painel Plus', reply: composeTrialMessage(trial, hideDns) }
       : null;
   }
 
@@ -285,7 +293,7 @@ export async function createTrialViaPanelLinks(
         ...trial,
         panel: 'SmartPlay',
         server: server.name,
-        reply: composeTrialMessage(trial),
+        reply: composeTrialMessage(trial, hideDns),
       };
   }
 

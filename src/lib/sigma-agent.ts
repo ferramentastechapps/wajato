@@ -219,8 +219,7 @@ export async function createTrialForLead(phone: string, deviceInput?: string, tr
 📱 *Aplicativo:* ${target.label}
 👤 *Usuário:* \`${username}\`
 🔑 *Senha:* \`${password}\`
-🌐 *URL / DNS:* \`${serverDns}\`
-
+${/zuxo/i.test(deviceInput || '') ? '' : `🌐 *URL / DNS:* \`${serverDns}\`\n`}
 Coloque esses dados no aplicativo que você abriu. Se tiver qualquer dúvida, é só me chamar aqui!`,
       data: {
         id: newCustomer.id,
