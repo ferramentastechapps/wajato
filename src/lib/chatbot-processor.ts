@@ -20,6 +20,7 @@ import {
   checkCustomerExpiry,
   resyncCustomer,
 } from './sigma-agent';
+import { parseTrialPanelConfig } from './panel-links';
 
 // ── Tipos internos ─────────────────────────────────────────────────────────────
 
@@ -657,13 +658,21 @@ Gere uma resposta curta, educada, prestativa e muito natural para o WhatsApp do 
       let cleanResponse = aiResponse.replace(/^(Você|Atendente|Suporte|Equipe|AI|IA|Bot):\s*/i, '').trim();
 
       // Interceptar e executar ações automáticas do Sigma
-      const actionMatch = cleanResponse.match(/\[\[SIGMA_ACTION:([A-Z_]+)(?::([^\]]+))?\]\]/i);
-      if (actionMatch) {
-        const actionType = actionMatch[1].toUpperCase();
-        const actionParam = actionMatch[2]?.trim() || '';
+      const actionRegex = /\[\[SIGMA_ACTION:([A-Z_]+)(?::([^\]]+))?\]\]/gi;
+      const actions = [...cleanResponse.matchAll(actionRegex)];
 
-        // Remove a tag do texto da IA
-        cleanResponse = cleanResponse.replace(actionMatch[0], '').trim();
+      // Remove TODAS as tags do texto da IA (nenhuma pode vazar pro cliente)
+      if (actions.length > 0) {
+        cleanResponse = cleanResponse.replace(actionRegex, '').trim();
+      }
+
+      // Ação principal: a primeira que gera texto de resultado vence (como antes)
+      const mainAction = actions.find((a) =>
+        ['CREATE_TRIAL', 'CHECK_EXPIRY', 'RESYNC'].includes(a[1].toUpperCase())
+      );
+      if (mainAction) {
+        const actionType = mainAction[1].toUpperCase();
+        const actionParam = mainAction[2]?.trim() || '';
 
         let actionResult = '';
         if (actionType === 'CREATE_TRIAL') {
@@ -682,6 +691,16 @@ Gere uma resposta curta, educada, prestativa e muito natural para o WhatsApp do 
         }
       }
 
+      // Mídias pedidas pelo roteiro via SEND_MEDIA (imagem do Zuxo, tutorial do MSX)
+      const mediaAssets = [
+        ...new Set(
+          actions
+            .filter((a) => a[1].toUpperCase() === 'SEND_MEDIA')
+            .map((a) => (a[2] || '').trim().toLowerCase())
+            .filter(Boolean)
+        ),
+      ];
+
       const parts = splitMessageIntoNaturalParts(cleanResponse);
 
       if (parts.length === 1) {
@@ -693,6 +712,29 @@ Gere uma resposta curta, educada, prestativa e muito natural para o WhatsApp do 
         await new Promise((r) => setTimeout(r, 1500 + Math.random() * 1000));
         const delay2 = Math.min(Math.max(parts[1].length * 30, 1000), 3000);
         await evolutionApi.sendTextMessage(instanceName, phone, parts[1], delay2);
+      }
+
+      // Envia as mídias pedidas pelo roteiro (depois do texto). Falha de mídia
+      // nunca derruba a resposta: só registra no log.
+      if (mediaAssets.length > 0) {
+        const media = parseTrialPanelConfig(config.trialPanelConfig)?.media;
+        for (const asset of mediaAssets) {
+          try {
+            if (asset === 'zuxo' && media?.zuxoLogoUrl) {
+              await evolutionApi.sendMediaMessage(instanceName, phone, media.zuxoLogoUrl, 'image');
+            } else if (asset === 'msx') {
+              if (media?.msxTutorialText) {
+                await evolutionApi.sendTextMessage(instanceName, phone, media.msxTutorialText);
+              }
+              if (media?.msxVideoUrl) {
+                await new Promise((r) => setTimeout(r, 1000));
+                await evolutionApi.sendMediaMessage(instanceName, phone, media.msxVideoUrl, 'video');
+              }
+            }
+          } catch (mediaErr: any) {
+            logger.error(`Erro ao enviar mídia '${asset}' do chatbot`, mediaErr);
+          }
+        }
       }
 
       await prisma.chatbotLog.create({

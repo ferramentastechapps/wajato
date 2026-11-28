@@ -36,6 +36,15 @@ export interface TrialPanelConfig {
   plusUrl?: string;
   smartplayBase?: string;
   smartplayServers?: Array<{ name: string; packages: Partial<Record<SmartPackageKind, string>> }>;
+  /** Mídias que o agente envia quando o roteiro emite [[SIGMA_ACTION:SEND_MEDIA:...]] */
+  media?: {
+    /** Imagem do logo do Zuxo Player (identificação do app na loja) */
+    zuxoLogoUrl?: string;
+    /** Vídeo tutorial do Media Station X */
+    msxVideoUrl?: string;
+    /** Texto tutorial do Media Station X (enviado antes do vídeo) */
+    msxTutorialText?: string;
+  };
 }
 
 export function parseTrialPanelConfig(raw?: string | null): TrialPanelConfig | null {
