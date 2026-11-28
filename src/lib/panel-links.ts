@@ -20,12 +20,34 @@ export interface PanelLinkTrial {
 
 const PANEL_TIMEOUT_MS = 20000;
 
-// Painel Plus (Zuxo e navegador/portal slimweb): teste de 6 horas COM ADULTOS
-const PLUS_TRIAL_6H_ADULT_URL = 'https://painelplus.site/api/chatbot/0VDVYBzLK3/VpKDaJWRAa';
+// Os links NÃO ficam mais no código: desde 28/11/2026 eles vivem na
+// configuração de CADA empresa (ChatbotConfig.trialPanelConfig, JSON editável
+// na tela do chatbot), porque cada empresa tem os seus painéis/contas.
+// Formato do JSON:
+// {
+//   "plusUrl": "https://painelplus.site/api/chatbot/<token>/<token>",
+//   "smartplayBase": "https://smartplaypainel.site/api/chatbot/<conta>",
+//   "smartplayServers": [
+//     { "name": "ZEROUM", "packages": { "completo": "<token>", "unitv": "<token>", ... } }
+//   ]
+// }
+// Conteúdo adulto: SEMPRE as variantes C/ADULTO (decisão do dono, 27/11/2026).
+export interface TrialPanelConfig {
+  plusUrl?: string;
+  smartplayBase?: string;
+  smartplayServers?: Array<{ name: string; packages: Partial<Record<SmartPackageKind, string>> }>;
+}
 
-// SmartPlay (UniTV e demais apps): tokens dos pacotes por servidor (conta MeWeEqaWnN)
-// Os servidores são intercambiáveis: se um falhar, o cliente é gerado no próximo.
-const SMARTPLAY_BASE = 'https://smartplaypainel.site/api/chatbot/MeWeEqaWnN';
+export function parseTrialPanelConfig(raw?: string | null): TrialPanelConfig | null {
+  if (!raw || !raw.trim()) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    return parsed as TrialPanelConfig;
+  } catch {
+    return null;
+  }
+}
 
 type SmartPackageKind =
   | 'completo'
@@ -39,63 +61,9 @@ type SmartPackageKind =
   | 'rxpurple'
   | 'xciptv';
 
-// Ordem padrão de tentativa: ZEROUM → Fênix → RocketPlay → Zeus
+// Os servidores do SmartPlay vêm da configuração da empresa (trialPanelConfig),
+// na ordem em que estiverem lá: se um falhar, o cliente é gerado no próximo.
 // Pacotes marcados como (PAGO) nas listas dos painéis ficam de fora de propósito.
-const SMARTPLAY_SERVERS: Array<{ name: string; packages: Partial<Record<SmartPackageKind, string>> }> = [
-  {
-    name: 'ZEROUM',
-    packages: {
-      completo: 'bOxLA7yWZ7', // TESTE COMPLETO C/ADULTO
-      android: 'PkaL4MzDgr', // TESTE 4 HORAS CELULAR ANDROID
-      ios: 'lze1584W5K', // TESTE 4 HORAS IPHONE / IOS
-      pc: 'Yxl1jMmWMj', // TESTE 4 HORAS PC E NOTEBOOK
-      lotus: 'kg516PZDjl', // APP LÓTUS (Roku/Samsung/LG/Android TV)
-      rxpurple: 'lze15veL5K', // APP RX PURPLE (Roku/LG)
-      xciptv: 'B0VDVVODK3', // XCIPTV PLAYER (Firestick/TV Box/Android)
-      unitv: '8241KAvDmx', // UniTv TESTE COMPLETO
-    },
-  },
-  {
-    name: 'Fênix',
-    packages: {
-      completo: 'x2YD0Jv1QP', // TESTE COMPLETO C/ADULTO
-      android: 'ZVdWXlaW3q', // TESTE 4 HORAS CELULAR ANDROID
-      ios: 'bOxLApy1Z7', // TESTE 4 HORAS IPHONE / IOS
-      pc: 'b8K1xaJLvG', // TESTE 4 HORAS PC E NOTEBOOK
-      tvbox: '8241KzOWmx', // TESTE 4 HORAS TV ANDROID / TV BOX
-      classeplay: '7V01py3LdO', // APP CLASSE PLAY (Roku/Samsung)
-      rxpurple: 'bQELoMKWgr', // APP RX PURPLE (Roku/LG)
-      xciptv: 'kRXDgKODex', // APP XCIPTV PLAYER
-      unitv: 'kRXDgQo1ex', // UniTv TESTE COMPLETO
-    },
-  },
-  {
-    name: 'RocketPlay',
-    packages: {
-      completo: 'b8K1xJKDvG', // TESTE COMPLETO C/ADULTO
-      android: 'RYAWRkg1jl', // TESTE 4 HORAS CELULAR ANDROID
-      ios: 'aYB1w0nLvm', // TESTE 4 HORAS IPHONE / IOS
-      pc: 'nVrW8PrWKa', // TESTE 4 HORAS PC E NOTEBOOK
-      tvbox: 'ANKWPnxLPR', // TESTE 4 HORAS TV ANDROID / TV BOX
-      lotus: '64vLb2RLgG', // APP LÓTUS (Roku/Samsung/LG/Android TV)
-      rxpurple: 'XKjLM4B104', // APP RX PURPLE (Roku/LG)
-      unitv: 'BKADdQeWlr', // UniTv TESTE COMPLETO
-    },
-  },
-  {
-    name: 'Zeus',
-    packages: {
-      completo: 'Ar0WZg1a7z', // TESTE COMPLETO C/ADULTO
-      android: 'EMeWe54WnN', // TESTE 4 HORAS CELULAR ANDROID
-      pc: 'we6WnB7WK8', // TESTE 4 HORAS PC E NOTEBOOK
-      tvbox: 'VpKDarkWRA', // TESTE 4 HORAS TV ANDROID / TV BOX
-      classeplay: 'ayb1BOPLPR', // APP CLASSE PLAY (Roku/Samsung)
-      rxpurple: 'Ar0WZp2La7', // APP RX PURPLE (Roku/LG)
-      xciptv: 'rdqLkQpWAE', // APP XCIPTV PLAYER
-      unitv: 'ryJDzOYWge', // UniTv TESTE COMPLETO
-    },
-  },
-];
 
 /**
  * Zuxo, aplicativos Slim (Smart/XC/Fflix/Ibo), Smarters, Media Station X (Zuxo)
@@ -279,29 +247,39 @@ function composeTrialMessage(trial: {
 }
 
 /**
- * Gera o teste grátis pelos links dos painéis, roteando pelo app/aparelho:
+ * Gera o teste grátis pelos links dos painéis DA EMPRESA (panelConfig vindo do
+ * ChatbotConfig dela), roteando pelo app/aparelho:
  * - Zuxo / Slim / Smarters / Media Station X / navegador → Painel Plus (6h com adultos)
  * - UniTV e demais aparelhos/apps → SmartPlay (4h), servidores em ordem até um gerar
- * Retorna null se nenhum link gerar (quem chama cai para a API do Sigma)
+ * Retorna null se a empresa não tiver links configurados ou nenhum link gerar
+ * (quem chama cai para a API do Sigma)
  */
 export async function createTrialViaPanelLinks(
   deviceInput: string,
   deviceKey: string,
+  panelConfig?: TrialPanelConfig | null,
 ): Promise<PanelLinkTrial | null> {
+  if (!panelConfig) return null;
+
   if (isPlusRoute(deviceInput)) {
-    const trial = await generateFromLink(PLUS_TRIAL_6H_ADULT_URL);
+    if (!panelConfig.plusUrl) return null;
+    const trial = await generateFromLink(panelConfig.plusUrl);
     return trial
       ? { ...trial, panel: 'Painel Plus', reply: composeTrialMessage(trial) }
       : null;
   }
 
+  const base = panelConfig.smartplayBase;
+  const servers = panelConfig.smartplayServers || [];
+  if (!base || !servers.length) return null;
+
   const kinds = resolveSmartKinds(deviceInput, deviceKey);
-  for (const server of SMARTPLAY_SERVERS) {
+  for (const server of servers) {
     // Sem o pacote equivalente neste servidor, usa o TESTE COMPLETO C/ADULTO dele
     const token = kinds.map((k) => server.packages[k]).find(Boolean) || server.packages.completo;
     if (!token) continue;
 
-    const trial = await generateFromLink(`${SMARTPLAY_BASE}/${token}`);
+    const trial = await generateFromLink(`${base}/${token}`);
     if (trial)
       return {
         ...trial,

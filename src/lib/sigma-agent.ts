@@ -1,7 +1,7 @@
 import { sigma } from './sigma';
 import { prisma } from './prisma';
 import { logger } from './logger';
-import { createTrialViaPanelLinks } from './panel-links';
+import { createTrialViaPanelLinks, parseTrialPanelConfig } from './panel-links';
 import { recordTrialSubscription } from './subscriptions';
 
 export interface SigmaActionOutcome {
@@ -97,7 +97,7 @@ const TRIAL_EXEMPT_PHONES = new Set(
 /**
  * 1. Gerador Automático de Teste Grátis no Sigma
  */
-export async function createTrialForLead(phone: string, deviceInput?: string): Promise<SigmaActionOutcome> {
+export async function createTrialForLead(phone: string, deviceInput?: string, trialPanelConfigRaw?: string | null): Promise<SigmaActionOutcome> {
   const normPhone = phone.replace(/\D/g, '');
   const deviceKey = detectDeviceType(deviceInput || '');
   const target = APP_PACKAGE_MAP[deviceKey] || APP_PACKAGE_MAP.default;
@@ -112,9 +112,10 @@ export async function createTrialForLead(phone: string, deviceInput?: string): P
       };
     }
 
-    // Primeiro tenta gerar pelos links dos painéis (Painel Plus / SmartPlay);
-    // se nenhum link gerar, cai para a API do Sigma mais abaixo (reserva)
-    const linkTrial = await createTrialViaPanelLinks(deviceInput || '', deviceKey);
+    // Primeiro tenta gerar pelos links dos painéis DA EMPRESA (Painel Plus /
+    // SmartPlay da config dela); se ela não tiver links ou nenhum gerar, cai
+    // para a API do Sigma mais abaixo (reserva)
+    const linkTrial = await createTrialViaPanelLinks(deviceInput || '', deviceKey, parseTrialPanelConfig(trialPanelConfigRaw));
     if (linkTrial) {
       // Registra tag no contato local (mesmo registro do fluxo do Sigma)
       const contact = await (prisma.contact as any).upsert({

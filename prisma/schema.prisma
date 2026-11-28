@@ -312,6 +312,8 @@ model ChatbotConfig {
   company           Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
   aiEnabled         Boolean  @default(false)
   aiContext         String   @default("Você é um assistente de atendimento virtual prestativo e educado.")
+  flowScript        String?  // Roteiro do agente DESTA empresa (fluxo de atendimento); vazio = sem roteiro próprio
+  trialPanelConfig  String?  // JSON com os links dos painéis de teste DESTA empresa (formato em panel-links.ts)
   geminiApiKey      String?
   businessHoursOnly Boolean  @default(false)
   startHour         Int      @default(8)

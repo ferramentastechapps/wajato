@@ -47,6 +47,8 @@ interface ChatbotLog {
 interface ChatbotConfig {
   aiEnabled: boolean;
   aiContext: string;
+  flowScript?: string | null;
+  trialPanelConfig?: string | null;
   geminiApiKey?: string | null;
   businessHoursOnly: boolean;
   startHour: number;
@@ -59,6 +61,8 @@ export default function ChatbotPage() {
   const [config, setConfig] = useState<ChatbotConfig>({
     aiEnabled: false,
     aiContext: 'Você é um assistente de atendimento virtual prestativo e educado.',
+    flowScript: '',
+    trialPanelConfig: '',
     geminiApiKey: '',
     businessHoursOnly: false,
     startHour: 8,
@@ -359,6 +363,36 @@ export default function ChatbotPage() {
                   style={{ minHeight: '120px', fontSize: '0.85rem', resize: 'vertical' }}
                   placeholder="Ex: Você é o atendente da loja X. Seja gentil, ofereça ajuda sobre calçados e redirecione para o telefone X se pedirem suporte avançado."
                 />
+              </div>
+            )}
+
+            {/* Roteiro do agente DESTA empresa */}
+            {config.aiEnabled && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <label style={{ fontSize: '0.85rem', color: '#9ca3af' }}>Roteiro do Agente (desta empresa):</label>
+                <textarea
+                  value={config.flowScript || ''}
+                  onChange={(e) => setConfig({ ...config, flowScript: e.target.value })}
+                  className="form-control"
+                  style={{ minHeight: '260px', fontSize: '0.85rem', resize: 'vertical' }}
+                  placeholder="O fluxo de atendimento que o agente desta empresa segue (abertura, passos, ações). Vazio = sem roteiro próprio."
+                />
+                <span style={{ fontSize: '0.72rem', color: '#6b7280' }}>Vale só para a empresa selecionada acima. Alterar aqui não precisa de deploy: salva e já está valendo.</span>
+              </div>
+            )}
+
+            {/* Links dos painéis de teste DESTA empresa */}
+            {config.aiEnabled && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <label style={{ fontSize: '0.85rem', color: '#9ca3af' }}>Links dos Painéis de Teste (JSON, desta empresa):</label>
+                <textarea
+                  value={config.trialPanelConfig || ''}
+                  onChange={(e) => setConfig({ ...config, trialPanelConfig: e.target.value })}
+                  className="form-control"
+                  style={{ minHeight: '120px', fontSize: '0.8rem', resize: 'vertical', fontFamily: 'monospace' }}
+                  placeholder='{"plusUrl": "https://painelplus.site/api/chatbot/...", "smartplayBase": "https://smartplaypainel.site/api/chatbot/...", "smartplayServers": [{"name": "ZEROUM", "packages": {"completo": "...", "unitv": "..."}}]}'
+                />
+                <span style={{ fontSize: '0.72rem', color: '#6b7280' }}>Links que geram o teste grátis desta empresa. Vazio = gera só pela API reserva.</span>
               </div>
             )}
 

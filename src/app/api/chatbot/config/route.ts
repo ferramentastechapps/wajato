@@ -79,6 +79,8 @@ export async function GET(request: NextRequest) {
             companyId,
             aiEnabled: globalConfig.aiEnabled,
             aiContext: globalConfig.aiContext,
+            flowScript: globalConfig.flowScript,
+            trialPanelConfig: globalConfig.trialPanelConfig,
             geminiApiKey: globalConfig.geminiApiKey,
             businessHoursOnly: globalConfig.businessHoursOnly,
             startHour: globalConfig.startHour,
@@ -119,7 +121,22 @@ export async function POST(request: Request) {
       );
     }
 
-    const { companyId, aiEnabled, aiContext, geminiApiKey, businessHoursOnly, startHour, endHour } = result.data;
+    const { companyId, aiEnabled, aiContext, flowScript, trialPanelConfig, geminiApiKey, businessHoursOnly, startHour, endHour } = result.data;
+
+    // Roteiro e links dos painéis DESTA empresa (vazio = sem roteiro / sem links)
+    const flowScriptToSave = flowScript?.trim() ? flowScript : null;
+    let trialPanelConfigToSave: string | null = null;
+    if (trialPanelConfig?.trim()) {
+      try {
+        JSON.parse(trialPanelConfig);
+        trialPanelConfigToSave = trialPanelConfig.trim();
+      } catch {
+        return NextResponse.json(
+          { message: 'O JSON dos links dos painéis está inválido — confira e salve de novo' },
+          { status: 400 }
+        );
+      }
+    }
 
     // Salva a config própria da empresa (cria sob demanda via upsert)
     if (companyId) {
@@ -139,6 +156,8 @@ export async function POST(request: Request) {
         update: {
           aiEnabled,
           aiContext,
+          flowScript: flowScriptToSave,
+          trialPanelConfig: trialPanelConfigToSave,
           geminiApiKey: finalApiKey,
           businessHoursOnly,
           startHour,
@@ -149,6 +168,8 @@ export async function POST(request: Request) {
           companyId,
           aiEnabled,
           aiContext,
+          flowScript: flowScriptToSave,
+          trialPanelConfig: trialPanelConfigToSave,
           geminiApiKey: finalApiKey,
           businessHoursOnly,
           startHour,
@@ -171,6 +192,8 @@ export async function POST(request: Request) {
       update: {
         aiEnabled,
         aiContext,
+        flowScript: flowScriptToSave,
+        trialPanelConfig: trialPanelConfigToSave,
         geminiApiKey: finalApiKey,
         businessHoursOnly,
         startHour,
@@ -180,6 +203,8 @@ export async function POST(request: Request) {
         id: 'global',
         aiEnabled,
         aiContext,
+        flowScript: flowScriptToSave,
+        trialPanelConfig: trialPanelConfigToSave,
         geminiApiKey: finalApiKey,
         businessHoursOnly,
         startHour,
