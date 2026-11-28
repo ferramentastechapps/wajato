@@ -670,11 +670,11 @@ Gere uma resposta curta, educada, prestativa e muito natural para o WhatsApp do 
       const mainAction = actions.find((a) =>
         ['CREATE_TRIAL', 'CHECK_EXPIRY', 'RESYNC'].includes(a[1].toUpperCase())
       );
+      let actionResult = '';
       if (mainAction) {
         const actionType = mainAction[1].toUpperCase();
         const actionParam = mainAction[2]?.trim() || '';
 
-        let actionResult = '';
         if (actionType === 'CREATE_TRIAL') {
           const outcome = await createTrialForLead(phone, actionParam, config.trialPanelConfig);
           actionResult = outcome.message;
@@ -684,10 +684,6 @@ Gere uma resposta curta, educada, prestativa e muito natural para o WhatsApp do 
         } else if (actionType === 'RESYNC') {
           const outcome = await resyncCustomer(phone);
           actionResult = outcome.message;
-        }
-
-        if (actionResult) {
-          cleanResponse = cleanResponse ? `${cleanResponse}\n\n${actionResult}` : actionResult;
         }
       }
 
@@ -700,6 +696,20 @@ Gere uma resposta curta, educada, prestativa e muito natural para o WhatsApp do 
             .filter(Boolean)
         ),
       ];
+
+      // No caminho do Media Station X, o pacote de configuração (tutorial +
+      // ícone + vídeo) vai ANTES dos dados de acesso: o resultado da ação é
+      // enviado só depois das mídias. Nos demais casos, ele segue anexado ao
+      // texto da resposta, como antes.
+      const mediaBeforeResult = mediaAssets.includes('msx') && !!actionResult;
+      if (actionResult && !mediaBeforeResult) {
+        cleanResponse = cleanResponse ? `${cleanResponse}\n\n${actionResult}` : actionResult;
+      }
+      const fullResponse = mediaBeforeResult
+        ? cleanResponse
+          ? `${cleanResponse}\n\n${actionResult}`
+          : actionResult
+        : cleanResponse;
 
       const parts = splitMessageIntoNaturalParts(cleanResponse);
 
@@ -741,14 +751,19 @@ Gere uma resposta curta, educada, prestativa e muito natural para o WhatsApp do 
         }
       }
 
+      // Resultado da ação por último, quando o pacote do MSX veio antes dele
+      if (mediaBeforeResult) {
+        await evolutionApi.sendTextMessage(instanceName, phone, actionResult);
+      }
+
       await prisma.chatbotLog.create({
-        data: { phone, messageIn: text, messageOut: cleanResponse, source: 'AI' },
+        data: { phone, messageIn: text, messageOut: fullResponse, source: 'AI' },
       });
 
       markResponded(phone);
 
       // Atualiza memória de fatos do cliente em background (Redis)
-      extractAndUpdateMemoryAsync(phone, text, cleanResponse, apiKey, contactName);
+      extractAndUpdateMemoryAsync(phone, text, fullResponse, apiKey, contactName);
     }
   } catch (error: any) {
     logger.error('Erro ao processar chatbot incoming', error);

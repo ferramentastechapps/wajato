@@ -465,15 +465,31 @@ export const evolutionApi = {
       finalMediaUrl = `${baseUrl}${finalMediaUrl}`;
     }
 
+    // Nome do arquivo a partir da URL (o Go usa "filename"; o Node, "fileName")
+    let fileName = 'file';
+    if (mediaType === 'image') {
+      fileName = finalMediaUrl.includes('.webp') ? 'image.webp' : (finalMediaUrl.includes('.png') ? 'image.png' : 'image.jpg');
+    } else if (mediaType === 'video') {
+      fileName = 'video.mp4';
+    } else if (mediaType === 'audio') {
+      fileName = 'audio.mp3';
+    } else if (mediaType === 'document') {
+      fileName = 'document.pdf';
+    }
+
     // 1. Tenta Evolution Go (POST /send/media com apikey: token)
+    // ATENÇÃO: no Evolution Go o campo do tipo é "type" (MediaStruct.Type),
+    // NÃO "mediaType" — com o nome errado o tipo chega vazio e o servidor
+    // rejeita o envio (foi o bug que quebrou imagem/vídeo do agente e do painel).
     try {
       const goRes = await evolutionClient.post(
         '/send/media',
         {
           number: formattedPhone,
           url: finalMediaUrl,
-          mediaType: mediaType,
+          type: mediaType,
           caption: caption || '',
+          filename: fileName,
         },
         {
           headers: { apikey: token },
@@ -490,17 +506,6 @@ export const evolutionApi = {
 
     // 2. Fallback Evolution Node (/message/sendMedia/:instanceName)
     try {
-      let fileName = 'file';
-      if (mediaType === 'image') {
-        fileName = finalMediaUrl.includes('.webp') ? 'image.webp' : (finalMediaUrl.includes('.png') ? 'image.png' : 'image.jpg');
-      } else if (mediaType === 'video') {
-        fileName = 'video.mp4';
-      } else if (mediaType === 'audio') {
-        fileName = 'audio.mp3';
-      } else if (mediaType === 'document') {
-        fileName = 'document.pdf';
-      }
-
       const response = await evolutionClient.post(`/message/sendMedia/${instanceName}`, {
         number: formattedPhone,
         mediatype: mediaType,
@@ -647,14 +652,14 @@ export const evolutionApi = {
     }
 
     try {
-      // 1. Tenta Evolution Go (POST /send/media com mediaType: audio)
+      // 1. Tenta Evolution Go (POST /send/media com type: audio)
       try {
         const goRes = await evolutionClient.post(
           '/send/media',
           {
             number: formattedPhone,
             url: finalAudioUrl,
-            mediaType: 'audio',
+            type: 'audio',
           },
           { headers: { apikey: token } }
         );
