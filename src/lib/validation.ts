@@ -108,6 +108,7 @@ export const chatbotConfigSchema = z.object({
   aiContext: z.string().trim().min(1, 'O contexto de inteligência artificial é obrigatório'),
   flowScript: z.string().nullable().optional(),
   trialPanelConfig: z.string().nullable().optional(),
+  agentMedia: z.string().nullable().optional(),
   geminiApiKey: z.string().trim().nullable().optional(),
   businessHoursOnly: z.boolean(),
   startHour: z.coerce.number().int().min(0).max(23),

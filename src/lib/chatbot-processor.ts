@@ -20,7 +20,7 @@ import {
   checkCustomerExpiry,
   resyncCustomer,
 } from './sigma-agent';
-import { parseTrialPanelConfig } from './panel-links';
+import { parseAgentMedia } from './agent-media';
 
 // ── Tipos internos ─────────────────────────────────────────────────────────────
 
@@ -717,7 +717,7 @@ Gere uma resposta curta, educada, prestativa e muito natural para o WhatsApp do 
       // Envia as mídias pedidas pelo roteiro (depois do texto). Falha de mídia
       // nunca derruba a resposta: só registra no log.
       if (mediaAssets.length > 0) {
-        const media = parseTrialPanelConfig(config.trialPanelConfig)?.media;
+        const media = parseAgentMedia(config.agentMedia);
         for (const asset of mediaAssets) {
           try {
             if (asset === 'zuxo' && media?.zuxoLogoUrl) {
@@ -725,6 +725,10 @@ Gere uma resposta curta, educada, prestativa e muito natural para o WhatsApp do 
             } else if (asset === 'msx') {
               if (media?.msxTutorialText) {
                 await evolutionApi.sendTextMessage(instanceName, phone, media.msxTutorialText);
+              }
+              if (media?.msxIconUrl) {
+                await new Promise((r) => setTimeout(r, 800));
+                await evolutionApi.sendMediaMessage(instanceName, phone, media.msxIconUrl, 'image');
               }
               if (media?.msxVideoUrl) {
                 await new Promise((r) => setTimeout(r, 1000));

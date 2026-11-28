@@ -49,10 +49,86 @@ interface ChatbotConfig {
   aiContext: string;
   flowScript?: string | null;
   trialPanelConfig?: string | null;
+  agentMedia?: string | null;
   geminiApiKey?: string | null;
   businessHoursOnly: boolean;
   startHour: number;
   endHour: number;
+}
+
+/** Campos amigáveis das mídias do agente (o valor salvo é o JSON em config.agentMedia) */
+function AgentMediaFields({ value, onChange }: { value: string; onChange: (json: string) => void }) {
+  let media: Record<string, string> = {};
+  try {
+    const parsed = JSON.parse(value || '{}');
+    if (parsed && typeof parsed === 'object') media = parsed;
+  } catch { media = {}; }
+  const [uploading, setUploading] = useState('');
+
+  const setField = (key: string, val: string) => {
+    const next: Record<string, string> = { ...media, [key]: val };
+    for (const k of Object.keys(next)) if (!next[k]) delete next[k];
+    onChange(JSON.stringify(next));
+  };
+
+  const upload = async (key: string, file: File) => {
+    setUploading(key);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch('/api/uploads', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Falha no upload');
+      setField(key, data.relativeUrl || data.url);
+    } catch (err: any) {
+      alert(`Erro no upload: ${err.message}`);
+    } finally {
+      setUploading('');
+    }
+  };
+
+  const urlField = (key: string, label: string, accept: string, placeholder: string) => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+      <label style={{ fontSize: '0.8rem', color: '#9ca3af' }}>{label}</label>
+      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+        <input
+          type="text"
+          value={media[key] || ''}
+          onChange={(e) => setField(key, e.target.value)}
+          className="form-control"
+          style={{ fontSize: '0.8rem', flex: 1 }}
+          placeholder={placeholder}
+        />
+        <label style={{ cursor: 'pointer', fontSize: '0.78rem', color: 'var(--primary)', border: '1px solid var(--border)', borderRadius: '8px', padding: '0.45rem 0.7rem', whiteSpace: 'nowrap' }}>
+          {uploading === key ? 'Enviando...' : 'Enviar arquivo'}
+          <input
+            type="file"
+            accept={accept}
+            style={{ display: 'none' }}
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(key, f); e.target.value = ''; }}
+          />
+        </label>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
+      {urlField('zuxoLogoUrl', 'Imagem do app Zuxo (o agente envia quando manda baixar o Zuxo):', 'image/*', '/api/uploads/... ou https://...')}
+      {urlField('msxIconUrl', 'Ícone do Media Station X (identificação na loja da TV):', 'image/*', '/api/uploads/... ou https://...')}
+      {urlField('msxVideoUrl', 'Vídeo tutorial do Media Station X:', 'video/*', '/api/uploads/... ou https://...')}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+        <label style={{ fontSize: '0.8rem', color: '#9ca3af' }}>Texto tutorial do Media Station X (enviado junto, antes do ícone e do vídeo):</label>
+        <textarea
+          value={media.msxTutorialText || ''}
+          onChange={(e) => setField('msxTutorialText', e.target.value)}
+          className="form-control"
+          style={{ minHeight: '160px', fontSize: '0.85rem', resize: 'vertical' }}
+          placeholder="O passo a passo que o cliente recebe no caminho do Media Station X."
+        />
+      </div>
+    </div>
+  );
 }
 
 export default function ChatbotPage() {
@@ -63,6 +139,7 @@ export default function ChatbotPage() {
     aiContext: 'Você é um assistente de atendimento virtual prestativo e educado.',
     flowScript: '',
     trialPanelConfig: '',
+    agentMedia: '',
     geminiApiKey: '',
     businessHoursOnly: false,
     startHour: 8,
@@ -393,6 +470,18 @@ export default function ChatbotPage() {
                   placeholder='{"plusUrl": "https://painelplus.site/api/chatbot/...", "smartplayBase": "https://smartplaypainel.site/api/chatbot/...", "smartplayServers": [{"name": "ZEROUM", "packages": {"completo": "...", "unitv": "..."}}]}'
                 />
                 <span style={{ fontSize: '0.72rem', color: '#6b7280' }}>Links que geram o teste grátis desta empresa. Vazio = gera só pela API reserva.</span>
+              </div>
+            )}
+
+            {/* Mídias do agente DESTA empresa */}
+            {config.aiEnabled && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <label style={{ fontSize: '0.85rem', color: '#9ca3af' }}>Mídias do Agente (desta empresa):</label>
+                <AgentMediaFields
+                  value={config.agentMedia || ''}
+                  onChange={(json) => setConfig({ ...config, agentMedia: json })}
+                />
+                <span style={{ fontSize: '0.72rem', color: '#6b7280' }}>O agente envia estas mídias quando o roteiro pede (imagem do app pra identificar na loja, tutorial do Media Station X). Vazio = não envia. Vale só para a empresa selecionada.</span>
               </div>
             )}
 

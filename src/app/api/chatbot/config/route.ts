@@ -81,6 +81,7 @@ export async function GET(request: NextRequest) {
             aiContext: globalConfig.aiContext,
             flowScript: globalConfig.flowScript,
             trialPanelConfig: globalConfig.trialPanelConfig,
+            agentMedia: globalConfig.agentMedia,
             geminiApiKey: globalConfig.geminiApiKey,
             businessHoursOnly: globalConfig.businessHoursOnly,
             startHour: globalConfig.startHour,
@@ -121,7 +122,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { companyId, aiEnabled, aiContext, flowScript, trialPanelConfig, geminiApiKey, businessHoursOnly, startHour, endHour } = result.data;
+    const { companyId, aiEnabled, aiContext, flowScript, trialPanelConfig, agentMedia, geminiApiKey, businessHoursOnly, startHour, endHour } = result.data;
 
     // Roteiro e links dos painéis DESTA empresa (vazio = sem roteiro / sem links)
     const flowScriptToSave = flowScript?.trim() ? flowScript : null;
@@ -133,6 +134,20 @@ export async function POST(request: Request) {
       } catch {
         return NextResponse.json(
           { message: 'O JSON dos links dos painéis está inválido — confira e salve de novo' },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Mídias do agente DESTA empresa (vazio = agente não envia mídias)
+    let agentMediaToSave: string | null = null;
+    if (agentMedia?.trim()) {
+      try {
+        JSON.parse(agentMedia);
+        agentMediaToSave = agentMedia.trim();
+      } catch {
+        return NextResponse.json(
+          { message: 'O JSON das mídias do agente está inválido — confira e salve de novo' },
           { status: 400 }
         );
       }
@@ -158,6 +173,7 @@ export async function POST(request: Request) {
           aiContext,
           flowScript: flowScriptToSave,
           trialPanelConfig: trialPanelConfigToSave,
+          agentMedia: agentMediaToSave,
           geminiApiKey: finalApiKey,
           businessHoursOnly,
           startHour,
@@ -170,6 +186,7 @@ export async function POST(request: Request) {
           aiContext,
           flowScript: flowScriptToSave,
           trialPanelConfig: trialPanelConfigToSave,
+          agentMedia: agentMediaToSave,
           geminiApiKey: finalApiKey,
           businessHoursOnly,
           startHour,
@@ -194,6 +211,7 @@ export async function POST(request: Request) {
         aiContext,
         flowScript: flowScriptToSave,
         trialPanelConfig: trialPanelConfigToSave,
+        agentMedia: agentMediaToSave,
         geminiApiKey: finalApiKey,
         businessHoursOnly,
         startHour,
@@ -205,6 +223,7 @@ export async function POST(request: Request) {
         aiContext,
         flowScript: flowScriptToSave,
         trialPanelConfig: trialPanelConfigToSave,
+        agentMedia: agentMediaToSave,
         geminiApiKey: finalApiKey,
         businessHoursOnly,
         startHour,
